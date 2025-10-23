@@ -1,0 +1,84 @@
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+.venv.bak/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Unit test / coverage
+.coverage
+.coverage.*
+.cache/
+.nox/
+.tox/
+.pytest_cache/
+pytest_cache/
+htmlcov/
+
+# IDE / Editor
+.vscode/
+.idea/
+*.code-workspace
+
+# OS metadata
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+logs/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Project-generated artifacts (from processing scripts)
+*.pkl
+*_meta.json
+*_channels.csv
+*_with_freq.pkl
+*_with_freq_channels.csv
+*_waveform_per_channel.png
+*_spec_ch*.png
+*_spectrogram.npz
+outputs/
+*_outputs/
+
+# MATLAB temp files
+*.asv
+
+# Misc
+*.bak
