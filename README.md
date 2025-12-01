@@ -116,14 +116,7 @@ Troubleshooting & notes
   test tools (black, isort, pytest). Formatting was already applied to
   the project files; the virtualenv folder `matlab_conv` is excluded.
 
-Next steps I can take (pick any)
+Testing
 --------------------------------
-
-- add minimal pytest-based smoke tests for header parsing and CSV export
-- consolidate logging configuration into a shared helper module
-- add a short PowerShell script to create the venv and install deps
-- freeze the full environment into `requirements-full.txt` via `pip freeze`
-
-If you'd like one of these, tell me which and I'll implement it.
-# acoustic_emissions_processing
-# acoustic_emissions_processing
+To run all tests:
+python -m pytest -q

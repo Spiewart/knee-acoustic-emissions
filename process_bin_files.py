@@ -146,6 +146,10 @@ def main():
     args = p.parse_args()
 
     path = Path(args.path)
+    # Make sure the path exists
+    if not path.exists():
+        logging.error("Path does not exist: %s", path)
+        return
     bins = find_bin_files(path)
     if not bins:
         logging.error("No .bin files found at %s", path)
