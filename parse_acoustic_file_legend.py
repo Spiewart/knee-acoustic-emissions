@@ -2,8 +2,7 @@ from typing import Literal
 
 import pandas as pd
 
-from acoustic_emissions_processing.models import AcousticsMetadata
-from acoustic_emissions_processing.models import MicrophonePosition
+from acoustic_emissions_processing.models import AcousticsMetadata, MicrophonePosition
 
 
 def get_acoustics_metadata(
@@ -61,7 +60,7 @@ def get_acoustics_metadata(
     ).str.strip()
     # Fill in the Maneuvers column downwards to associate each maneuver with the subsequent
     # three empty rows for microphones 2-4
-    knee_metadata_df["Maneuvers"] = knee_metadata_df["Maneuvers"].fillna(method="ffill")
+    knee_metadata_df["Maneuvers"] = knee_metadata_df["Maneuvers"].ffill()
 
     maneuver_metadata_df = knee_metadata_df.loc[
         knee_metadata_df["Maneuvers"].str.contains(
