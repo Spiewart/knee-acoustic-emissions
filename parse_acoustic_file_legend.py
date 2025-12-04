@@ -5,75 +5,124 @@ import pandas as pd
 from models import AcousticsMetadata, MicrophonePosition
 
 
-def get_acoustics_metadata(
-    metadata_file_path: str,
-    scripted_maneuver: Literal["walk", "sit_to_stand", "flexion_extension"],
+def find_knee_table_start(
+    metadata_df: pd.DataFrame,
     knee: Literal["left", "right"],
-) -> AcousticsMetadata:
-    """Gets acoustics metadata for a given acoustics file legend. Extracts the
-    relevant metadata based on the scripted maneuver and knee laterality and returns
-    a Pydantic Model instance that validates the metadata.
-
-    File legend is two Excel tables on top of one another, separated by a blank row,
-    where the first row in each table is either "R Knee" or "L Knee", and the second row
-    is divided into columns:
-        "Maneuvers": single row of Literal["Walk (slow,medium, fast)", "Flexion - Extension", "Sit - to - Stand"]
-        "File Name": single row of str
-        "Microphone": 4 rows of Literal[1, 2, 3, 4]
-        "Patellar Position": 4 rows of Literal["Infrapatellar", "Suprapatellar"]
-        "Laterality": 4 rows of Literal["Medial", "Lateral"]
-        "Notes": 4 rows of str
+) -> int:
+    """Find the starting row index for a specific knee's data table.
 
     Args:
-        metadata_file_path (str): Path to the Excel file containing the acoustics file legend.
-        scripted_maneuver (Literal): The scripted maneuver to filter by.
-        knee (Literal): The knee laterality to filter by.
+        metadata_df: DataFrame loaded from the metadata file
+        knee: The knee laterality to search for ("left" or "right")
 
     Returns:
-        AcousticsMetadata: A Pydantic model instance containing the validated acoustics metadata.
+        The row index where the knee table starts
+
+    Raises:
+        ValueError: If the knee data is not found in the metadata file
     """
-    metadata_df = pd.read_excel(metadata_file_path, sheet_name="Acoustic Notes", header=None)
-    # Determine the starting row for the desired knee laterality
-    # by getting the index of the first column that matches the knee laterality
+    knee_label = f"{knee[0].capitalize()} Knee"
     table_header_index = metadata_df.index[
-        metadata_df.iloc[:, 0].str.contains(f"{knee[0].capitalize()} Knee", na=False)
+        metadata_df.iloc[:, 0].str.contains(knee_label, na=False)
     ].tolist()
     if not table_header_index:
-        raise ValueError(f"No data found for {knee[0].capitalize()} Knee in metadata file.")
-    table_columns_row = table_header_index[0] + 1  # Data starts after the table header row
+        raise ValueError(f"No data found for {knee_label} in metadata file.")
+    # Data starts after the table header row
+    return table_header_index[0] + 1
 
-    # Get the sub-DataFrame for the desired knee laterality and scripted maneuver
-    # but only take the rows for the relevant knee, otherwise duplicate data will be included
+
+def extract_knee_metadata_table(
+    metadata_df: pd.DataFrame,
+    table_start_row: int,
+) -> pd.DataFrame:
+    """Extract and prepare knee metadata table from full metadata DataFrame.
+
+    Args:
+        metadata_df: Full metadata DataFrame
+        table_start_row: Starting row index for the knee table
+
+    Returns:
+        Cleaned DataFrame with proper column names and data rows
+    """
+    # Get the sub-DataFrame for the desired knee (13 rows of data)
     knee_metadata_df = metadata_df.iloc[
-        table_columns_row + 0: table_columns_row + 13, :
+        table_start_row: table_start_row + 13, :
     ].reset_index(drop=True)
     # Rename the columns based on the values in the first row
     knee_metadata_df.columns = knee_metadata_df.iloc[0]
-    knee_metadata_df = knee_metadata_df.drop(knee_metadata_df.index[0]).reset_index(drop=True)
-    # Strip any "-" characters from the "Maneuvers" column for easier matching
-    knee_metadata_df["Maneuvers"] = knee_metadata_df["Maneuvers"].str.replace(
+    knee_metadata_df = knee_metadata_df.drop(
+        knee_metadata_df.index[0]
+    ).reset_index(drop=True)
+    return knee_metadata_df
+
+
+def normalize_maneuver_column(
+    df: pd.DataFrame,
+) -> pd.DataFrame:
+    """Normalize the Maneuvers column by cleaning and forward-filling data.
+
+    This function:
+    1. Removes "-" characters and normalizes whitespace
+    2. Forward-fills the Maneuvers column to associate each maneuver
+       with its 3 microphone rows
+
+    Args:
+        df: DataFrame with a "Maneuvers" column to normalize
+
+    Returns:
+        DataFrame with normalized Maneuvers column
+    """
+    # Strip any "-" characters from the "Maneuvers" column
+    df["Maneuvers"] = df["Maneuvers"].str.replace(
         "-", " ", regex=False,
     )
-    # Eliminate anything more than a single space in the "Maneuvers" column
-    knee_metadata_df["Maneuvers"] = knee_metadata_df["Maneuvers"].str.replace(
+    # Eliminate anything more than a single space
+    df["Maneuvers"] = df["Maneuvers"].str.replace(
         r"\s+", " ", regex=True,
     ).str.strip()
-    # Fill in the Maneuvers column downwards to associate each maneuver with the subsequent
-    # three empty rows for microphones 2-4
-    knee_metadata_df["Maneuvers"] = knee_metadata_df["Maneuvers"].ffill()
+    # Fill in the Maneuvers column downwards to associate each maneuver
+    # with the subsequent three empty rows for microphones 2-4
+    df["Maneuvers"] = df["Maneuvers"].ffill()
+    return df
 
-    maneuver_metadata_df = knee_metadata_df.loc[
-        knee_metadata_df["Maneuvers"].str.contains(
-            scripted_maneuver.replace("_", " "), case=False, na=False
+
+def filter_by_maneuver(
+    df: pd.DataFrame,
+    scripted_maneuver: Literal["walk", "sit_to_stand", "flexion_extension"],
+) -> pd.DataFrame:
+    """Filter metadata DataFrame to rows matching the scripted maneuver.
+
+    Args:
+        df: Metadata DataFrame with normalized Maneuvers column
+        scripted_maneuver: The maneuver to filter by
+
+    Returns:
+        DataFrame containing only rows for the specified maneuver
+    """
+    maneuver_search_str = scripted_maneuver.replace("_", " ")
+    return df.loc[
+        df["Maneuvers"].str.contains(
+            maneuver_search_str, case=False, na=False
         )
     ]
 
-    file_name = maneuver_metadata_df["File Name"].values[0]
 
+def extract_microphone_positions(
+    maneuver_df: pd.DataFrame,
+) -> tuple[dict, dict]:
+    """Extract microphone positions and notes from maneuver metadata.
+
+    Args:
+        maneuver_df: DataFrame containing microphone data for a maneuver
+
+    Returns:
+        Tuple of (microphones dict, microphone_notes dict)
+        where microphones maps mic_number to MicrophonePosition
+    """
     microphones = {}
     microphone_notes = {}
 
-    for _, row in maneuver_metadata_df.iterrows():
+    for _, row in maneuver_df.iterrows():
         mic_number = int(row["Microphone"])
         microphones[mic_number] = MicrophonePosition(
             patellar_position=row["Patellar Position"],
@@ -82,10 +131,88 @@ def get_acoustics_metadata(
         if pd.notna(row["Notes"]):
             microphone_notes[mic_number] = row["Notes"]
 
+    return microphones, microphone_notes
+
+
+def extract_file_name_and_notes(
+    maneuver_df: pd.DataFrame,
+) -> tuple[str, str | None]:
+    """Extract file name and notes from maneuver metadata.
+
+    Args:
+        maneuver_df: DataFrame containing metadata for a maneuver
+
+    Returns:
+        Tuple of (file_name, notes)
+    """
+    file_name = maneuver_df["File Name"].values[0]
     notes = None
 
-    if pd.notna(maneuver_metadata_df["Notes"].values[0]):
-        notes = maneuver_metadata_df["Notes"].values[0]
+    if pd.notna(maneuver_df["Notes"].values[0]):
+        notes = maneuver_df["Notes"].values[0]
+
+    return file_name, notes
+
+
+def get_acoustics_metadata(
+    metadata_file_path: str,
+    scripted_maneuver: Literal["walk", "sit_to_stand", "flexion_extension"],
+    knee: Literal["left", "right"],
+) -> AcousticsMetadata:
+    """Gets acoustics metadata for a given acoustics file legend.
+
+    Extracts the relevant metadata based on the scripted maneuver and knee
+    laterality and returns a Pydantic Model instance that validates the
+    metadata.
+
+    File legend is two Excel tables on top of one another, separated by a
+    blank row, where the first row in each table is either "R Knee" or
+    "L Knee", and the second row is divided into columns:
+        "Maneuvers": Literal["Walk (slow,medium, fast)",
+                              "Flexion - Extension", "Sit - to - Stand"]
+        "File Name": str
+        "Microphone": Literal[1, 2, 3, 4]
+        "Patellar Position": Literal["Infrapatellar", "Suprapatellar"]
+        "Laterality": Literal["Medial", "Lateral"]
+        "Notes": str
+
+    Args:
+        metadata_file_path: Path to the Excel file containing the acoustics
+                           file legend.
+        scripted_maneuver: The scripted maneuver to filter by.
+        knee: The knee laterality to filter by.
+
+    Returns:
+        AcousticsMetadata: A Pydantic model instance containing the
+                          validated acoustics metadata.
+    """
+    metadata_df = pd.read_excel(
+        metadata_file_path, sheet_name="Acoustic Notes", header=None
+    )
+
+    # Find the starting row for the desired knee's data
+    table_start_row = find_knee_table_start(metadata_df, knee)
+
+    # Extract and prepare the knee metadata table
+    knee_metadata_df = extract_knee_metadata_table(
+        metadata_df, table_start_row
+    )
+
+    # Normalize the Maneuvers column
+    knee_metadata_df = normalize_maneuver_column(knee_metadata_df)
+
+    # Filter to the specified maneuver
+    maneuver_metadata_df = filter_by_maneuver(
+        knee_metadata_df, scripted_maneuver
+    )
+
+    # Extract file name and notes
+    file_name, notes = extract_file_name_and_notes(maneuver_metadata_df)
+
+    # Extract microphone positions and notes
+    microphones, microphone_notes = extract_microphone_positions(
+        maneuver_metadata_df
+    )
 
     acoustics_metadata = AcousticsMetadata(
         scripted_maneuver=scripted_maneuver,
