@@ -6,28 +6,26 @@ from acoustic_emissions_processing.process_biomechanics import (
 )
 
 
-def test_import_biomechanics() -> None:
+def test_import_biomechanics(fake_biomechanics_excel) -> None:
     """Test importing biomechanics recordings from an Excel file.
     Every Excel file imported this way should return a list of DataFrames with the Time (sec)
     column updated to reflect the start time of the event as indicated in the event metadata sheet."""
 
-    sample_file_path = "/Users/spiewart/kae_signal_processing_ml/sample_files/AOA1011_Biomechanics_Full_Set.xlsx"
-    sample_sheet_name = "AOA1011_Slow_Walking"
-    metadata_sheet_name = "AOA1011_Walk0001"
-
     biomechanics_recordings = import_biomechanics_recordings(
-        biomechanics_file=sample_file_path,
-        data_sheet_name=sample_sheet_name,
-        event_data_sheet_name=metadata_sheet_name,
+        biomechanics_file=str(fake_biomechanics_excel["excel_path"]),
+        data_sheet_name=fake_biomechanics_excel["data_sheet"],
+        event_data_sheet_name=fake_biomechanics_excel["events_sheet"],
     )
 
-    assert len(biomechanics_recordings) == 3
+    assert len(biomechanics_recordings) == 2
 
     for recording in biomechanics_recordings:
         assert isinstance(recording, BiomechanicsCycle)
         assert recording.maneuver
-        assert recording.maneuver in ["walk", "sit_to_stand", "flexion_extension"]
-        assert recording.speed in ["slow", "normal", "fast", None]
+        maneuvers = ["walk", "sit_to_stand", "flexion_extension"]
+        assert recording.maneuver in maneuvers
+        speeds = ["slow", "normal", "fast", None]
+        assert recording.speed in speeds
         assert recording.pass_number
         assert isinstance(recording.pass_number, int)
         assert isinstance(recording.data, pd.DataFrame)
@@ -36,4 +34,5 @@ def test_import_biomechanics() -> None:
         assert "TIME" in recording.data.columns
         assert recording.data["TIME"].dtype == "m8[ns]"
         time_values = recording.data["TIME"].values
-        assert time_values[0] > pd.to_timedelta(0, unit="s")  # Start time should be >= 0 seconds
+        # Start time should be >= 0 seconds
+        assert time_values[0] > pd.to_timedelta(0, unit="s")
