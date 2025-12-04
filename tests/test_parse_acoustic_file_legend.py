@@ -1,4 +1,4 @@
-from acoustic_emissions_processing.parse_acoustic_file_legend import (
+from parse_acoustic_file_legend import (
     get_acoustics_metadata,
 )
 

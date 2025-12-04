@@ -4,7 +4,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from acoustic_emissions_processing.process_participant_directory import (
+from process_participant_directory import (
     dir_has_acoustic_file_legend,
     get_audio_file_name,
     get_study_id_from_directory,

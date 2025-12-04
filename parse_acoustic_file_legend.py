@@ -2,7 +2,7 @@ from typing import Literal
 
 import pandas as pd
 
-from acoustic_emissions_processing.models import AcousticsMetadata, MicrophonePosition
+from models import AcousticsMetadata, MicrophonePosition
 
 
 def get_acoustics_metadata(

@@ -2,11 +2,11 @@
 by QTM and Visual3D software."""
 
 from pathlib import Path
-from typing import Literal, Union
+from typing import Literal
 
 import pandas as pd
 
-from acoustic_emissions_processing.models import BiomechanicsCycle, BiomechanicsMetadata
+from models import BiomechanicsCycle, BiomechanicsMetadata
 
 
 def import_biomechanics_recordings(

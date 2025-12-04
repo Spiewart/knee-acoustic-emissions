@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, Annotated, Literal
+from typing import Annotated, Literal
 
 import pandas as pd
 from pydantic import BaseModel, field_validator
@@ -144,4 +144,3 @@ class SynchronizedCycle(AcousticsMetadata, BiomechanicsMetadata):
     """Pydantic Model for synchronized acoustics and biomechanics data."""
 
     data: SynchronizedRecording
-

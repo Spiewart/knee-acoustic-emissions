@@ -1,7 +1,7 @@
 import pandas as pd
 
-from acoustic_emissions_processing.models import BiomechanicsCycle
-from acoustic_emissions_processing.process_biomechanics import (
+from models import BiomechanicsCycle
+from process_biomechanics import (
     import_biomechanics_recordings,
 )
 

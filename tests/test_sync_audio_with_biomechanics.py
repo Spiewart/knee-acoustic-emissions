@@ -2,10 +2,10 @@
 
 import pandas as pd
 
-from acoustic_emissions_processing.process_biomechanics import (
+from process_biomechanics import (
     import_biomechanics_recordings,
 )
-from acoustic_emissions_processing.sync_audio_with_biomechanics import (
+from sync_audio_with_biomechanics import (
     get_audio_stomp_time,
     get_right_stomp_time,
     get_stomp_time,
