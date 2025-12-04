@@ -70,6 +70,11 @@ def test_end_to_end_smoke(tmp_path: Path):
 
     # Dynamically load and run the core reader module (from project root)
     project_root = Path.cwd()
+
+    # Check if the project_root is acoustic_emissions_processing
+    if (project_root / "read_audio_board_file.py").exists() is False:
+        # Move down one level to the project root
+        project_root = Path(f"{project_root}/acoustic_emissions_processing")
     reader_mod = _load_module_from_path(project_root / "read_audio_board_file.py")
     reader_mod.read_audio_board_file(str(bin_path), str(out_dir))
 
