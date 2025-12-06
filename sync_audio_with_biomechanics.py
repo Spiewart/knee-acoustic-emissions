@@ -4,7 +4,7 @@ Stomp events are identified by the first peak in the audio channels exceeding
 a threshold defined by the overall signal statistics."""
 
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Dict, Literal
+from typing import TYPE_CHECKING
 
 import pandas as pd
 

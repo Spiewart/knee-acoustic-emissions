@@ -2,9 +2,7 @@
 
 import pandas as pd
 
-from process_biomechanics import (
-    import_biomechanics_recordings,
-)
+from process_biomechanics import import_biomechanics_recordings
 from sync_audio_with_biomechanics import (
     get_audio_stomp_time,
     get_right_stomp_time,
@@ -66,11 +64,14 @@ def test_sync_audio_with_biomechanics(
     fake_biomechanics_excel, fake_audio_data
 ):
     """Test the full audio-biomechanics synchronization pipeline."""
+    from pathlib import Path
+
     # Load biomechanics data
+    excel_file = Path(fake_biomechanics_excel["excel_path"])
     biomechanics_cycles = import_biomechanics_recordings(
-        biomechanics_file=fake_biomechanics_excel["excel_path"],
-        data_sheet_name=fake_biomechanics_excel["data_sheet"],
-        event_data_sheet_name=fake_biomechanics_excel["events_sheet"],
+        biomechanics_file=excel_file,
+        maneuver="walk",
+        speed="slow",
     )
 
     audio_data = load_audio_data(fake_audio_data)
