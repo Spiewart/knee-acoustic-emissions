@@ -86,11 +86,40 @@ class AcousticsCycle(AcousticsMetadata):
 
 
 class BiomechanicsMetadata(BaseModel):
-    """Pydantic Model for biomechanics metadata associated with a recording."""
+    """Pydantic Model for biomechanics metadata associated with a recording.
+
+    Validation rules:
+    - When maneuver is "walk": pass_number is required, speed is required
+    - When maneuver is "sit_to_stand" or "flexion_extension": pass_number must be None, speed must be None
+    """
 
     maneuver: Literal["walk", "sit_to_stand", "flexion_extension"]
     speed: Literal["slow", "normal", "fast"] | None = None
-    pass_number: int
+    pass_number: int | None = None
+
+    @field_validator('speed')
+    @classmethod
+    def validate_speed_for_maneuver(cls, v: str | None, info) -> str | None:
+        """Validate speed based on maneuver type."""
+        if info.data.get('maneuver') == 'walk':
+            if v is None:
+                raise ValueError("speed is required when maneuver is 'walk'")
+        else:  # sit_to_stand or flexion_extension
+            if v is not None:
+                raise ValueError(f"speed must be None when maneuver is '{info.data.get('maneuver')}'")
+        return v
+
+    @field_validator('pass_number')
+    @classmethod
+    def validate_pass_number_for_maneuver(cls, v: int | None, info) -> int | None:
+        """Validate pass_number based on maneuver type."""
+        if info.data.get('maneuver') == 'walk':
+            if v is None:
+                raise ValueError("pass_number is required when maneuver is 'walk'")
+        else:  # sit_to_stand or flexion_extension
+            if v is not None:
+                raise ValueError(f"pass_number must be None when maneuver is '{info.data.get('maneuver')}'")
+        return v
 
 
 class BiomechanicsRecording(pd.DataFrame):

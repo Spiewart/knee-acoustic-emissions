@@ -3,12 +3,12 @@ SynchronizedCycle Pydantic models representing synchronized
 acoustics and biomechanics data with associated metadata."""
 
 import logging
-
-import pandas as pd
 from pathlib import Path
 
+import pandas as pd
 
-def parse_participant_directory(dir_path: str) -> None:
+
+def parse_participant_directories(dir_path: str) -> None:
 
     # Iterate over all the folders in the project directory
     project_dir = Path(dir_path)
@@ -21,13 +21,20 @@ def parse_participant_directory(dir_path: str) -> None:
     )
 
     for participant_dir in participant_directories:
-        study_id = get_study_id_from_directory(participant_dir)
-        logging.info("Processing participant with Study ID: %s", study_id)
+        parse_participant_directory(participant_dir)
 
-        check_participant_dir_for_required_files(participant_dir)
-        logging.info(
-            "All required files found for participant %s", study_id
-        )
+
+def parse_participant_directory(participant_dir: Path) -> None:
+    """Parses a single participant directory to validate its structure
+    and contents."""
+
+    study_id = get_study_id_from_directory(participant_dir)
+    logging.info("Processing participant with Study ID: %s", study_id)
+
+    check_participant_dir_for_required_files(participant_dir)
+    logging.info(
+        "All required files found for participant %s", study_id
+    )
 
 
 def get_study_id_from_directory(path: Path) -> str:

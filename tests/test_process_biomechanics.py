@@ -3,11 +3,16 @@ import pytest
 
 from models import BiomechanicsCycle
 from process_biomechanics import (
+    _construct_biomechanics_sheet_names,
+    _extract_maneuver_from_uid,
+    _extract_walking_pass_info,
+    _get_event_sheet_name,
     clean_uid,
     create_composite_column_names,
     extract_recording_data,
     extract_unique_ids_from_columns,
     get_biomechanics_metadata,
+    get_non_walk_start_time,
     get_walking_start_time,
     import_biomechanics_recordings,
     normalize_recording_dataframe,
@@ -21,11 +26,14 @@ def test_import_biomechanics(fake_biomechanics_excel) -> None:
     with the Time (sec) column updated to reflect the start time of the
     event as indicated in the event metadata sheet.
     """
+    from pathlib import Path
+
+    excel_file = Path(fake_biomechanics_excel["excel_path"])
 
     biomechanics_recordings = import_biomechanics_recordings(
-        biomechanics_file=str(fake_biomechanics_excel["excel_path"]),
-        data_sheet_name=fake_biomechanics_excel["data_sheet"],
-        event_data_sheet_name=fake_biomechanics_excel["events_sheet"],
+        biomechanics_file=excel_file,
+        maneuver="walk",
+        speed="slow",
     )
 
     assert len(biomechanics_recordings) == 2
@@ -216,3 +224,265 @@ def test_get_walking_start_time_not_found(fake_biomechanics_excel) -> None:
             pass_number=99,
             pass_speed="slow",
         )
+
+
+def test_get_event_sheet_name_walk() -> None:
+    """Test event sheet name generation for walk maneuver."""
+    sheet_name = _get_event_sheet_name(
+        study_id="AOA1011",
+        maneuver="walk",
+        pass_number=1,
+    )
+    assert sheet_name == "AOA1011_Walk0001"
+
+    sheet_name = _get_event_sheet_name(
+        study_id="AOA1011",
+        maneuver="walk",
+        pass_number=5,
+    )
+    assert sheet_name == "AOA1011_Walk0005"
+
+
+def test_get_event_sheet_name_sit_to_stand() -> None:
+    """Test event sheet name generation for sit-to-stand maneuver."""
+    sheet_name = _get_event_sheet_name(
+        study_id="AOA1011",
+        maneuver="sit_to_stand",
+    )
+    assert sheet_name == "AOA1011_StoS_Events"
+
+
+def test_get_event_sheet_name_flexion_extension() -> None:
+    """Test event sheet name generation for flexion-extension maneuver."""
+    sheet_name = _get_event_sheet_name(
+        study_id="AOA1011",
+        maneuver="flexion_extension",
+    )
+    assert sheet_name == "AOA1011_FE_Events"
+
+
+def test_get_event_sheet_name_walk_missing_pass_number() -> None:
+    """Test that walk maneuver requires pass_number."""
+    with pytest.raises(ValueError, match="pass_number is required"):
+        _get_event_sheet_name(
+            study_id="AOA1011",
+            maneuver="walk",
+            pass_number=None,
+        )
+
+
+def test_construct_biomechanics_sheet_names_walk() -> None:
+    """Test sheet name construction for walk maneuver."""
+    sheet_names = _construct_biomechanics_sheet_names(
+        study_id="AOA1011",
+        maneuver="walk",
+        speed="slow",
+        pass_number=1,
+    )
+    assert sheet_names["data"] == "AOA1011_Slow_Walking"
+    assert sheet_names["events"] == "AOA1011_Walk0001"
+
+    sheet_names = _construct_biomechanics_sheet_names(
+        study_id="AOA1011",
+        maneuver="walk",
+        speed="normal",
+        pass_number=2,
+    )
+    assert sheet_names["data"] == "AOA1011_Normal_Walking"
+    assert sheet_names["events"] == "AOA1011_Walk0002"
+
+    sheet_names = _construct_biomechanics_sheet_names(
+        study_id="AOA1011",
+        maneuver="walk",
+        speed="fast",
+        pass_number=1,
+    )
+    assert sheet_names["data"] == "AOA1011_Fast_Walking"
+    assert sheet_names["events"] == "AOA1011_Walk0001"
+
+
+def test_construct_biomechanics_sheet_names_sit_to_stand() -> None:
+    """Test sheet name construction for sit-to-stand maneuver."""
+    sheet_names = _construct_biomechanics_sheet_names(
+        study_id="AOA1011",
+        maneuver="sit_to_stand",
+        speed=None,
+    )
+    assert sheet_names["data"] == "AOA1011_SitToStand"
+    assert sheet_names["events"] == "AOA1011_StoS_Events"
+
+
+def test_construct_biomechanics_sheet_names_flexion_extension() -> None:
+    """Test sheet name construction for flexion-extension maneuver."""
+    sheet_names = _construct_biomechanics_sheet_names(
+        study_id="AOA1011",
+        maneuver="flexion_extension",
+        speed=None,
+    )
+    assert sheet_names["data"] == "AOA1011_FlexExt"
+    assert sheet_names["events"] == "AOA1011_FE_Events"
+
+
+def test_construct_biomechanics_sheet_names_walk_missing_speed() -> None:
+    """Test that walk maneuver requires speed."""
+    with pytest.raises(ValueError, match="speed is required"):
+        _construct_biomechanics_sheet_names(
+            study_id="AOA1011",
+            maneuver="walk",
+            speed=None,
+        )
+
+
+def test_extract_walking_pass_info_slow() -> None:
+    """Test extracting pass number and speed from UID."""
+    pass_number, speed = _extract_walking_pass_info(
+        "Study123_Walk0001_SSP1_Filt"
+    )
+    assert pass_number == 1
+    assert speed == "slow"
+
+
+def test_extract_walking_pass_info_normal() -> None:
+    """Test extracting normal speed pass info."""
+    pass_number, speed = _extract_walking_pass_info(
+        "Study123_Walk0001_NSP2_Filt"
+    )
+    assert pass_number == 2
+    assert speed == "normal"
+
+
+def test_extract_walking_pass_info_fast() -> None:
+    """Test extracting fast speed pass info."""
+    pass_number, speed = _extract_walking_pass_info(
+        "Study123_Walk0001_FSP3_Filt"
+    )
+    assert pass_number == 3
+    assert speed == "fast"
+
+
+def test_extract_walking_pass_info_invalid_speed() -> None:
+    """Test that invalid speed code raises ValueError."""
+    with pytest.raises(ValueError, match="Unknown speed code"):
+        _extract_walking_pass_info(
+            "Study123_Walk0001_XSP1_Filt"
+        )
+
+
+def test_extract_maneuver_from_uid_walk() -> None:
+    """Test extracting walk maneuver from UID."""
+    maneuver = _extract_maneuver_from_uid(
+        "Study123_Walk0001_NSP1_Filt"
+    )
+    assert maneuver == "walk"
+
+
+def test_extract_maneuver_from_uid_sit_to_stand() -> None:
+    """Test extracting sit-to-stand maneuver from UID."""
+    maneuver = _extract_maneuver_from_uid(
+        "Study123_SitToStand0001_Filt"
+    )
+    assert maneuver == "sit_to_stand"
+
+
+def test_extract_maneuver_from_uid_flexion_extension() -> None:
+    """Test extracting flexion-extension maneuver from UID."""
+    maneuver = _extract_maneuver_from_uid(
+        "Study123_FlexExt0001_Filt"
+    )
+    assert maneuver == "flexion_extension"
+
+
+def test_extract_maneuver_from_uid_invalid() -> None:
+    """Test that invalid maneuver raises ValueError."""
+    with pytest.raises(ValueError, match="Unknown maneuver"):
+        _extract_maneuver_from_uid(
+            "Study123_Invalid0001_Filt"
+        )
+
+
+def test_get_non_walk_start_time_sit_to_stand(fake_biomechanics_excel) -> None:
+    """Test retrieving sit-to-stand start time from event data."""
+    events_df = pd.read_excel(
+        fake_biomechanics_excel["excel_path"],
+        sheet_name=fake_biomechanics_excel["events_sheets"]["sit_to_stand"],
+    )
+
+    start_time = get_non_walk_start_time(
+        event_data_df=events_df,
+        maneuver="sit_to_stand",
+    )
+
+    # Should be 5.0 seconds (from fixture)
+    assert start_time == pd.to_timedelta(5.0, "s")
+
+
+def test_get_non_walk_start_time_flexion_extension(
+    fake_biomechanics_excel,
+) -> None:
+    """Test retrieving flexion-extension start time from event data."""
+    events_df = pd.read_excel(
+        fake_biomechanics_excel["excel_path"],
+        sheet_name=(
+            fake_biomechanics_excel["events_sheets"]["flexion_extension"]
+        ),
+    )
+
+    start_time = get_non_walk_start_time(
+        event_data_df=events_df,
+        maneuver="flexion_extension",
+    )
+
+    # Should be 2.0 seconds (from fixture)
+    assert start_time == pd.to_timedelta(2.0, "s")
+
+
+def test_import_biomechanics_sit_to_stand(fake_biomechanics_excel) -> None:
+    """Test importing sit-to-stand biomechanics recordings."""
+    from pathlib import Path
+
+    excel_file = Path(fake_biomechanics_excel["excel_path"])
+
+    biomechanics_recordings = import_biomechanics_recordings(
+        biomechanics_file=excel_file,
+        maneuver="sit_to_stand",
+        speed=None,
+    )
+
+    # Should have exactly one recording for sit-to-stand
+    assert len(biomechanics_recordings) == 1
+
+    recording = biomechanics_recordings[0]
+    assert isinstance(recording, BiomechanicsCycle)
+    assert recording.maneuver == "sit_to_stand"
+    assert recording.speed is None
+    assert recording.pass_number is None
+    assert isinstance(recording.data, pd.DataFrame)
+    assert not recording.data.empty
+    assert "TIME" in recording.data.columns
+
+
+def test_import_biomechanics_flexion_extension(
+    fake_biomechanics_excel,
+) -> None:
+    """Test importing flexion-extension biomechanics recordings."""
+    from pathlib import Path
+
+    excel_file = Path(fake_biomechanics_excel["excel_path"])
+
+    biomechanics_recordings = import_biomechanics_recordings(
+        biomechanics_file=excel_file,
+        maneuver="flexion_extension",
+        speed=None,
+    )
+
+    # Should have exactly one recording for flexion-extension
+    assert len(biomechanics_recordings) == 1
+
+    recording = biomechanics_recordings[0]
+    assert isinstance(recording, BiomechanicsCycle)
+    assert recording.maneuver == "flexion_extension"
+    assert recording.speed is None
+    assert recording.pass_number is None
+    assert isinstance(recording.data, pd.DataFrame)
+    assert not recording.data.empty
+    assert "TIME" in recording.data.columns

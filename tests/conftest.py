@@ -119,20 +119,78 @@ def sample_acoustic_legend_file(tmp_path):
 def fake_biomechanics_excel(tmp_path):
     """Create a fake biomechanics Excel file for testing.
 
-    This fixture generates an Excel file with two sheets:
-    - Data sheet: Contains biomechanics data in V3D format with walking cycle data
-    - Events sheet: Contains timing information for walking events
+    This fixture generates an Excel file with sheets for walk, sit-to-stand,
+    and flexion-extension maneuvers with their corresponding event sheets.
+
+    Sheet naming convention:
+    - Walk: AOAXXXX_Speed_Walking (with events: AOAXXXX_Walk{PassNumber})
+    - Sit-to-stand: AOAXXXX_SitToStand (with events: AOAXXXX_StoS_Events)
+    - Flexion-extension: AOAXXXX_FlexExt (with events: AOAXXXX_FE_Events)
 
     Returns a dict with keys:
     - excel_path: Path to the Excel file
-    - data_sheet: Name of the data sheet
-    - events_sheet: Name of the events sheet
-    - events_data: List of event dictionaries
+    - data_sheets: Dict of data sheet names by maneuver
+    - events_sheets: Dict of event sheet names by maneuver
     """
-    excel_path = tmp_path / "test_biomechanics.xlsx"
+    # Use a filename that matches the study ID pattern
+    # The first 7 characters should be the study ID
+    excel_path = tmp_path / "AOA1011_Biomechanics_Full_Set.xlsx"
 
-    # Create event data
-    events_data = [
+    study_id = "AOA1011"
+    time_points = np.linspace(0, 10, 100)
+
+    # Create biomechanics data for walk maneuver (separate DataFrame)
+    walk_data_dict = {}
+    for pass_num in [1, 2]:
+        uid_base = f"V3D\\{study_id}_Walk0001_SSP{pass_num}_Filt.c3d"
+        walk_data_dict[f"{uid_base}"] = (
+            ["Frame", ""] + time_points.tolist()
+        )
+        walk_data_dict[f"{uid_base}.1"] = (
+            ["LAnkleAngles", "X"]
+            + (np.sin(time_points + pass_num) * 10).tolist()
+        )
+        walk_data_dict[f"{uid_base}.2"] = (
+            ["LAnkleAngles", "Y"]
+            + (np.cos(time_points + pass_num) * 5).tolist()
+        )
+
+    walk_df = pd.DataFrame(walk_data_dict)
+
+    # Create biomechanics data for sit-to-stand (separate DataFrame)
+    sts_data_dict = {}
+    uid_base_sts = f"V3D\\{study_id}_SitToStand0001_Filt.c3d"
+    sts_data_dict[f"{uid_base_sts}"] = (
+        ["Frame", ""] + time_points.tolist()
+    )
+    sts_data_dict[f"{uid_base_sts}.1"] = (
+        ["LKneeAngles", "X"]
+        + (np.sin(time_points) * 15).tolist()
+    )
+    sts_data_dict[f"{uid_base_sts}.2"] = (
+        ["RKneeAngles", "X"]
+        + (np.cos(time_points) * 15).tolist()
+    )
+    sts_df = pd.DataFrame(sts_data_dict)
+
+    # Create biomechanics data for flexion-extension (separate DataFrame)
+    fe_data_dict = {}
+    uid_base_fe = f"V3D\\{study_id}_FlexExt0001_Filt.c3d"
+    fe_data_dict[f"{uid_base_fe}"] = (
+        ["Frame", ""] + time_points.tolist()
+    )
+    fe_data_dict[f"{uid_base_fe}.1"] = (
+        ["LKneeAngles", "X"]
+        + (np.sin(time_points * 2) * 10).tolist()
+    )
+    fe_data_dict[f"{uid_base_fe}.2"] = (
+        ["RKneeAngles", "X"]
+        + (np.cos(time_points * 2) * 10).tolist()
+    )
+    fe_df = pd.DataFrame(fe_data_dict)
+
+    # Create walking events
+    walking_events_data = [
         {"Event Info": "Sync Left", "Time (sec)": 16.23},
         {"Event Info": "Sync Right", "Time (sec)": 17.48},
         {"Event Info": "Slow Speed Start", "Time (sec)": 18.80},
@@ -147,67 +205,78 @@ def fake_biomechanics_excel(tmp_path):
         {"Event Info": "NS Pass 2 Start", "Time (sec)": 144.13},
         {"Event Info": "NS Pass 2 End", "Time (sec)": 148.94},
         {"Event Info": "Normal Speed End", "Time (sec)": 408.44},
-        {"Event Info": "Fast Speed Start", "Time (sec)": 438.97},
-        {"Event Info": "FS Pass 1 Start", "Time (sec)": 439.88},
-        {"Event Info": "FS Pass 1 End", "Time (sec)": 443.73},
-        {"Event Info": "FS Pass 2 Start", "Time (sec)": 445.75},
-        {"Event Info": "FS Pass 2 End", "Time (sec)": 449.72},
-        {"Event Info": "Fast Speed End", "Time (sec)": 596.48},
     ]
-    events_df = pd.DataFrame(events_data)
+    walking_events_df = pd.DataFrame(walking_events_data)
 
-    # Create biomechanics data sheet with proper V3D column structure
-    study_id = "AOA1011"
-    time_points = np.linspace(0, 10, 100)
+    # Create sit-to-stand events
+    sts_events_data = [
+        {"Event Info": "Movement Start", "Time (sec)": 5.0},
+        {"Event Info": "Movement End", "Time (sec)": 8.5},
+    ]
+    sts_events_df = pd.DataFrame(sts_events_data)
 
-    # Create columns in V3D format that match what process_biomechanics
-    # expects. Columns must be named with "V3D\" prefix and unique IDs
-    data_dict = {}
+    # Create flexion-extension events
+    fe_events_data = [
+        {"Event Info": "Movement Start", "Time (sec)": 2.0},
+        {"Event Info": "Movement End", "Time (sec)": 9.0},
+    ]
+    fe_events_df = pd.DataFrame(fe_events_data)
 
-    # Create two recording passes
-    for pass_num in [1, 2]:
-        # Create uid in format: V3D\Study_Walk0001_SSP#_Filt.c3d
-        uid_base = f"V3D\\{study_id}_Walk0001_SSP{pass_num}_Filt.c3d"
-
-        # Frame column - each column name uses the uid as a prefix
-        data_dict[f"{uid_base}"] = (
-            ["Frame", ""]
-            + time_points.tolist()
-        )
-        # Angle columns
-        data_dict[f"{uid_base}.1"] = (
-            ["LAnkleAngles", "X"]
-            + (np.sin(time_points + pass_num) * 10).tolist()
-        )
-        data_dict[f"{uid_base}.2"] = (
-            ["LAnkleAngles", "Y"]
-            + (np.cos(time_points + pass_num) * 5).tolist()
-        )
-        data_dict[f"{uid_base}.3"] = (
-            ["RAnkleAngles", "X"]
-            + (np.sin(time_points + pass_num + 1) * 10).tolist()
-        )
-
-    biomechanics_df = pd.DataFrame(data_dict)
-
-    # Write to Excel
+    # Write all sheets to Excel
     with pd.ExcelWriter(excel_path, engine='openpyxl') as writer:
-        biomechanics_df.to_excel(
+        # Walk sheets
+        walk_df.to_excel(
             writer,
             sheet_name=f"{study_id}_Slow_Walking",
             index=False,
         )
-        events_df.to_excel(
+        walking_events_df.to_excel(
             writer,
             sheet_name=f"{study_id}_Walk0001",
             index=False,
         )
 
+        # Sit-to-stand sheets
+        sts_df.to_excel(
+            writer,
+            sheet_name=f"{study_id}_SitToStand",
+            index=False,
+        )
+        sts_events_df.to_excel(
+            writer,
+            sheet_name=f"{study_id}_StoS_Events",
+            index=False,
+        )
+
+        # Flexion-extension sheets
+        fe_df.to_excel(
+            writer,
+            sheet_name=f"{study_id}_FlexExt",
+            index=False,
+        )
+        fe_events_df.to_excel(
+            writer,
+            sheet_name=f"{study_id}_FE_Events",
+            index=False,
+        )
+
     return {
         "excel_path": excel_path,
+        # New dictionary format for all maneuvers
+        "data_sheets": {
+            "walk": f"{study_id}_Slow_Walking",
+            "sit_to_stand": f"{study_id}_SitToStand",
+            "flexion_extension": f"{study_id}_FlexExt",
+        },
+        "events_sheets": {
+            "walk": f"{study_id}_Walk0001",
+            "sit_to_stand": f"{study_id}_StoS_Events",
+            "flexion_extension": f"{study_id}_FE_Events",
+        },
+        # Legacy keys for backward compatibility with existing tests
         "data_sheet": f"{study_id}_Slow_Walking",
         "events_sheet": f"{study_id}_Walk0001",
-        "events_data": events_data,
+        "events_data": walking_events_data,
     }
 
 

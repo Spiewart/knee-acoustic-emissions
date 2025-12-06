@@ -5,14 +5,10 @@ import pandas as pd
 import pytest
 
 from process_participant_directory import (
-    dir_has_acoustic_file_legend,
-    get_audio_file_name,
-    get_study_id_from_directory,
-    knee_folder_has_subfolder_each_maneuver,
-    knee_subfolder_has_acoustic_files,
-    motion_capture_folder_has_required_data,
-    parse_participant_directory,
-)
+    dir_has_acoustic_file_legend, get_audio_file_name,
+    get_study_id_from_directory, knee_folder_has_subfolder_each_maneuver,
+    knee_subfolder_has_acoustic_files, motion_capture_folder_has_required_data,
+    parse_participant_directories)
 
 
 @pytest.fixture
@@ -93,9 +89,9 @@ def sample_participant_dir(tmp_path_factory):
     return project_dir
 
 
-def test_parse_participant_directory(sample_participant_dir):
-    """Test parse_participant_directory with valid structure."""
-    parse_participant_directory(str(sample_participant_dir))
+def test_parse_participant_directories(sample_participant_dir):
+    """Test parse_participant_directories with valid structure."""
+    parse_participant_directories(str(sample_participant_dir))
 
 
 def test_get_study_id_from_directory(sample_participant_dir):
