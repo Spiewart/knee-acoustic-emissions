@@ -136,7 +136,9 @@ def test_knee_subfolder_has_acoustic_files_no_pkl(tmp_path):
     with pytest.raises(FileNotFoundError) as exc_info:
         knee_subfolder_has_acoustic_files(maneuver_dir)
 
+    # Error should mention the _with_freq pickle file
     assert "Processed audio .pkl file" in str(exc_info.value)
+    assert "test_audio_with_freq.pkl" in str(exc_info.value)
 
 
 def test_knee_subfolder_has_acoustic_files_no_outputs_dir(tmp_path):

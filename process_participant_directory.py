@@ -179,11 +179,13 @@ def _sync_maneuver_data(
     synced_data: list[tuple[Path, pd.DataFrame]] = []
 
     # Get audio file name
-    audio_file_name = get_audio_file_name(maneuver_dir, with_freq=with_freq)
+    audio_file_name = get_audio_file_name(maneuver_dir, with_freq=False)
     audio_base = Path(audio_file_name).name
+    pickle_file_name = get_audio_file_name(maneuver_dir, with_freq=with_freq)
+    pickle_base = Path(pickle_file_name).name
     audio_pkl_file = (
         maneuver_dir / f"{audio_base}_outputs" /
-        f"{audio_base}.pkl"
+        f"{pickle_base}.pkl"
     )
 
     if not audio_pkl_file.exists():
@@ -342,8 +344,6 @@ def _sync_and_save_recording(
     event_meta_data = _load_event_data(
         biomechanics_file=biomechanics_file,
         maneuver_key=maneuver_key,
-        pass_number=pass_number,
-        speed=speed,
     )
 
     bio_stomp_time = get_stomp_time(
@@ -548,7 +548,8 @@ def knee_subfolder_has_acoustic_files(
     """Checks that the maneuver directory contains acoustic files."""
 
     try:
-        audio_file_name = get_audio_file_name(maneuver_dir, with_freq=True)
+        # Validate that a .bin file exists (raises FileNotFoundError if not)
+        audio_file_name = get_audio_file_name(maneuver_dir, with_freq=False)
     except FileNotFoundError as e:
         logging.error(
             "Error checking for acoustic files in %s: %s",
@@ -557,15 +558,21 @@ def knee_subfolder_has_acoustic_files(
         )
         raise e
 
+    # Get the pickle file name with "with_freq" appended
+    pickle_file_name = get_audio_file_name(maneuver_dir, with_freq=True)
+
     audio_base = Path(audio_file_name).name
+    pickle_base = Path(pickle_file_name).name
+
+    # Outputs directory based on audio file name (without _with_freq)
     processed_audio_outputs = Path(
         maneuver_dir / f"{audio_base}_outputs"
     )
 
-    # Assert that there is a pickled DataFrame with the same name as the audio
-    # file but with "with_freq" appended to it and a .pkl extension in the
+    # Assert that there is a pickled DataFrame with the pickle file name
+    # (which has "with_freq" appended) and a .pkl extension in the
     # processed_audio_outputs directory
-    pkl_file = processed_audio_outputs / f"{audio_base}.pkl"
+    pkl_file = processed_audio_outputs / f"{pickle_base}.pkl"
     if not pkl_file.exists():
         raise FileNotFoundError(
             f"Processed audio .pkl file '{pkl_file}' "
