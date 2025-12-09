@@ -139,30 +139,31 @@ def normalize_recording_dataframe(
 def _get_event_sheet_name(
     study_id: str,
     maneuver: Literal["walk", "sit_to_stand", "flexion_extension"],
+    speed: Literal["slow", "medium", "fast"] | None = None,
     pass_number: int | None = None,
 ) -> str:
     """Get the event sheet name based on maneuver type.
 
     Sheet naming convention:
-    - Walk: AOAXXXX_Walk{PassNumber} (e.g., AOA1011_Walk0001)
+    - Walk: AOAXXXX_Walk0001 (pass metadata with sync events, not speed-specific)
     - Sit-to-stand: AOAXXXX_StoS_Events
     - Flexion-extension: AOAXXXX_FE_Events
 
     Args:
         study_id: Study identifier (e.g., "AOA1011")
         maneuver: Type of maneuver
-        pass_number: Pass number (required for walk maneuvers)
+        speed: Speed level (unused for walk, ignored)
+        pass_number: Pass number (unused, kept for compatibility)
 
     Returns:
         Event sheet name
 
     Raises:
-        ValueError: If pass_number is None for walk maneuver
+        ValueError: If walk maneuver cannot resolve sheet name
     """
     if maneuver == "walk":
-        if pass_number is None:
-            raise ValueError("pass_number is required for walk maneuver")
-        return f"{study_id}_Walk{pass_number:04d}"
+        # Walk0001 is the shared pass-metadata/sync sheet for all speeds
+        return f"{study_id}_Walk0001"
     elif maneuver == "sit_to_stand":
         return f"{study_id}_StoS_Events"
     elif maneuver == "flexion_extension":
@@ -174,13 +175,13 @@ def _get_event_sheet_name(
 def _construct_biomechanics_sheet_names(
     study_id: str,
     maneuver: Literal["walk", "sit_to_stand", "flexion_extension"],
-    speed: Literal["slow", "normal", "fast"] | None,
+    speed: Literal["slow", "medium", "fast"] | None,
     pass_number: int | None = None,
 ) -> dict[str, str]:
     """Construct Excel sheet names based on study ID, maneuver, speed.
 
     Sheet naming convention:
-    - Walk: AOAXXXX_Speed_Walking (Speed is Slow, Normal, or Fast)
+    - Walk: AOAXXXX_Speed_Walking (Speed is Slow, Medium, or Fast)
     - Sit-to-stand: AOAXXXX_SitToStand
     - Flexion-extension: AOAXXXX_FlexExt
     - Events sheet: Depends on maneuver (see _get_event_sheet_name)
@@ -189,7 +190,7 @@ def _construct_biomechanics_sheet_names(
         study_id: Study identifier (e.g., "AOA1011")
         maneuver: Type of maneuver
         speed: Speed level (required for walk, ignored for others)
-        pass_number: Pass number (required for walk event sheet name)
+        pass_number: Pass number (kept for compatibility, unused)
 
     Returns:
         Dictionary with "data" and "events" sheet names
@@ -203,7 +204,7 @@ def _construct_biomechanics_sheet_names(
 
         speed_map = {
             "slow": "Slow",
-            "normal": "Normal",
+            "medium": "Medium",
             "fast": "Fast",
         }
         speed_capitalized = speed_map[speed]
@@ -216,12 +217,37 @@ def _construct_biomechanics_sheet_names(
         raise ValueError(f"Unknown maneuver: {maneuver}")
 
     # Get the appropriate events sheet name based on maneuver
-    events_sheet = _get_event_sheet_name(study_id, maneuver, pass_number)
+    events_sheet = _get_event_sheet_name(
+        study_id, maneuver, speed, pass_number
+    )
 
     return {
         "data": data_sheet,
         "events": events_sheet,
     }
+
+
+def _extract_stomp_time(
+    event_df: pd.DataFrame,
+    event_name: str,
+) -> float:
+    """Extract stomp time for a specific sync event.
+
+    Args:
+        event_df: DataFrame with "Event Info" and "Time (sec)" columns
+        event_name: Name of the sync event (e.g., "Sync Left", "Sync Right")
+
+    Returns:
+        Time in seconds for the sync event
+
+    Raises:
+        ValueError: If event not found in DataFrame
+    """
+    event_row = event_df[event_df["Event Info"] == event_name]
+    if event_row.empty:
+        raise ValueError(f"Event '{event_name}' not found in event data")
+
+    return float(event_row["Time (sec)"].iloc[0])
 
 
 def import_biomechanics_recordings(
@@ -264,20 +290,35 @@ def import_biomechanics_recordings(
     # Extract study ID from file name (first 7 characters, e.g., "AOA1011")
     study_id = bio_file.stem[:7]
 
-    # Read all sheets to get data for pass_number extraction
-    all_sheets = pd.read_excel(bio_file, sheet_name=None)
-    first_sheet_name = list(all_sheets.keys())[0]
-    bio_df = all_sheets[first_sheet_name]
-
-    # Get unique IDs to extract pass_number for walk maneuvers
+    # For walk maneuvers, read the speed-specific sheet first to extract
+    # pass_number from UID columns
     pass_number: int | None = None
     if maneuver == "walk":
-        unique_ids_raw = extract_unique_ids_from_columns(bio_df)
-        if unique_ids_raw:
-            pass_number, _ = _extract_walking_pass_info(clean_uid(unique_ids_raw[0]))
+        if speed is None:
+            raise ValueError("speed is required for walk maneuvers")
+        # Construct speed sheet name to read UIDs from
+        speed_capitalized = speed.capitalize()
+        speed_sheet_name = f"{study_id}_{speed_capitalized}_Walking"
+        try:
+            speed_df = pd.read_excel(bio_file, sheet_name=speed_sheet_name)
+            unique_ids_raw = extract_unique_ids_from_columns(speed_df)
+            if not unique_ids_raw:
+                raise ValueError(
+                    f"No valid recording columns found in sheet "
+                    f"'{speed_sheet_name}' for {speed} walk maneuver"
+                )
+            pass_number, _ = _extract_walking_pass_info(
+                clean_uid(unique_ids_raw[0])
+            )
+        except ValueError as e:
+            raise ValueError(
+                f"Failed to extract pass_number for {speed} walking: {e}"
+            )
 
     # Construct sheet name based on maneuver type
-    sheet_names = _construct_biomechanics_sheet_names(study_id, maneuver, speed, pass_number)
+    sheet_names = _construct_biomechanics_sheet_names(
+        study_id, maneuver, speed, pass_number
+    )
     data_sheet_name = sheet_names["data"]
     event_sheet_name = sheet_names["events"]
 
@@ -297,9 +338,13 @@ def import_biomechanics_recordings(
 
         # Get the start time based on maneuver type
         if maneuver == "walk":
-            # For walk maneuvers, speed and pass_number are guaranteed to be non-None
-            assert metadata.pass_number is not None, "pass_number must not be None for walk maneuver"
-            assert metadata.speed is not None, "speed must not be None for walk maneuver"
+            # For walk maneuvers, speed and pass_number are guaranteed non-None
+            assert metadata.pass_number is not None, (
+                "pass_number must not be None for walk maneuver"
+            )
+            assert metadata.speed is not None, (
+                "speed must not be None for walk maneuver"
+            )
             start_time = get_walking_start_time(
                 event_data_df=event_data_df,
                 pass_number=metadata.pass_number,
@@ -315,16 +360,30 @@ def import_biomechanics_recordings(
         recording_df = extract_recording_data(bio_df, uid_clean)
         recording_df = normalize_recording_dataframe(recording_df, start_time)
 
-        recordings.append(BiomechanicsCycle(
-            maneuver=metadata.maneuver,
-            speed=metadata.speed,
-            pass_number=metadata.pass_number,
-            data=recording_df.copy(),
-        ))
+        # Extract sync times for walk maneuvers
+        sync_left_time = sync_right_time = None
+        if maneuver == "walk":
+            sync_left_time = _extract_stomp_time(event_data_df, "Sync Left")
+            sync_right_time = _extract_stomp_time(event_data_df, "Sync Right")
 
-    # If the maneuver is "walk" or "sit_to_stand", there should be only one recording
-    # If the maneuver is "walk", there should be one or more recordings (i.e. 1 or more passes)
-    if maneuver in ["sit_to_stand", "flexion_extension"] and len(recordings) != 1:
+        recordings.append(
+            BiomechanicsCycle(
+                maneuver=metadata.maneuver,
+                speed=metadata.speed,
+                pass_number=metadata.pass_number,
+                sync_left_time=sync_left_time,
+                sync_right_time=sync_right_time,
+                pass_metadata=event_data_df if maneuver == "walk" else None,
+                data=recording_df,  # type: ignore[arg-type]
+            )
+        )
+
+    # Flexion-Extension and Sit-to-Stand maneuvers should have only one recording
+    # Walking should have one or more recordings (i.e. 1 or more passes)
+    if (
+        maneuver in ["sit_to_stand", "flexion_extension"]
+        and len(recordings) != 1
+    ):
         raise ValueError(
             f"Expected exactly one recording for maneuver '{maneuver}', "
             f"but found {len(recordings)}"
@@ -359,6 +418,7 @@ def _extract_maneuver_from_uid(uid: str) -> Literal["walk", "sit_to_stand", "fle
     maneuver_map: dict[str, Literal["walk", "sit_to_stand", "flexion_extension"]] = {
         "walk": "walk",
         "sittostand": "sit_to_stand",
+        "sitstand": "sit_to_stand",  # Common abbreviation
         "flexext": "flexion_extension",
     }
 

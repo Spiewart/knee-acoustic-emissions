@@ -12,11 +12,13 @@ from sync_audio_with_biomechanics import (
 )
 
 
-def test_get_stomp_time(fake_biomechanics_excel):
+def test_get_stomp_time(fake_participant_directory):
     """Test the get_stomp_time function for both feet."""
 
     # Create a DataFrame from the fake biomechanics events
-    events_data = fake_biomechanics_excel["events_data"]
+    events_data = fake_participant_directory["biomechanics"][
+        "events_data"
+    ]
     bio_meta = pd.DataFrame(events_data)
 
     # Test left foot stomp time
@@ -36,16 +38,22 @@ def test_get_stomp_time(fake_biomechanics_excel):
     )
 
 
-def test_load_audio_data(fake_audio_data):
+def test_load_audio_data(fake_participant_directory):
     """Test loading audio data from pickle file."""
-    audio_data = load_audio_data(fake_audio_data)
+    audio_path = fake_participant_directory["audio_paths"]["left"][
+        "Walking"
+    ]
+    audio_data = load_audio_data(audio_path)
 
     assert not audio_data.empty, "Loaded audio data is empty."
 
 
-def test_get_audio_stomp_time(fake_audio_data):
+def test_get_audio_stomp_time(fake_participant_directory):
     """Test getting stomp time from audio data."""
-    audio_data = load_audio_data(fake_audio_data)
+    audio_path = fake_participant_directory["audio_paths"]["left"][
+        "Walking"
+    ]
+    audio_data = load_audio_data(audio_path)
 
     stomp_time = get_audio_stomp_time(audio_data)
 
@@ -60,23 +68,24 @@ def test_get_audio_stomp_time(fake_audio_data):
     )
 
 
-def test_sync_audio_with_biomechanics(
-    fake_biomechanics_excel, fake_audio_data
-):
+def test_sync_audio_with_biomechanics(fake_participant_directory):
     """Test the full audio-biomechanics synchronization pipeline."""
     from pathlib import Path
 
     # Load biomechanics data
-    excel_file = Path(fake_biomechanics_excel["excel_path"])
+    excel_file = Path(fake_participant_directory["biomechanics"]["excel_path"])
     biomechanics_cycles = import_biomechanics_recordings(
         biomechanics_file=excel_file,
         maneuver="walk",
         speed="slow",
     )
 
-    audio_data = load_audio_data(fake_audio_data)
+    audio_path = fake_participant_directory["audio_paths"]["left"][
+        "Walking"
+    ]
+    audio_data = load_audio_data(audio_path)
 
-    bio_meta = fake_biomechanics_excel["events_data"]
+    bio_meta = fake_participant_directory["biomechanics"]["events_data"]
 
     audio_stomp_time = get_audio_stomp_time(audio_data)
     bio_right_stomp_time = get_right_stomp_time(pd.DataFrame(bio_meta))

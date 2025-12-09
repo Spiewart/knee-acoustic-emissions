@@ -1,109 +1,36 @@
+import logging
 import shutil
 from pathlib import Path
+from unittest.mock import patch
 
 import pandas as pd
 import pytest
 
 from process_participant_directory import (
-    dir_has_acoustic_file_legend, get_audio_file_name,
-    get_study_id_from_directory, knee_folder_has_subfolder_each_maneuver,
-    knee_subfolder_has_acoustic_files, motion_capture_folder_has_required_data,
-    parse_participant_directories)
+    _generate_synced_filename,
+    _load_event_data,
+    dir_has_acoustic_file_legend,
+    find_participant_directories,
+    get_audio_file_name,
+    get_study_id_from_directory,
+    knee_folder_has_subfolder_each_maneuver,
+    knee_subfolder_has_acoustic_files,
+    motion_capture_folder_has_required_data,
+    process_participant,
+    setup_logging,
+)
 
 
-@pytest.fixture
-def sample_participant_dir(tmp_path_factory):
-    """Create a complete sample participant directory structure for testing."""
-    project_dir = tmp_path_factory.mktemp("project")
-    participant_dir = project_dir / "#1011"
-    participant_dir.mkdir()
-
-    # Create acoustic file legend
-    legend_file = participant_dir / "acoustic_file_legend.xlsx"
-    legend_file.touch()
-
-    # Create top-level folders
-    left_knee_dir = participant_dir / "Left Knee"
-    right_knee_dir = participant_dir / "Right Knee"
-    motion_capture_dir = participant_dir / "Motion Capture"
-    motion_capture_dir.mkdir()
-
-    # Create maneuver folders and files for both knees
-    for knee_dir in [left_knee_dir, right_knee_dir]:
-        for maneuver in ["Flexion-Extension", "Sit-Stand", "Walking"]:
-            maneuver_dir = knee_dir / maneuver
-            maneuver_dir.mkdir(parents=True)
-
-            # Create .bin file
-            bin_file = maneuver_dir / "test_audio.bin"
-            bin_file.touch()
-
-            # Create outputs directory and .pkl file
-            audio_file_path = str(bin_file.with_suffix(""))
-            outputs_dir = Path(audio_file_path + "_outputs")
-            outputs_dir.mkdir()
-            pkl_file = outputs_dir / (audio_file_path + ".pkl")
-            pkl_file.parent.mkdir(parents=True, exist_ok=True)
-            pkl_file.touch()
-
-    # Create motion capture Excel file with required sheets
-    study_id = "1011"
-    excel_filename = f"AOA{study_id}_Biomechanics_Full_Set.xlsx"
-    excel_file_path = motion_capture_dir / excel_filename
-
-    # Create Excel file with all required sheets
-    with pd.ExcelWriter(excel_file_path, engine='openpyxl') as writer:
-        # Create empty DataFrames for each required sheet
-        empty_df = pd.DataFrame()
-
-        # Walking sheets (with speeds)
-        empty_df.to_excel(
-            writer, sheet_name=f"AOA{study_id}_Walking_Events", index=False
-        )
-        empty_df.to_excel(
-            writer, sheet_name=f"AOA{study_id}_Slow_Walking", index=False
-        )
-        empty_df.to_excel(
-            writer, sheet_name=f"AOA{study_id}_Medium_Walking", index=False
-        )
-        empty_df.to_excel(
-            writer, sheet_name=f"AOA{study_id}_Fast_Walking", index=False
-        )
-
-        # Sit-to-Stand sheets
-        empty_df.to_excel(
-            writer, sheet_name=f"AOA{study_id}_StoS_Events", index=False
-        )
-        empty_df.to_excel(
-            writer, sheet_name=f"AOA{study_id}_StoS", index=False
-        )
-
-        # Flexion-Extension sheets
-        empty_df.to_excel(
-            writer, sheet_name=f"AOA{study_id}_FE_Events", index=False
-        )
-        empty_df.to_excel(
-            writer, sheet_name=f"AOA{study_id}_FE", index=False
-        )
-
-    return project_dir
-
-
-def test_parse_participant_directories(sample_participant_dir):
-    """Test parse_participant_directories with valid structure."""
-    parse_participant_directories(str(sample_participant_dir))
-
-
-def test_get_study_id_from_directory(sample_participant_dir):
-    participant_dir = sample_participant_dir / "#1011"
+def test_get_study_id_from_directory(fake_participant_directory):
+    participant_dir = fake_participant_directory["participant_dir"]
 
     study_id = get_study_id_from_directory(participant_dir)
 
     assert study_id == "1011"
 
 
-def test_dir_has_acoustic_file_legend(sample_participant_dir, tmp_path):
-    participant_dir = sample_participant_dir / "#1011"
+def test_dir_has_acoustic_file_legend(fake_participant_directory, tmp_path):
+    participant_dir = fake_participant_directory["participant_dir"]
 
     dir_has_acoustic_file_legend(participant_dir)
 
@@ -115,9 +42,9 @@ def test_dir_has_acoustic_file_legend(sample_participant_dir, tmp_path):
         dir_has_acoustic_file_legend(empty_participant_dir)
 
 
-def test_knee_folder_has_subfolder_each_maneuver(sample_participant_dir):
+def test_knee_folder_has_subfolder_each_maneuver(fake_participant_directory):
     """Test knee_folder_has_subfolder_each_maneuver validation."""
-    participant_dir = sample_participant_dir / "#1011"
+    participant_dir = fake_participant_directory["participant_dir"]
     left_knee_dir = participant_dir / "Left Knee"
     right_knee_dir = participant_dir / "Right Knee"
 
@@ -131,14 +58,24 @@ def test_knee_folder_has_subfolder_each_maneuver(sample_participant_dir):
         knee_folder_has_subfolder_each_maneuver(left_knee_dir)
 
 
-def test_get_audio_file_name_success(sample_participant_dir):
+def test_get_audio_file_name_success(fake_participant_directory):
     """Test get_audio_file_name with exactly one .bin file."""
-    participant_dir = sample_participant_dir / "#1011"
+    participant_dir = fake_participant_directory["participant_dir"]
     maneuver_dir = participant_dir / "Left Knee" / "Flexion-Extension"
 
     result = get_audio_file_name(maneuver_dir)
 
     assert result == str(maneuver_dir / "test_audio")
+
+
+def test_get_audio_file_name_with_freq(fake_participant_directory):
+    """get_audio_file_name returns suffixed name when with_freq is True."""
+    participant_dir = fake_participant_directory["participant_dir"]
+    maneuver_dir = participant_dir / "Left Knee" / "Flexion-Extension"
+
+    result = get_audio_file_name(maneuver_dir, with_freq=True)
+
+    assert result == str(maneuver_dir / "test_audio_with_freq")
 
 
 def test_get_audio_file_name_no_bin_files(tmp_path):
@@ -165,9 +102,9 @@ def test_get_audio_file_name_multiple_bin_files(tmp_path):
     assert "Expected exactly one .bin file" in str(exc_info.value)
 
 
-def test_knee_subfolder_has_acoustic_files_success(sample_participant_dir):
+def test_knee_subfolder_has_acoustic_files_success(fake_participant_directory):
     """Test knee_subfolder_has_acoustic_files with valid structure."""
-    participant_dir = sample_participant_dir / "#1011"
+    participant_dir = fake_participant_directory["participant_dir"]
     maneuver_dir = participant_dir / "Left Knee" / "Walking"
 
     # Should not raise any exception
@@ -217,10 +154,10 @@ def test_knee_subfolder_has_acoustic_files_no_outputs_dir(tmp_path):
 
 
 def test_motion_capture_folder_has_required_data_success(
-    sample_participant_dir
+    fake_participant_directory,
 ):
     """Test motion_capture_folder_has_required_data with valid Excel file."""
-    participant_dir = sample_participant_dir / "#1011"
+    participant_dir = fake_participant_directory["participant_dir"]
     motion_capture_dir = participant_dir / "Motion Capture"
 
     # Should not raise any exception
@@ -240,8 +177,8 @@ def test_motion_capture_folder_has_required_data_no_file(tmp_path):
     assert "AOA1011_Biomechanics_Full_Set.xlsx" in str(exc_info.value)
 
 
-def test_motion_capture_folder_missing_walking_events_sheet(tmp_path):
-    """Test motion_capture_folder with missing Walking_Events sheet."""
+def test_motion_capture_folder_missing_walking_pass_metadata(tmp_path):
+    """Test motion_capture_folder with missing Walk0001 pass metadata sheet."""
     participant_dir = tmp_path / "#1011"
     participant_dir.mkdir()
     motion_capture_dir = participant_dir / "Motion Capture"
@@ -251,7 +188,7 @@ def test_motion_capture_folder_missing_walking_events_sheet(tmp_path):
     excel_filename = f"AOA{study_id}_Biomechanics_Full_Set.xlsx"
     excel_file_path = motion_capture_dir / excel_filename
 
-    # Create Excel file missing Walking_Events sheet
+    # Create Excel file missing Walk0001 pass metadata sheet
     with pd.ExcelWriter(excel_file_path, engine='openpyxl') as writer:
         empty_df = pd.DataFrame()
         # Only create some sheets, not all required ones
@@ -262,7 +199,7 @@ def test_motion_capture_folder_missing_walking_events_sheet(tmp_path):
     with pytest.raises(ValueError) as exc_info:
         motion_capture_folder_has_required_data(motion_capture_dir)
 
-    assert "AOA1011_Walking_Events" in str(exc_info.value)
+    assert "AOA1011_Walk0001" in str(exc_info.value)
 
 
 def test_motion_capture_folder_missing_speed_sheet(tmp_path):
@@ -276,11 +213,11 @@ def test_motion_capture_folder_missing_speed_sheet(tmp_path):
     excel_filename = f"AOA{study_id}_Biomechanics_Full_Set.xlsx"
     excel_file_path = motion_capture_dir / excel_filename
 
-    # Create Excel file with events but missing speed sheets
+    # Create Excel file with pass metadata but missing speed sheets
     with pd.ExcelWriter(excel_file_path, engine='openpyxl') as writer:
         empty_df = pd.DataFrame()
         empty_df.to_excel(
-            writer, sheet_name=f"AOA{study_id}_Walking_Events", index=False
+            writer, sheet_name=f"AOA{study_id}_Walk0001", index=False
         )
         # Missing speed sheets
 
@@ -291,7 +228,7 @@ def test_motion_capture_folder_missing_speed_sheet(tmp_path):
 
 
 def test_motion_capture_folder_missing_maneuver_sheet(tmp_path):
-    """Test motion_capture_folder with missing StoS sheet."""
+    """Test motion_capture_folder with missing SitToStand sheet."""
     participant_dir = tmp_path / "#1011"
     participant_dir.mkdir()
     motion_capture_dir = participant_dir / "Motion Capture"
@@ -304,9 +241,9 @@ def test_motion_capture_folder_missing_maneuver_sheet(tmp_path):
     # Create Excel file with all walking sheets but missing StoS
     with pd.ExcelWriter(excel_file_path, engine='openpyxl') as writer:
         empty_df = pd.DataFrame()
-        # All walking sheets
+        # All walking sheets (including pass metadata)
         empty_df.to_excel(
-            writer, sheet_name=f"AOA{study_id}_Walking_Events", index=False
+            writer, sheet_name=f"AOA{study_id}_Walk0001", index=False
         )
         empty_df.to_excel(
             writer, sheet_name=f"AOA{study_id}_Slow_Walking", index=False
@@ -325,4 +262,254 @@ def test_motion_capture_folder_missing_maneuver_sheet(tmp_path):
     with pytest.raises(ValueError) as exc_info:
         motion_capture_folder_has_required_data(motion_capture_dir)
 
-    assert "AOA1011_StoS" in str(exc_info.value)
+    assert "AOA1011_SitToStand" in str(exc_info.value)
+
+
+def test_generate_synced_filename_walk():
+    result = _generate_synced_filename(
+        knee_side="Left",
+        maneuver_key="walk",
+        pass_number=2,
+        speed="slow",
+    )
+
+    assert result == "Left_walk_Pass0002_slow"
+
+
+def test_generate_synced_filename_non_walk():
+    result = _generate_synced_filename(
+        knee_side="Right",
+        maneuver_key="sit_to_stand",
+        pass_number=None,
+        speed=None,
+    )
+
+    assert result == "Right_sit_to_stand"
+
+
+def test_load_event_data_walk(fake_participant_directory):
+    biomechanics_file = fake_participant_directory["biomechanics"][
+        "excel_path"
+    ]
+
+    events_df = _load_event_data(
+        biomechanics_file=biomechanics_file,
+        maneuver_key="walk",
+    )
+
+    assert "Event Info" in events_df.columns
+    assert events_df.iloc[0]["Event Info"] == "Sync Left"
+
+
+def test_load_event_data_sit_to_stand(fake_participant_directory):
+    biomechanics_file = fake_participant_directory["biomechanics"][
+        "excel_path"
+    ]
+
+    events_df = _load_event_data(
+        biomechanics_file=biomechanics_file,
+        maneuver_key="sit_to_stand",
+    )
+
+    assert not events_df.empty
+    assert "Movement Start" in events_df["Event Info"].values
+
+
+# ============================================================================
+# Tests for CLI functions (batch processing)
+# ============================================================================
+
+
+def test_find_participant_directories_single(fake_participant_directory):
+    """Test finding participant directories in a project folder."""
+    project_dir = fake_participant_directory["project_dir"]
+
+    result = find_participant_directories(project_dir)
+
+    assert len(result) == 1
+    assert result[0].name == "#1011"
+
+
+def test_find_participant_directories_multiple(tmp_path):
+    """Test finding multiple participant directories."""
+    # Create multiple participant directories
+    p1 = tmp_path / "#1011"
+    p2 = tmp_path / "#2024"
+    p3 = tmp_path / "#3001"
+    p1.mkdir()
+    p2.mkdir()
+    p3.mkdir()
+
+    # Create a non-participant directory (should be ignored)
+    other = tmp_path / "other_folder"
+    other.mkdir()
+
+    result = find_participant_directories(tmp_path)
+
+    assert len(result) == 3
+    assert result[0].name == "#1011"
+    assert result[1].name == "#2024"
+    assert result[2].name == "#3001"
+
+
+def test_find_participant_directories_empty(tmp_path):
+    """Test with no participant directories."""
+    result = find_participant_directories(tmp_path)
+
+    assert result == []
+
+
+def test_find_participant_directories_nonexistent_path():
+    """Test with nonexistent path."""
+    nonexistent = Path("/nonexistent/path/to/studies")
+
+    result = find_participant_directories(nonexistent)
+
+    assert result == []
+
+
+def test_find_participant_directories_not_directory(tmp_path):
+    """Test with a file instead of directory."""
+    file_path = tmp_path / "file.txt"
+    file_path.write_text("test")
+
+    result = find_participant_directories(file_path)
+
+    assert result == []
+
+
+def test_find_participant_directories_sorting(tmp_path):
+    """Test that participant directories are sorted."""
+    # Create in non-sorted order
+    p3 = tmp_path / "#3001"
+    p1 = tmp_path / "#1011"
+    p2 = tmp_path / "#2024"
+    p3.mkdir()
+    p1.mkdir()
+    p2.mkdir()
+
+    result = find_participant_directories(tmp_path)
+
+    assert [d.name for d in result] == ["#1011", "#2024", "#3001"]
+
+
+def test_setup_logging_console_only():
+    """Test logging setup with console only."""
+    # Should not raise an exception
+    setup_logging(log_file=None)
+    assert True  # Setup completed successfully
+
+
+def test_setup_logging_with_file(tmp_path):
+    """Test logging setup with file output."""
+    log_file = tmp_path / "test.log"
+
+    setup_logging(log_file=log_file)
+
+    # Should not raise an exception
+    assert True  # Setup completed successfully
+
+
+def test_process_participant_success(
+    fake_participant_directory, caplog, monkeypatch
+):
+    """Test processing a valid participant directory succeeds."""
+    participant_dir = fake_participant_directory["participant_dir"]
+
+    # Mock parse_participant_directory to avoid processing all data
+    def mock_parse(*args, **kwargs):
+        pass
+
+    monkeypatch.setattr(
+        "process_participant_directory.parse_participant_directory",
+        mock_parse,
+    )
+
+    # Capture INFO level logs
+    caplog.set_level(logging.INFO)
+    result = process_participant(participant_dir)
+
+    assert result is True
+    assert "Successfully completed processing" in caplog.text
+
+
+def test_process_participant_validation_failure(tmp_path, caplog):
+    """Test processing with directory validation failure."""
+    # Create a directory without required structure
+    invalid_dir = tmp_path / "#invalid"
+    invalid_dir.mkdir()
+
+    result = process_participant(invalid_dir)
+
+    assert result is False
+    assert "Validation error" in caplog.text or "Left Knee" in caplog.text
+
+
+def test_process_participant_returns_false_on_error(
+    tmp_path, caplog, monkeypatch
+):
+    """Test that process_participant returns False on any exception."""
+    participant_dir = tmp_path / "#1011"
+    participant_dir.mkdir()
+
+    # Mock parse_participant_directory to raise an exception
+    def mock_parse(*args, **kwargs):
+        raise RuntimeError("Unexpected error")
+
+    monkeypatch.setattr(
+        "process_participant_directory.parse_participant_directory",
+        mock_parse,
+    )
+
+    # Mock check_participant_dir_for_required_files to not raise
+    def mock_check(*args, **kwargs):
+        pass
+
+    monkeypatch.setattr(
+        (
+            "process_participant_directory."
+            "check_participant_dir_for_required_files"
+        ),
+        mock_check,
+    )
+
+    result = process_participant(participant_dir)
+
+    assert result is False
+    assert "Unexpected error" in caplog.text
+
+
+def test_process_participant_extracts_study_id(
+    fake_participant_directory, caplog
+):
+    """Test that process_participant correctly extracts study ID."""
+    participant_dir = fake_participant_directory["participant_dir"]
+
+    caplog.set_level(logging.INFO)
+
+    process_participant(participant_dir)
+
+    # Check that the study ID "1011" appears in logs
+    assert "#1011" in caplog.text or "1011" in caplog.text
+
+
+def test_process_participant_validation_passed_message(
+    fake_participant_directory, caplog, monkeypatch
+):
+    """Test that validation passed message is logged."""
+    participant_dir = fake_participant_directory["participant_dir"]
+
+    # Mock parse_participant_directory to avoid processing all data
+    def mock_parse(*args, **kwargs):
+        pass
+
+    monkeypatch.setattr(
+        "process_participant_directory.parse_participant_directory",
+        mock_parse,
+    )
+
+    # Capture INFO level logs
+    caplog.set_level(logging.INFO)
+    process_participant(participant_dir)
+
+    assert "Directory validation passed" in caplog.text
