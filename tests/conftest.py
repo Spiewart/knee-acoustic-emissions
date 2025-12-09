@@ -1,22 +1,16 @@
-"""Global pytest fixtures for test suite."""
+"""Global pytest fixtures for the test suite."""
+
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import pytest
 
 
-@pytest.fixture
-def sample_acoustic_legend_file(tmp_path):
-    """Create a sample acoustic file legend Excel file for testing.
+def _create_acoustic_legend(participant_dir: Path) -> Path:
+    """Write an acoustic legend Excel file matching expected schema."""
 
-    This fixture generates an Excel file with acoustic metadata for left and
-    right knees across three maneuvers (walk, flexion-extension, sit-to-stand).
-    The structure matches the expected format for get_acoustics_metadata().
-    """
-    excel_path = tmp_path / "test_acoustic_file_legend.xlsx"
-
-    # Create the structure as described in the docstring:
-    # Two tables (L Knee and R Knee) separated by a blank row
+    excel_path = participant_dir / "acoustic_file_legend.xlsx"
     data = [
         ["L Knee", None, None, None, None, None],
         [
@@ -60,7 +54,7 @@ def sample_acoustic_legend_file(tmp_path):
         [None, None, 2, "Infrapatellar", "Medial", None],
         [None, None, 3, "Suprapatellar", "Medial", None],
         [None, None, 4, "Suprapatellar", "Lateral", None],
-        [None, None, None, None, None, None],  # Blank row separator
+        [None, None, None, None, None, None],
         ["R Knee", None, None, None, None, None],
         [
             "Maneuvers",
@@ -106,229 +100,316 @@ def sample_acoustic_legend_file(tmp_path):
     ]
 
     df = pd.DataFrame(data)
-
-    with pd.ExcelWriter(excel_path, engine='openpyxl') as writer:
+    with pd.ExcelWriter(excel_path, engine="openpyxl") as writer:
         df.to_excel(
-            writer, sheet_name="Acoustic Notes", index=False, header=False
+            writer,
+            sheet_name="Acoustic Notes",
+            index=False,
+            header=False,
         )
 
     return excel_path
 
 
-@pytest.fixture
-def fake_biomechanics_excel(tmp_path):
-    """Create a fake biomechanics Excel file for testing.
+def _generate_audio_dataframe(
+    duration_seconds: int = 40,
+    sample_rate: int = 2000,
+) -> pd.DataFrame:
+    """Generate synthetic audio with a clear stomp spike."""
 
-    This fixture generates an Excel file with sheets for walk, sit-to-stand,
-    and flexion-extension maneuvers with their corresponding event sheets.
+    n_points = duration_seconds * sample_rate
+    time_points = np.arange(n_points) / sample_rate
 
-    Sheet naming convention:
-    - Walk: AOAXXXX_Speed_Walking (with events: AOAXXXX_Walk{PassNumber})
-    - Sit-to-stand: AOAXXXX_SitToStand (with events: AOAXXXX_StoS_Events)
-    - Flexion-extension: AOAXXXX_FlexExt (with events: AOAXXXX_FE_Events)
+    audio_df = pd.DataFrame(
+        {
+            "tt": time_points,
+            "ch1": np.random.randn(n_points) * 0.01,
+            "ch2": np.random.randn(n_points) * 0.01,
+            "ch3": np.random.randn(n_points) * 0.01,
+            "ch4": np.random.randn(n_points) * 0.01,
+        }
+    )
 
-    Returns a dict with keys:
-    - excel_path: Path to the Excel file
-    - data_sheets: Dict of data sheet names by maneuver
-    - events_sheets: Dict of event sheet names by maneuver
+    stomp_time = 16.23
+    stomp_idx = int(stomp_time * sample_rate)
+    spike_samples = int(0.01 * sample_rate)
+    audio_df.loc[
+        stomp_idx: stomp_idx + spike_samples,
+        ["ch1", "ch2", "ch3", "ch4"],
+    ] = 10.0
+
+    return audio_df
+
+
+def _write_audio_files(
+    knee_dir: Path,
+    audio_df: pd.DataFrame,
+) -> dict[str, Path]:
+    """Create maneuver folders with .bin and processed pickle files."""
+
+    maneuver_dirs = {
+        "Flexion-Extension": knee_dir / "Flexion-Extension",
+        "Sit-Stand": knee_dir / "Sit-Stand",
+        "Walking": knee_dir / "Walking",
+    }
+    audio_paths: dict[str, Path] = {}
+
+    for maneuver_name, maneuver_dir in maneuver_dirs.items():
+        maneuver_dir.mkdir(parents=True, exist_ok=True)
+
+        bin_file = maneuver_dir / "test_audio.bin"
+        bin_file.touch()
+
+        outputs_dir = maneuver_dir / "test_audio_outputs"
+        outputs_dir.mkdir(exist_ok=True)
+        pkl_path = outputs_dir / "test_audio.pkl"
+        audio_df.to_pickle(pkl_path)
+
+        # Frequency-augmented output lives in its own outputs folder
+        outputs_dir_freq = maneuver_dir / "test_audio_with_freq_outputs"
+        outputs_dir_freq.mkdir(exist_ok=True)
+        pkl_freq_path = outputs_dir_freq / "test_audio_with_freq.pkl"
+        audio_df.to_pickle(pkl_freq_path)
+
+        audio_paths[maneuver_name] = pkl_path
+
+    return audio_paths
+
+
+def _walk_sheet(
+    study_id: str,
+    speed_code: str,
+    pass_number: int,
+    time_points: np.ndarray,
+) -> pd.DataFrame:
+    uid_base = (
+        f"V3D\\AOA{study_id}_Walk{pass_number:04d}_"
+        f"{speed_code}P{pass_number}_Filt.c3d"
+    )
+    data_dict = {
+        f"{uid_base}": ["Frame", ""] + time_points.tolist(),
+        f"{uid_base}.1": [
+            "LAnkleAngles",
+            "X",
+        ]
+        + (np.sin(time_points + pass_number) * 10).tolist(),
+        f"{uid_base}.2": [
+            "LAnkleAngles",
+            "Y",
+        ]
+        + (np.cos(time_points + pass_number) * 5).tolist(),
+    }
+    return pd.DataFrame(data_dict)
+
+
+def _non_walk_sheet(
+    study_id: str,
+    maneuver_stub: str,
+    time_points: np.ndarray,
+) -> pd.DataFrame:
+    uid_base = f"V3D\\AOA{study_id}_{maneuver_stub}0001_Filt.c3d"
+    data_dict = {
+        f"{uid_base}": ["Frame", ""] + time_points.tolist(),
+        f"{uid_base}.1": [
+            "LKneeAngles",
+            "X",
+        ]
+        + (np.sin(time_points) * 15).tolist(),
+        f"{uid_base}.2": [
+            "RKneeAngles",
+            "X",
+        ]
+        + (np.cos(time_points) * 15).tolist(),
+    }
+    return pd.DataFrame(data_dict)
+
+
+def _create_biomechanics_excel(
+    motion_capture_dir: Path,
+    study_id: str,
+) -> dict[str, object]:
+    """Create biomechanics Excel with walking, StoS,
+    and FE data plus events.
     """
-    # Use a filename that matches the study ID pattern
-    # The first 7 characters should be the study ID
-    excel_path = tmp_path / "AOA1011_Biomechanics_Full_Set.xlsx"
 
-    study_id = "AOA1011"
-    time_points = np.linspace(0, 10, 100)
+    motion_capture_dir.mkdir(parents=True, exist_ok=True)
+    excel_path = motion_capture_dir / (
+        f"AOA{study_id}_Biomechanics_Full_Set.xlsx"
+    )
 
-    # Create biomechanics data for walk maneuver (separate DataFrame)
-    walk_data_dict = {}
-    for pass_num in [1, 2]:
-        uid_base = f"V3D\\{study_id}_Walk0001_SSP{pass_num}_Filt.c3d"
-        walk_data_dict[f"{uid_base}"] = (
-            ["Frame", ""] + time_points.tolist()
-        )
-        walk_data_dict[f"{uid_base}.1"] = (
-            ["LAnkleAngles", "X"]
-            + (np.sin(time_points + pass_num) * 10).tolist()
-        )
-        walk_data_dict[f"{uid_base}.2"] = (
-            ["LAnkleAngles", "Y"]
-            + (np.cos(time_points + pass_num) * 5).tolist()
-        )
+    time_points = np.linspace(0, 10, 50)
 
-    walk_df = pd.DataFrame(walk_data_dict)
+    walk_sheets = {
+        "Slow": pd.concat(
+            [
+                _walk_sheet(study_id, "SS", 1, time_points),
+                _walk_sheet(study_id, "SS", 2, time_points + 0.5),
+            ],
+            axis=1,
+        ),
+        "Medium": pd.concat(
+            [
+                _walk_sheet(study_id, "NS", 1, time_points + 1),
+                _walk_sheet(study_id, "NS", 2, time_points + 1.5),
+            ],
+            axis=1,
+        ),
+        "Fast": _walk_sheet(study_id, "FS", 1, time_points + 2),
+    }
+    sts_df = _non_walk_sheet(study_id, "SitToStand", time_points)
+    fe_df = _non_walk_sheet(study_id, "FlexExt", time_points)
 
-    # Create biomechanics data for sit-to-stand (separate DataFrame)
-    sts_data_dict = {}
-    uid_base_sts = f"V3D\\{study_id}_SitToStand0001_Filt.c3d"
-    sts_data_dict[f"{uid_base_sts}"] = (
-        ["Frame", ""] + time_points.tolist()
-    )
-    sts_data_dict[f"{uid_base_sts}.1"] = (
-        ["LKneeAngles", "X"]
-        + (np.sin(time_points) * 15).tolist()
-    )
-    sts_data_dict[f"{uid_base_sts}.2"] = (
-        ["RKneeAngles", "X"]
-        + (np.cos(time_points) * 15).tolist()
-    )
-    sts_df = pd.DataFrame(sts_data_dict)
-
-    # Create biomechanics data for flexion-extension (separate DataFrame)
-    fe_data_dict = {}
-    uid_base_fe = f"V3D\\{study_id}_FlexExt0001_Filt.c3d"
-    fe_data_dict[f"{uid_base_fe}"] = (
-        ["Frame", ""] + time_points.tolist()
-    )
-    fe_data_dict[f"{uid_base_fe}.1"] = (
-        ["LKneeAngles", "X"]
-        + (np.sin(time_points * 2) * 10).tolist()
-    )
-    fe_data_dict[f"{uid_base_fe}.2"] = (
-        ["RKneeAngles", "X"]
-        + (np.cos(time_points * 2) * 10).tolist()
-    )
-    fe_df = pd.DataFrame(fe_data_dict)
-
-    # Create walking events
     walking_events_data = [
         {"Event Info": "Sync Left", "Time (sec)": 16.23},
         {"Event Info": "Sync Right", "Time (sec)": 17.48},
-        {"Event Info": "Slow Speed Start", "Time (sec)": 18.80},
         {"Event Info": "SS Pass 1 Start", "Time (sec)": 19.28},
-        {"Event Info": "SS Pass 1 End", "Time (sec)": 24.96},
         {"Event Info": "SS Pass 2 Start", "Time (sec)": 27.80},
-        {"Event Info": "SS Pass 2 End", "Time (sec)": 34.63},
-        {"Event Info": "Slow Speed End", "Time (sec)": 119.88},
-        {"Event Info": "Normal Speed Start", "Time (sec)": 135.80},
         {"Event Info": "NS Pass 1 Start", "Time (sec)": 136.96},
-        {"Event Info": "NS Pass 1 End", "Time (sec)": 142.15},
         {"Event Info": "NS Pass 2 Start", "Time (sec)": 144.13},
-        {"Event Info": "NS Pass 2 End", "Time (sec)": 148.94},
-        {"Event Info": "Normal Speed End", "Time (sec)": 408.44},
+        {"Event Info": "FS Pass 1 Start", "Time (sec)": 210.15},
     ]
-    walking_events_df = pd.DataFrame(walking_events_data)
 
-    # Create sit-to-stand events
-    sts_events_data = [
-        {"Event Info": "Movement Start", "Time (sec)": 5.0},
-        {"Event Info": "Movement End", "Time (sec)": 8.5},
-    ]
-    sts_events_df = pd.DataFrame(sts_events_data)
+    sts_events_df = pd.DataFrame(
+        [
+            {"Event Info": "Sync Left", "Time (sec)": 10.50},
+            {"Event Info": "Sync Right", "Time (sec)": 11.75},
+            {"Event Info": "Movement Start", "Time (sec)": 5.0},
+            {"Event Info": "Movement End", "Time (sec)": 8.5},
+        ]
+    )
+    fe_events_df = pd.DataFrame(
+        [
+            {"Event Info": "Sync Left", "Time (sec)": 8.90},
+            {"Event Info": "Sync Right", "Time (sec)": 10.15},
+            {"Event Info": "Movement Start", "Time (sec)": 2.0},
+            {"Event Info": "Movement End", "Time (sec)": 9.0},
+        ]
+    )
 
-    # Create flexion-extension events
-    fe_events_data = [
-        {"Event Info": "Movement Start", "Time (sec)": 2.0},
-        {"Event Info": "Movement End", "Time (sec)": 9.0},
-    ]
-    fe_events_df = pd.DataFrame(fe_events_data)
+    with pd.ExcelWriter(excel_path, engine="openpyxl") as writer:
+        for speed_label, df in walk_sheets.items():
+            df.to_excel(
+                writer,
+                sheet_name=f"AOA{study_id}_{speed_label}_Walking",
+                index=False,
+            )
 
-    # Write all sheets to Excel
-    with pd.ExcelWriter(excel_path, engine='openpyxl') as writer:
-        # Walk sheets
-        walk_df.to_excel(
+        # Walk0001 contains pass metadata (which pass belongs to which speed)
+        pass_metadata = pd.DataFrame(walking_events_data)
+        pass_metadata.to_excel(
             writer,
-            sheet_name=f"{study_id}_Slow_Walking",
+            sheet_name=f"AOA{study_id}_Walk0001",
             index=False,
         )
-        walking_events_df.to_excel(
+
+        # Speed-specific event sheets contain stomp/event timing data
+        slow_events = pd.DataFrame([
+            {"Event Info": "Sync Left", "Time (sec)": 16.23},
+            {"Event Info": "Sync Right", "Time (sec)": 17.48},
+            {"Event Info": "SS Pass 1 Start", "Time (sec)": 19.28},
+            {"Event Info": "SS Pass 2 Start", "Time (sec)": 27.80},
+        ])
+        slow_events.to_excel(
             writer,
-            sheet_name=f"{study_id}_Walk0001",
+            sheet_name=f"AOA{study_id}_Slow_Walking_Events",
             index=False,
         )
 
-        # Sit-to-stand sheets
+        medium_events = pd.DataFrame([
+            {"Event Info": "Sync Left", "Time (sec)": 16.23},
+            {"Event Info": "Sync Right", "Time (sec)": 17.48},
+            {"Event Info": "NS Pass 1 Start", "Time (sec)": 136.96},
+            {"Event Info": "NS Pass 2 Start", "Time (sec)": 144.13},
+        ])
+        medium_events.to_excel(
+            writer,
+            sheet_name=f"AOA{study_id}_Medium_Walking_Events",
+            index=False,
+        )
+
+        fast_events = pd.DataFrame([
+            {"Event Info": "Sync Left", "Time (sec)": 16.23},
+            {"Event Info": "Sync Right", "Time (sec)": 17.48},
+            {"Event Info": "FS Pass 1 Start", "Time (sec)": 210.15},
+        ])
+        fast_events.to_excel(
+            writer,
+            sheet_name=f"AOA{study_id}_Fast_Walking_Events",
+            index=False,
+        )
+
         sts_df.to_excel(
             writer,
-            sheet_name=f"{study_id}_SitToStand",
+            sheet_name=f"AOA{study_id}_SitToStand",
             index=False,
         )
         sts_events_df.to_excel(
             writer,
-            sheet_name=f"{study_id}_StoS_Events",
+            sheet_name=f"AOA{study_id}_StoS_Events",
             index=False,
         )
 
-        # Flexion-extension sheets
         fe_df.to_excel(
             writer,
-            sheet_name=f"{study_id}_FlexExt",
+            sheet_name=f"AOA{study_id}_FlexExt",
             index=False,
         )
         fe_events_df.to_excel(
             writer,
-            sheet_name=f"{study_id}_FE_Events",
+            sheet_name=f"AOA{study_id}_FE_Events",
             index=False,
         )
 
     return {
         "excel_path": excel_path,
-        # New dictionary format for all maneuvers
         "data_sheets": {
-            "walk": f"{study_id}_Slow_Walking",
-            "sit_to_stand": f"{study_id}_SitToStand",
-            "flexion_extension": f"{study_id}_FlexExt",
+            "walk": {
+                speed.lower(): f"AOA{study_id}_{speed}_Walking"
+                for speed in ["Slow", "Medium", "Fast"]
+            },
+            "sit_to_stand": f"AOA{study_id}_SitToStand",
+            "flexion_extension": f"AOA{study_id}_FlexExt",
         },
         "events_sheets": {
-            "walk": f"{study_id}_Walk0001",
-            "sit_to_stand": f"{study_id}_StoS_Events",
-            "flexion_extension": f"{study_id}_FE_Events",
+            "walk_pass": f"AOA{study_id}_Walk0001",
+            "sit_to_stand": f"AOA{study_id}_StoS_Events",
+            "flexion_extension": f"AOA{study_id}_FE_Events",
         },
-        # Legacy keys for backward compatibility with existing tests
-        "data_sheet": f"{study_id}_Slow_Walking",
-        "events_sheet": f"{study_id}_Walk0001",
         "events_data": walking_events_data,
     }
 
 
 @pytest.fixture
-def fake_audio_data(tmp_path):
-    """Create fake audio data pickle file for testing.
+def fake_participant_directory(tmp_path_factory):
+    """Create a fake participant directory tree for integration tests."""
 
-    This fixture generates a pickle file containing audio data in the format
-    expected by sync_audio_with_biomechanics module. The data includes:
-    - Time column (tt): Time stamps for each sample
-    - Channel columns (ch1-ch4): Audio data from four microphones
-    - A spike at ~16.23 seconds to simulate a stomp event
-    - Duration covers slow speed events (0 to 130 seconds)
+    project_dir = tmp_path_factory.mktemp("project")
+    participant_dir = project_dir / "#1011"
+    participant_dir.mkdir()
 
-    Realistic sensor specs:
-    - Sample rate: 52 kHz (52,000 samples per second)
-    - Duration: ~130 seconds (covers slow speed walking events)
+    legend_path = _create_acoustic_legend(participant_dir)
 
-    Returns:
-        Path to the pickle file containing the audio data.
-    """
-    # Realistic sample rate, but limited duration for test performance
-    sample_rate = 52000  # 52 kHz
-    # Duration covers slow speed events (Slow Speed End at 119.88 sec)
-    duration = 130  # seconds
-    n_points = int(duration * sample_rate)
+    left_knee_dir = participant_dir / "Left Knee"
+    right_knee_dir = participant_dir / "Right Knee"
+    left_knee_dir.mkdir()
+    right_knee_dir.mkdir()
 
-    time_points = np.linspace(0, duration, n_points)
+    audio_df = _generate_audio_dataframe()
+    left_audio_paths = _write_audio_files(left_knee_dir, audio_df)
+    right_audio_paths = _write_audio_files(right_knee_dir, audio_df)
 
-    # Create a DataFrame with very low-amplitude noise
-    # Use much lower noise so the stomp spike is clearly detectable
-    audio_data = pd.DataFrame({
-        'tt': time_points,
-        'ch1': np.random.randn(n_points) * 0.01,
-        'ch2': np.random.randn(n_points) * 0.01,
-        'ch3': np.random.randn(n_points) * 0.01,
-        'ch4': np.random.randn(n_points) * 0.01,
-    })
+    biomechanics_info = _create_biomechanics_excel(
+        motion_capture_dir=participant_dir / "Motion Capture",
+        study_id="1011",
+    )
 
-    # Add a prominent spike at 16.23 seconds for the stomp detection
-    # Sync Left is at 16.23 seconds (from fake_biomechanics_excel fixture)
-    stomp_time = 16.23
-    stomp_idx = int(stomp_time * sample_rate)
-    # Add spike over a small window (10ms) with high amplitude
-    spike_samples = int(0.01 * sample_rate)  # 10ms spike
-    audio_data.loc[
-        stomp_idx:stomp_idx + spike_samples,
-        ['ch1', 'ch2', 'ch3', 'ch4']
-    ] = 10.0
-
-    # Save to pickle
-    audio_file_path = tmp_path / "test_audio_with_freq.pkl"
-    audio_data.to_pickle(audio_file_path)
-
-    return audio_file_path
+    return {
+        "project_dir": project_dir,
+        "participant_dir": participant_dir,
+        "legend_file": legend_path,
+        "audio_paths": {
+            "left": left_audio_paths,
+            "right": right_audio_paths,
+        },
+        "biomechanics": biomechanics_info,
+    }

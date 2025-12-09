@@ -19,7 +19,7 @@ from process_biomechanics import (
 )
 
 
-def test_import_biomechanics(fake_biomechanics_excel) -> None:
+def test_import_biomechanics(fake_participant_directory) -> None:
     """Test importing biomechanics recordings from an Excel file.
 
     Every Excel file imported this way should return a list of DataFrames
@@ -28,7 +28,7 @@ def test_import_biomechanics(fake_biomechanics_excel) -> None:
     """
     from pathlib import Path
 
-    excel_file = Path(fake_biomechanics_excel["excel_path"])
+    excel_file = Path(fake_participant_directory["biomechanics"]["excel_path"])
 
     biomechanics_recordings = import_biomechanics_recordings(
         biomechanics_file=excel_file,
@@ -182,11 +182,13 @@ def test_get_biomechanics_metadata() -> None:
     assert metadata.pass_number == 1
 
 
-def test_get_walking_start_time(fake_biomechanics_excel) -> None:
+def test_get_walking_start_time(fake_participant_directory) -> None:
     """Test retrieving walking start time from event data."""
     events_df = pd.read_excel(
-        fake_biomechanics_excel["excel_path"],
-        sheet_name=fake_biomechanics_excel["events_sheet"],
+        fake_participant_directory["biomechanics"]["excel_path"],
+        sheet_name=fake_participant_directory["biomechanics"][
+            "events_sheets"
+        ]["walk_pass"],
     )
 
     # Get the start time for Slow Speed Pass 1
@@ -210,11 +212,13 @@ def test_get_walking_start_time(fake_biomechanics_excel) -> None:
     assert start_time == pd.to_timedelta(144.13, "s")
 
 
-def test_get_walking_start_time_not_found(fake_biomechanics_excel) -> None:
+def test_get_walking_start_time_not_found(fake_participant_directory) -> None:
     """Test that requesting non-existent start time raises ValueError."""
     events_df = pd.read_excel(
-        fake_biomechanics_excel["excel_path"],
-        sheet_name=fake_biomechanics_excel["events_sheet"],
+        fake_participant_directory["biomechanics"]["excel_path"],
+        sheet_name=fake_participant_directory["biomechanics"][
+            "events_sheets"
+        ]["walk_pass"],
     )
 
     # Try to get a start time that doesn't exist
@@ -240,7 +244,7 @@ def test_get_event_sheet_name_walk() -> None:
         maneuver="walk",
         pass_number=5,
     )
-    assert sheet_name == "AOA1011_Walk0005"
+    assert sheet_name == "AOA1011_Walk0001"
 
 
 def test_get_event_sheet_name_sit_to_stand() -> None:
@@ -262,13 +266,13 @@ def test_get_event_sheet_name_flexion_extension() -> None:
 
 
 def test_get_event_sheet_name_walk_missing_pass_number() -> None:
-    """Test that walk maneuver requires pass_number."""
-    with pytest.raises(ValueError, match="pass_number is required"):
-        _get_event_sheet_name(
-            study_id="AOA1011",
-            maneuver="walk",
-            pass_number=None,
-        )
+    """Walk maneuver defaults to Walk0001 regardless of pass_number."""
+    sheet_name = _get_event_sheet_name(
+        study_id="AOA1011",
+        maneuver="walk",
+        pass_number=None,
+    )
+    assert sheet_name == "AOA1011_Walk0001"
 
 
 def test_construct_biomechanics_sheet_names_walk() -> None:
@@ -285,11 +289,11 @@ def test_construct_biomechanics_sheet_names_walk() -> None:
     sheet_names = _construct_biomechanics_sheet_names(
         study_id="AOA1011",
         maneuver="walk",
-        speed="normal",
+        speed="medium",
         pass_number=2,
     )
-    assert sheet_names["data"] == "AOA1011_Normal_Walking"
-    assert sheet_names["events"] == "AOA1011_Walk0002"
+    assert sheet_names["data"] == "AOA1011_Medium_Walking"
+    assert sheet_names["events"] == "AOA1011_Walk0001"
 
     sheet_names = _construct_biomechanics_sheet_names(
         study_id="AOA1011",
@@ -400,11 +404,15 @@ def test_extract_maneuver_from_uid_invalid() -> None:
         )
 
 
-def test_get_non_walk_start_time_sit_to_stand(fake_biomechanics_excel) -> None:
+def test_get_non_walk_start_time_sit_to_stand(
+    fake_participant_directory,
+) -> None:
     """Test retrieving sit-to-stand start time from event data."""
     events_df = pd.read_excel(
-        fake_biomechanics_excel["excel_path"],
-        sheet_name=fake_biomechanics_excel["events_sheets"]["sit_to_stand"],
+        fake_participant_directory["biomechanics"]["excel_path"],
+        sheet_name=fake_participant_directory["biomechanics"][
+            "events_sheets"
+        ]["sit_to_stand"],
     )
 
     start_time = get_non_walk_start_time(
@@ -417,14 +425,14 @@ def test_get_non_walk_start_time_sit_to_stand(fake_biomechanics_excel) -> None:
 
 
 def test_get_non_walk_start_time_flexion_extension(
-    fake_biomechanics_excel,
+    fake_participant_directory,
 ) -> None:
     """Test retrieving flexion-extension start time from event data."""
     events_df = pd.read_excel(
-        fake_biomechanics_excel["excel_path"],
-        sheet_name=(
-            fake_biomechanics_excel["events_sheets"]["flexion_extension"]
-        ),
+        fake_participant_directory["biomechanics"]["excel_path"],
+        sheet_name=fake_participant_directory["biomechanics"][
+            "events_sheets"
+        ]["flexion_extension"],
     )
 
     start_time = get_non_walk_start_time(
@@ -436,11 +444,11 @@ def test_get_non_walk_start_time_flexion_extension(
     assert start_time == pd.to_timedelta(2.0, "s")
 
 
-def test_import_biomechanics_sit_to_stand(fake_biomechanics_excel) -> None:
+def test_import_biomechanics_sit_to_stand(fake_participant_directory) -> None:
     """Test importing sit-to-stand biomechanics recordings."""
     from pathlib import Path
 
-    excel_file = Path(fake_biomechanics_excel["excel_path"])
+    excel_file = Path(fake_participant_directory["biomechanics"]["excel_path"])
 
     biomechanics_recordings = import_biomechanics_recordings(
         biomechanics_file=excel_file,
@@ -462,12 +470,12 @@ def test_import_biomechanics_sit_to_stand(fake_biomechanics_excel) -> None:
 
 
 def test_import_biomechanics_flexion_extension(
-    fake_biomechanics_excel,
+    fake_participant_directory,
 ) -> None:
     """Test importing flexion-extension biomechanics recordings."""
     from pathlib import Path
 
-    excel_file = Path(fake_biomechanics_excel["excel_path"])
+    excel_file = Path(fake_participant_directory["biomechanics"]["excel_path"])
 
     biomechanics_recordings = import_biomechanics_recordings(
         biomechanics_file=excel_file,

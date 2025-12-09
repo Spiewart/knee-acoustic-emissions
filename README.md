@@ -90,6 +90,21 @@ python process_bin_files.py path\to\file.bin
 python process_bin_files.py path\to\directory_with_bin_files
 ```
 
+Process participant study data (parse directory structure and synchronize audio with biomechanics):
+
+```powershell
+python process_participant_directories.py path\to\studies
+# or with options
+python process_participant_directories.py path\to\studies --limit 5 --log output.log
+```
+
+Biomechanics Excel structure (walking)
+--------------------------------------
+
+- The sheet named `Walk0001` is pass metadata for *all* walking speeds. It always has the same name for every participant (the `0001` suffix is just export nomenclature). It contains the sync events (`Sync Left` / `Sync Right`) and pass timing markers.
+- Speed-specific biomech data lives in `Slow_Walking`, `Medium_Walking`, and `Fast_Walking`. These sheets hold the V3D column UIDs (e.g., `Walk0001_SSP4_Filt`) used to derive pass numbers and speeds.
+- Event sheets per speed (e.g., `Slow_Walking_Events`) may exist from exports but are not used for stomp-time sync; `Walk0001` provides the authoritative sync events.
+
 What each script produces
 -------------------------
 
@@ -118,5 +133,6 @@ Troubleshooting & notes
 
 Testing
 --------------------------------
+
 To run all tests:
 python -m pytest -q

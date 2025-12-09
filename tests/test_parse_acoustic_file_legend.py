@@ -13,11 +13,13 @@ from parse_acoustic_file_legend import (
 )
 
 
-def test_get_acoustics_metadata(sample_acoustic_legend_file) -> None:
+def test_get_acoustics_metadata(fake_participant_directory) -> None:
     """Test parsing acoustics metadata from a sample Excel file legend."""
 
+    legend_path = fake_participant_directory["legend_file"]
+
     metadata = get_acoustics_metadata(
-        metadata_file_path=str(sample_acoustic_legend_file),
+        metadata_file_path=str(legend_path),
         scripted_maneuver="walk",
         knee="left",
     )
@@ -40,12 +42,14 @@ def test_get_acoustics_metadata(sample_acoustic_legend_file) -> None:
 
 
 def test_get_acoustics_metadata_right_knee(
-    sample_acoustic_legend_file,
+    fake_participant_directory,
 ) -> None:
     """Test parsing acoustics metadata for right knee."""
 
+    legend_path = fake_participant_directory["legend_file"]
+
     metadata = get_acoustics_metadata(
-        metadata_file_path=str(sample_acoustic_legend_file),
+        metadata_file_path=str(legend_path),
         scripted_maneuver="walk",
         knee="right",
     )
@@ -57,12 +61,14 @@ def test_get_acoustics_metadata_right_knee(
 
 
 def test_get_acoustics_metadata_flexion_extension(
-    sample_acoustic_legend_file,
+    fake_participant_directory,
 ) -> None:
     """Test parsing acoustics metadata for flexion-extension maneuver."""
 
+    legend_path = fake_participant_directory["legend_file"]
+
     metadata = get_acoustics_metadata(
-        metadata_file_path=str(sample_acoustic_legend_file),
+        metadata_file_path=str(legend_path),
         scripted_maneuver="flexion_extension",
         knee="left",
     )
@@ -74,12 +80,14 @@ def test_get_acoustics_metadata_flexion_extension(
 
 
 def test_get_acoustics_metadata_sit_to_stand(
-    sample_acoustic_legend_file,
+    fake_participant_directory,
 ) -> None:
     """Test parsing acoustics metadata for sit-to-stand maneuver."""
 
+    legend_path = fake_participant_directory["legend_file"]
+
     metadata = get_acoustics_metadata(
-        metadata_file_path=str(sample_acoustic_legend_file),
+        metadata_file_path=str(legend_path),
         scripted_maneuver="sit_to_stand",
         knee="left",
     )
@@ -91,11 +99,12 @@ def test_get_acoustics_metadata_sit_to_stand(
 
 
 def test_find_knee_table_start_left_knee(
-    sample_acoustic_legend_file,
+    fake_participant_directory,
 ) -> None:
     """Test finding the start row for left knee data."""
+    legend_path = fake_participant_directory["legend_file"]
     metadata_df = pd.read_excel(
-        sample_acoustic_legend_file,
+        legend_path,
         sheet_name="Acoustic Notes",
         header=None,
     )
@@ -108,11 +117,12 @@ def test_find_knee_table_start_left_knee(
 
 
 def test_find_knee_table_start_right_knee(
-    sample_acoustic_legend_file,
+    fake_participant_directory,
 ) -> None:
     """Test finding the start row for right knee data."""
+    legend_path = fake_participant_directory["legend_file"]
     metadata_df = pd.read_excel(
-        sample_acoustic_legend_file,
+        legend_path,
         sheet_name="Acoustic Notes",
         header=None,
     )
@@ -124,10 +134,11 @@ def test_find_knee_table_start_right_knee(
     assert start_row > 0
 
 
-def test_find_knee_table_start_not_found(sample_acoustic_legend_file) -> None:
+def test_find_knee_table_start_not_found(fake_participant_directory) -> None:
     """Test that finding non-existent knee raises ValueError."""
+    legend_path = fake_participant_directory["legend_file"]
     metadata_df = pd.read_excel(
-        sample_acoustic_legend_file,
+        legend_path,
         sheet_name="Acoustic Notes",
         header=None,
     )
@@ -137,11 +148,12 @@ def test_find_knee_table_start_not_found(sample_acoustic_legend_file) -> None:
 
 
 def test_extract_knee_metadata_table(
-    sample_acoustic_legend_file,
+    fake_participant_directory,
 ) -> None:
     """Test extracting knee metadata table from full DataFrame."""
+    legend_path = fake_participant_directory["legend_file"]
     metadata_df = pd.read_excel(
-        sample_acoustic_legend_file,
+        legend_path,
         sheet_name="Acoustic Notes",
         header=None,
     )

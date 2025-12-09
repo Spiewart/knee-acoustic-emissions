@@ -1,32 +1,49 @@
-"""Parses a study participant directory and returns a list of
-SynchronizedCycle Pydantic models representing synchronized
-acoustics and biomechanics data with associated metadata."""
+"""Process and parse study participant directories.
 
+Parses individual study participant directories to validate structure,
+extract metadata, and synchronize acoustics with biomechanics data.
+Can be used as a module (import functions) or called from command line
+to process batch directories.
+
+Usage as module:
+    from process_participant_directory import parse_participant_directory
+    parse_participant_directory(Path("/path/to/participant/#1011"))
+
+Usage from command line:
+    python process_participant_directory.py /path/to/studies
+    python process_participant_directory.py /path/to/studies --limit 5
+    python process_participant_directory.py /path/to/studies --log output.log
+"""
+
+from __future__ import annotations
+
+import argparse
 import logging
 from pathlib import Path
+from typing import TYPE_CHECKING, Literal, cast
 
 import pandas as pd
 
+from process_biomechanics import import_biomechanics_recordings
+from sync_audio_with_biomechanics import (
+    clip_synchronized_data,
+    get_audio_stomp_time,
+    get_stomp_time,
+    load_audio_data,
+    sync_audio_with_biomechanics,
+)
 
-def parse_participant_directories(dir_path: str) -> None:
-
-    # Iterate over all the folders in the project directory
-    project_dir = Path(dir_path)
-    participant_directories = [
-        d for d in project_dir.iterdir() if d.is_dir()
-    ]
-    logging.info(
-        "Found %s participant directories to process.",
-        len(participant_directories),
-    )
-
-    for participant_dir in participant_directories:
-        parse_participant_directory(participant_dir)
+if TYPE_CHECKING:
+    from models import BiomechanicsCycle
 
 
 def parse_participant_directory(participant_dir: Path) -> None:
     """Parses a single participant directory to validate its structure
-    and contents."""
+    and contents.
+
+    This function processes all maneuvers for both knees in a transactional
+    manner. If ANY maneuver fails to process, NO files will be written.
+    """
 
     study_id = get_study_id_from_directory(participant_dir)
     logging.info("Processing participant with Study ID: %s", study_id)
@@ -36,10 +53,419 @@ def parse_participant_directory(participant_dir: Path) -> None:
         "All required files found for participant %s", study_id
     )
 
+    # Get the biomechanics file path
+    biomechanics_file = participant_dir / "Motion Capture" / (
+        f"AOA{study_id}_Biomechanics_Full_Set.xlsx"
+    )
+
+    # Collect all synchronized data before writing anything (transactional)
+    all_synced_data: list[tuple[Path, pd.DataFrame]] = []
+
+    # Process each knee (Left and Right)
+    for knee_side in ["Left", "Right"]:
+        knee_dir = participant_dir / f"{knee_side} Knee"
+        logging.info(
+            "Processing %s Knee for participant %s",
+            knee_side,
+            study_id
+        )
+        knee_synced_data = _process_knee_maneuvers(
+            knee_dir, biomechanics_file, knee_side
+        )
+        all_synced_data.extend(knee_synced_data)
+
+    # If we got here, all processing succeeded - now write all files
+    logging.info(
+        "All maneuvers processed successfully for participant %s. "
+        "Writing %d output files...",
+        study_id,
+        len(all_synced_data),
+    )
+    for output_path, synced_df in all_synced_data:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        synced_df.to_pickle(output_path)
+        logging.info("Saved synchronized data to %s", output_path)
+
+    logging.info("Completed processing participant %s", study_id)
+
+
+def _process_knee_maneuvers(
+    knee_dir: Path,
+    biomechanics_file: Path,
+    knee_side: str,
+) -> list[tuple[Path, pd.DataFrame]]:
+    """Process all maneuvers for a specific knee (Left or Right).
+
+    Synchronizes audio and biomechanics data for all maneuvers but does NOT
+    write any files. Returns a list of (output_path, dataframe) tuples for
+    later writing.
+
+    Args:
+        knee_dir: Path to the knee directory (Left Knee or Right Knee)
+        biomechanics_file: Path to the biomechanics Excel file
+        knee_side: "Left" or "Right"
+
+    Returns:
+        List of (output_path, synchronized_dataframe) tuples
+
+    Raises:
+        Exception: If any maneuver fails to process
+    """
+    maneuver_mapping: dict[str, Literal[
+        "walk",
+        "sit_to_stand",
+        "flexion_extension",
+    ]] = {
+        "Walking": "walk",
+        "Sit-Stand": "sit_to_stand",
+        "Flexion-Extension": "flexion_extension",
+    }
+
+    all_synced_data: list[tuple[Path, pd.DataFrame]] = []
+
+    for maneuver_folder, maneuver_key in maneuver_mapping.items():
+        maneuver_dir = knee_dir / maneuver_folder
+        if not maneuver_dir.exists():
+            logging.warning(
+                "Maneuver folder %s not found in %s",
+                maneuver_folder,
+                knee_dir,
+            )
+            continue
+
+        # Create Synced folder path (don't create yet)
+        synced_dir = maneuver_dir / "Synced"
+
+        maneuver_synced_data = _sync_maneuver_data(
+            maneuver_dir=maneuver_dir,
+            synced_dir=synced_dir,
+            biomechanics_file=biomechanics_file,
+            maneuver_key=cast(
+                Literal["walk", "sit_to_stand", "flexion_extension"],
+                maneuver_key,
+            ),
+            knee_side=knee_side,
+        )
+        all_synced_data.extend(maneuver_synced_data)
+
+    return all_synced_data
+
+
+def _sync_maneuver_data(
+    maneuver_dir: Path,
+    synced_dir: Path,
+    biomechanics_file: Path,
+    maneuver_key: Literal["walk", "sit_to_stand", "flexion_extension"],
+    knee_side: str,
+    with_freq: bool = True,
+) -> list[tuple[Path, pd.DataFrame]]:
+    """Synchronize audio and biomechanics data for a specific maneuver.
+
+    Processes and synchronizes data but does NOT write files.
+
+    Args:
+        maneuver_dir: Path to the maneuver directory
+        synced_dir: Path where synchronized data will be saved (used for path)
+        biomechanics_file: Path to the biomechanics Excel file
+        maneuver_key: Type of maneuver
+        knee_side: "Left" or "Right"
+
+    Returns:
+        List of (output_path, synchronized_dataframe) tuples
+
+    Raises:
+        Exception: If processing fails
+    """
+    synced_data: list[tuple[Path, pd.DataFrame]] = []
+
+    # Get audio file name
+    audio_file_name = get_audio_file_name(maneuver_dir, with_freq=with_freq)
+    audio_base = Path(audio_file_name).name
+    audio_pkl_file = (
+        maneuver_dir / f"{audio_base}_outputs" /
+        f"{audio_base}.pkl"
+    )
+
+    if not audio_pkl_file.exists():
+        raise FileNotFoundError(
+            f"Audio pickle file not found: {audio_pkl_file}"
+        )
+
+    # Load audio data
+    audio_df = load_audio_data(audio_pkl_file)
+
+    # Import biomechanics recordings
+    if maneuver_key == "walk":
+        # For walking, process each speed
+        for speed in ["slow", "medium", "fast"]:
+            speed_synced_data = _process_walk_speed(
+                speed=speed,
+                biomechanics_file=biomechanics_file,
+                audio_df=audio_df,
+                maneuver_dir=maneuver_dir,
+                synced_dir=synced_dir,
+                knee_side=knee_side,
+            )
+            synced_data.extend(speed_synced_data)
+    else:
+        # For sit-to-stand and flexion-extension, single recording
+        recordings = import_biomechanics_recordings(
+            biomechanics_file=biomechanics_file,
+            maneuver=maneuver_key,
+            speed=None,
+        )
+
+        if not recordings:
+            raise ValueError(
+                f"No biomechanics recordings found for {maneuver_key}"
+            )
+
+        # Process first (and only) recording
+        recording = recordings[0]
+        output_path, synced_df = _sync_and_save_recording(
+            recording=recording,
+            audio_df=audio_df,
+            synced_dir=synced_dir,
+            biomechanics_file=biomechanics_file,
+            maneuver_key=maneuver_key,
+            knee_side=knee_side,
+            pass_number=None,
+            speed=None,
+        )
+        synced_data.append((output_path, synced_df))
+
+    return synced_data
+
+
+def _process_walk_speed(
+    speed: str,
+    biomechanics_file: Path,
+    audio_df: pd.DataFrame,
+    maneuver_dir: Path,
+    synced_dir: Path,
+    knee_side: str,
+) -> list[tuple[Path, pd.DataFrame]]:
+    """Process walking data for a specific speed.
+
+    Processes and synchronizes data but does NOT write files.
+
+    Args:
+        speed: "slow", "medium", or "fast"
+        biomechanics_file: Path to the biomechanics Excel file
+        audio_df: Audio data DataFrame
+        maneuver_dir: Path to the maneuver directory
+        synced_dir: Path where synchronized data will be saved (used for path)
+        knee_side: "Left" or "Right"
+
+    Returns:
+        List of (output_path, synchronized_dataframe) tuples
+    """
+    synced_data: list[tuple[Path, pd.DataFrame]] = []
+
+    try:
+        recordings = import_biomechanics_recordings(
+            biomechanics_file=biomechanics_file,
+            maneuver="walk",
+            speed=speed,  # type: ignore[arg-type]
+        )
+
+        if not recordings:
+            logging.info(
+                "No biomechanics recordings found for %s at speed %s",
+                "walk",
+                speed,
+            )
+            return synced_data
+
+        # Process each pass/recording at this speed
+        for recording in recordings:
+            output_path, synced_df = _sync_and_save_recording(
+                recording=recording,
+                audio_df=audio_df,
+                synced_dir=synced_dir,
+                biomechanics_file=biomechanics_file,
+                maneuver_key="walk",
+                knee_side=knee_side,
+                pass_number=recording.pass_number,
+                speed=speed,
+            )
+            synced_data.append((output_path, synced_df))
+
+    except Exception as e:
+        logging.error(
+            "Error processing walking at %s speed in %s: %s",
+            speed,
+            maneuver_dir,
+            str(e),
+        )
+        raise
+
+    return synced_data
+
+
+def _sync_and_save_recording(
+    recording: "BiomechanicsCycle",  # type: ignore[name-defined]
+    audio_df: pd.DataFrame,
+    synced_dir: Path,
+    biomechanics_file: Path,
+    maneuver_key: str,
+    knee_side: str,
+    pass_number: int | None,
+    speed: str | None,
+) -> tuple[Path, pd.DataFrame]:
+    """Synchronize a single biomechanics recording with audio.
+
+    Processes and synchronizes data but does NOT write files.
+
+    Args:
+        recording: BiomechanicsCycle object with biomechanics data
+        audio_df: Audio data DataFrame
+        synced_dir: Path where synchronized data will be saved (used for path)
+        biomechanics_file: Path to biomechanics Excel file (for event data)
+        maneuver_key: Type of maneuver
+        knee_side: "Left" or "Right"
+        pass_number: Pass number (for walking), None otherwise
+        speed: Speed level (for walking), None otherwise
+
+    Returns:
+        Tuple of (output_path, synchronized_dataframe)
+
+    Raises:
+        Exception: If synchronization fails
+    """
+    bio_df = recording.data
+
+    # Get stomp times
+    audio_stomp_time = get_audio_stomp_time(audio_df)
+
+    # Read event data from biomechanics file
+    event_meta_data = _load_event_data(
+        biomechanics_file=biomechanics_file,
+        maneuver_key=maneuver_key,
+        pass_number=pass_number,
+        speed=speed,
+    )
+
+    bio_stomp_time = get_stomp_time(
+        bio_meta=event_meta_data,
+        foot=_get_foot_from_knee_side(knee_side),
+    )
+
+    # Sync audio with biomechanics
+    synced_df = sync_audio_with_biomechanics(
+        audio_stomp_time=audio_stomp_time,
+        bio_stomp_time=bio_stomp_time,
+        audio_df=audio_df.copy(),
+        bio_df=bio_df,
+    )
+
+    # Clip synchronized data
+    clipped_df = clip_synchronized_data(synced_df, bio_df)
+
+    # Generate filename (but don't save yet)
+    filename = _generate_synced_filename(
+        knee_side=knee_side,
+        maneuver_key=maneuver_key,
+        pass_number=pass_number,
+        speed=speed,
+    )
+
+    output_path = synced_dir / f"{filename}.pkl"
+
+    return output_path, clipped_df
+
+
+def _load_event_data(
+    biomechanics_file: Path,
+    maneuver_key: str,
+) -> pd.DataFrame:
+    """Load event metadata from biomechanics Excel file.
+
+    Args:
+        biomechanics_file: Path to the biomechanics Excel file
+        maneuver_key: Type of maneuver ("walk", "sit_to_stand",
+            "flexion_extension")
+        pass_number: Pass number (unused for walk, for compatibility)
+        speed: Speed (unused for walk, for compatibility)
+
+    Returns:
+        DataFrame containing event metadata
+
+    Raises:
+        ValueError: If event sheet cannot be found
+    """
+    raw_study_id = biomechanics_file.stem.split("_")[0]
+    study_id = raw_study_id.replace("AOA", "")
+    study_prefix = f"AOA{study_id}"
+
+    if maneuver_key == "walk":
+        # For all walk speeds, use Walk0001 which has sync events
+        event_sheet_name = f"{study_prefix}_Walk0001"
+    elif maneuver_key == "sit_to_stand":
+        event_sheet_name = f"{study_prefix}_StoS_Events"
+    elif maneuver_key == "flexion_extension":
+        event_sheet_name = f"{study_prefix}_FE_Events"
+    else:
+        raise ValueError(f"Unknown maneuver type: {maneuver_key}")
+
+    try:
+        event_meta_data = pd.read_excel(
+            biomechanics_file,
+            sheet_name=event_sheet_name,
+        )
+        return event_meta_data
+    except ValueError as e:
+        logging.error(
+            "Event sheet '%s' not found in %s: %s",
+            event_sheet_name,
+            biomechanics_file,
+            str(e),
+        )
+        raise
+
+
+def _get_foot_from_knee_side(knee_side: str) -> str:
+    """Map knee side to foot for stomp time extraction.
+
+    Args:
+        knee_side: "Left" or "Right"
+
+    Returns:
+        "left" or "right"
+    """
+    return "left" if knee_side.lower() == "left" else "right"
+
+
+def _generate_synced_filename(
+    knee_side: str,
+    maneuver_key: str,
+    pass_number: int | None,
+    speed: str | None,
+) -> str:
+    """Generate standardized filename for synchronized data.
+
+    Args:
+        knee_side: "Left" or "Right"
+        maneuver_key: "walk", "sit_to_stand", or "flexion_extension"
+        pass_number: Pass number for walking, None otherwise
+        speed: Speed for walking, None otherwise
+
+    Returns:
+        Standardized filename without extension
+    """
+    base = f"{knee_side}_{maneuver_key}"
+
+    if maneuver_key == "walk":
+        return f"{base}_Pass{pass_number:04d}_{speed}"
+    else:
+        return base
+
 
 def get_study_id_from_directory(path: Path) -> str:
-    """Extracts the study ID from the participant directory path.
-    Need to remove the "#" prefix from the folder name."""
+    """Extract the study ID from participant directory path.
+
+    Remove the "#" prefix from the folder name.
+    """
     return path.name.lstrip("#")
 
 
@@ -65,7 +491,8 @@ def dir_has_acoustic_file_legend(participant_dir: Path):
         )
         if not excel_files:
             raise FileNotFoundError(
-                f"No Excel file with 'acoustic_file_legend' found in {participant_dir}"
+                f"No Excel file with 'acoustic_file_legend' "
+                f"found in {participant_dir}"
             )
     except Exception as e:
         logging.error(
@@ -109,7 +536,8 @@ def knee_folder_has_subfolder_each_maneuver(knee_dir: Path) -> None:
         maneuver_path = knee_dir / maneuver
         if not maneuver_path.exists() or not maneuver_path.is_dir():
             raise FileNotFoundError(
-                f"Required maneuver folder '{maneuver}' not found in {knee_dir}"
+                f"Required maneuver folder '{maneuver}' "
+                f"not found in {knee_dir}"
             )
         knee_subfolder_has_acoustic_files(maneuver_path)
 
@@ -120,7 +548,7 @@ def knee_subfolder_has_acoustic_files(
     """Checks that the maneuver directory contains acoustic files."""
 
     try:
-        audio_file_name = get_audio_file_name(maneuver_dir)
+        audio_file_name = get_audio_file_name(maneuver_dir, with_freq=True)
     except FileNotFoundError as e:
         logging.error(
             "Error checking for acoustic files in %s: %s",
@@ -129,22 +557,33 @@ def knee_subfolder_has_acoustic_files(
         )
         raise e
 
+    audio_base = Path(audio_file_name).name
     processed_audio_outputs = Path(
-        maneuver_dir / (audio_file_name + "_outputs")
+        maneuver_dir / f"{audio_base}_outputs"
     )
 
     # Assert that there is a pickled DataFrame with the same name as the audio
-    # file but with a .pkl extension in the processed_audio_outputs directory
-    pkl_file = processed_audio_outputs / (audio_file_name + ".pkl")
+    # file but with "with_freq" appended to it and a .pkl extension in the
+    # processed_audio_outputs directory
+    pkl_file = processed_audio_outputs / f"{audio_base}.pkl"
     if not pkl_file.exists():
         raise FileNotFoundError(
             f"Processed audio .pkl file '{pkl_file}' "
             f"not found in {processed_audio_outputs}"
         )
-    # TODO: Add checks for the correct columns in the pickled DataFrame
 
 
-def get_audio_file_name(maneuver_dir: Path) -> str:
+def get_audio_file_name(maneuver_dir: Path, with_freq: bool = False) -> str:
+    """Get the audio file name from the maneuver directory by looking for the
+    original .bin file and pulling the name written in the file.
+    Args:
+        maneuver_dir: Path to the maneuver directory
+        with_freq: If True, looks for file with '_with_freq' suffix
+    Returns:
+        The audio file name as a string
+    Raises:
+        FileNotFoundError: If no file is found in the maneuver directory
+    """
     # Check that there is a raw .bin acoustics file in the maneuver directory
     bin_files = list(maneuver_dir.glob("*.bin"))
     if not bin_files:
@@ -153,11 +592,16 @@ def get_audio_file_name(maneuver_dir: Path) -> str:
         )
 
     assert len(bin_files) == 1, (
-        f"Expected exactly one .bin file in {maneuver_dir}, found {len(bin_files)}"
+        f"Expected exactly one .bin file in {maneuver_dir}, "
+        f"found {len(bin_files)}"
     )
 
     # Set audio_file to the path of the .bin file minus the file extension
-    return str(bin_files[0].with_suffix(""))
+    audio_file_name = str(bin_files[0].with_suffix(""))
+    # If with_freq is True, append '_with_freq' to the file name
+    if with_freq:
+        audio_file_name += "_with_freq"
+    return audio_file_name
 
 
 def motion_capture_folder_has_required_data(
@@ -182,36 +626,245 @@ def motion_capture_folder_has_required_data(
     sheet_names = xls.sheet_names
 
     maneuvers = {
-        "Walking": "Walking",
-        "SitToStand": "StoS",
-        "FlexExt": "FE",
+        "Walking": {
+            "data": "Walking",
+            "pass_metadata": "Walk0001",
+            "speeds": ["Slow", "Medium", "Fast"],
+        },
+        "SitToStand": {
+            "data": "SitToStand",
+            "events": "StoS_Events",
+        },
+        "FlexExt": {
+            "data": "FlexExt",
+            "events": "FE_Events",
+        },
     }
 
-    speeds = {
-        "Slow": "SS",
-        "Medium": "NS",
-        "Fast": "FS",
-    }
-
-    for maneuver_key, maneuver_value in maneuvers.items():
-        events_sheet_name = f"AOA{study_id}_{maneuver_value}_Events"
-        if events_sheet_name not in sheet_names:
-            raise ValueError(
-                f"Required sheet '{events_sheet_name}' not found "
-                f"in motion capture Excel file '{expected_filename}'"
-            )
+    for maneuver_key, maneuver_config in maneuvers.items():
         if maneuver_key == "Walking":
-            for speed_key, _ in speeds.items():
-                speed_sheet_name = f"AOA{study_id}_{speed_key}_{maneuver_value}"
+            # Check for pass metadata sheet (single sheet shared across speeds)
+            pass_metadata_sheet_name = (
+                f"AOA{study_id}_{maneuver_config['pass_metadata']}"
+            )
+            if pass_metadata_sheet_name not in sheet_names:
+                raise ValueError(
+                    f"Required sheet '{pass_metadata_sheet_name}' not found "
+                    f"in motion capture Excel file '{expected_filename}'"
+                )
+            # Check for speed data sheets
+            for speed_key in maneuver_config["speeds"]:
+                speed_sheet_name = (
+                    f"AOA{study_id}_{speed_key}_{maneuver_config['data']}"
+                )
                 if speed_sheet_name not in sheet_names:
                     raise ValueError(
                         f"Required sheet '{speed_sheet_name}' not found "
                         f"in motion capture Excel file '{expected_filename}'"
                     )
         else:
-            maneuver_sheet_name = f"AOA{study_id}_{maneuver_value}"
+            maneuver_sheet_name = (
+                f"AOA{study_id}_{maneuver_config['data']}"
+            )
+
             if maneuver_sheet_name not in sheet_names:
                 raise ValueError(
                     f"Required sheet '{maneuver_sheet_name}' not found "
                     f"in motion capture Excel file '{expected_filename}'"
                 )
+            events_sheet_name = f"AOA{study_id}_{maneuver_config['events']}"
+            if events_sheet_name not in sheet_names:
+                raise ValueError(
+                    f"Required sheet '{events_sheet_name}' not found "
+                    f"in motion capture Excel file '{expected_filename}'"
+                )
+
+
+# ============================================================================
+# Command-line interface functions for batch processing
+# ============================================================================
+
+
+def find_participant_directories(path: Path) -> list[Path]:
+    """Return a sorted list of participant directories.
+
+    A valid participant directory is a subdirectory whose name starts with "#"
+    (e.g., "#1011", "#2024").
+
+    Args:
+        path: Directory to search (recursively searches subdirectories)
+
+    Returns:
+        Sorted list of participant directory paths
+    """
+    if not path.is_dir():
+        return []
+
+    # Find all subdirectories that start with "#"
+    participant_dirs = [
+        d for d in path.iterdir()
+        if d.is_dir() and d.name.startswith("#")
+    ]
+
+    return sorted(participant_dirs)
+
+
+def setup_logging(log_file: Path | None = None) -> None:
+    """Configure logging to both console and optional file.
+
+    Args:
+        log_file: Optional path to write log file
+    """
+    log_level = logging.INFO
+    log_format = "%(asctime)s %(levelname)s: %(message)s"
+
+    # Configure root logger
+    logging.basicConfig(
+        level=log_level,
+        format=log_format,
+        handlers=[logging.StreamHandler()],
+    )
+
+    # Add file handler if specified
+    if log_file:
+        fh = logging.FileHandler(log_file, mode="w", encoding="utf-8")
+        fh.setLevel(log_level)
+        formatter = logging.Formatter(log_format)
+        fh.setFormatter(formatter)
+        logging.getLogger().addHandler(fh)
+
+
+def process_participant(participant_dir: Path) -> bool:
+    """Process a single participant directory.
+
+    Args:
+        participant_dir: Path to the participant directory
+
+    Returns:
+        True if processing succeeded, False otherwise
+    """
+    try:
+        study_id = participant_dir.name.lstrip("#")
+        logging.info("Processing participant #%s", study_id)
+
+        # Validate directory structure
+        check_participant_dir_for_required_files(participant_dir)
+        logging.info(
+            "Directory validation passed for participant #%s", study_id
+        )
+
+        # Parse and process all maneuvers
+        parse_participant_directory(participant_dir)
+        logging.info(
+            "Successfully completed processing participant #%s", study_id
+        )
+        return True
+
+    except FileNotFoundError as e:
+        logging.error(
+            "Validation error for %s: %s", participant_dir.name, str(e)
+        )
+        return False
+    except Exception as e:  # pylint: disable=broad-except
+        logging.error(
+            "Unexpected error processing %s: %s",
+            participant_dir.name,
+            str(e),
+        )
+        return False
+
+
+def main() -> None:
+    """Main entry point for command-line script."""
+    parser = argparse.ArgumentParser(
+        description=(
+            "Process all participant directories in a folder. "
+            "Each directory should be named with format '#<study_id>'."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "Examples:\n"
+            "  python process_participant_directory.py /path/to/studies\n"
+            "  python process_participant_directory.py /path/to/studies "
+            "--limit 5"
+        ),
+    )
+
+    parser.add_argument(
+        "path",
+        help=(
+            "Path to directory containing participant folders "
+            "(e.g., #1011, #2024)"
+        ),
+    )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=0,
+        help="Process at most N participant directories (0 = all, default: 0)",
+    )
+    parser.add_argument(
+        "--log",
+        type=str,
+        default=None,
+        help="Optional path to write detailed log file",
+    )
+
+    args = parser.parse_args()
+
+    # Set up logging
+    log_file = Path(args.log) if args.log else None
+    setup_logging(log_file)
+
+    # Validate input path
+    path = Path(args.path)
+    if not path.exists():
+        logging.error("Path does not exist: %s", path)
+        return
+    if not path.is_dir():
+        logging.error("Path is not a directory: %s", path)
+        return
+
+    # Find participant directories
+    participants = find_participant_directories(path)
+    if not participants:
+        logging.warning(
+            "No participant directories found in %s "
+            "(looking for folders named #<study_id>)",
+            path,
+        )
+        return
+
+    # Apply limit if specified
+    if args.limit > 0:
+        participants = participants[: args.limit]
+
+    logging.info(
+        "Found %d participant directory(ies) to process", len(participants)
+    )
+
+    # Process each participant
+    success_count = 0
+    failure_count = 0
+
+    for participant_dir in participants:
+        if process_participant(participant_dir):
+            success_count += 1
+        else:
+            failure_count += 1
+
+    # Summary
+    logging.info(
+        "Processing complete: %d succeeded, %d failed",
+        success_count,
+        failure_count,
+    )
+
+    if failure_count > 0:
+        logging.warning(
+            "Some participants failed processing; check logs for details"
+        )
+
+
+if __name__ == "__main__":
+    main()

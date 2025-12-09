@@ -185,18 +185,27 @@ Where:
   - NS = Normal
   - FS = Fast
 
+### Biomechanics Excel sheets (walking)
+
+- `Walk0001` is the pass-metadata sheet for *all* walking speeds. It is always named the same for every participant; the `0001` is export nomenclature and not a true pass number. It carries sync events (`Sync Left` / `Sync Right`) and pass timing markers used for stomp alignment.
+- Speed-specific data sheets are `Slow_Walking`, `Medium_Walking`, and `Fast_Walking`. Their V3D column UIDs (e.g., `Walk0001_SSP4_Filt`) encode both speed and pass number.
+- Speed-specific `*_Walking_Events` sheets may exist in exports but are not used for stomp-time sync; rely on `Walk0001` for sync events.
+
 ### DataFrame Columns
 
 **Audio Data (AcousticsRecording)**:
+
 - `tt`: time vector
 - `ch1`, `ch2`, `ch3`, `ch4`: audio channels
 - `f_ch1`, `f_ch2`, `f_ch3`, `f_ch4`: instantaneous frequency
 
 **Biomechanics Data (BiomechanicsRecording)**:
+
 - `TIME`: time vector (timedelta, relative to start)
 - Various motion capture columns (joint angles, positions, etc.)
 
 **Synchronized Data (SynchronizedRecording)**:
+
 - All columns from both audio and biomechanics
 
 ---
@@ -244,9 +253,9 @@ Currently, only "walk" maneuvers are fully supported. To extend:
 
 ## References & Resources
 
-- **Pydantic Documentation**: https://docs.pydantic.dev/
-- **Pandas Documentation**: https://pandas.pydata.org/docs/
-- **SciPy Signal Processing**: https://docs.scipy.org/doc/scipy/reference/signal.html
+- **Pydantic Documentation**: <https://docs.pydantic.dev/>
+- **Pandas Documentation**: <https://pandas.pydata.org/docs/>
+- **SciPy Signal Processing**: <https://docs.scipy.org/doc/scipy/reference/signal.html>
 - **Project Repository**: Department of Veterans Affairs - acoustic_emissions_processing
 
 ---
