@@ -162,13 +162,13 @@ def _write_audio_files(
 
         outputs_dir = maneuver_dir / "test_audio_outputs"
         outputs_dir.mkdir(exist_ok=True)
+
+        # Base pickle without frequency data
         pkl_path = outputs_dir / "test_audio.pkl"
         audio_df.to_pickle(pkl_path)
 
-        # Frequency-augmented output lives in its own outputs folder
-        outputs_dir_freq = maneuver_dir / "test_audio_with_freq_outputs"
-        outputs_dir_freq.mkdir(exist_ok=True)
-        pkl_freq_path = outputs_dir_freq / "test_audio_with_freq.pkl"
+        # Frequency-augmented pickle lives in the same outputs folder
+        pkl_freq_path = outputs_dir / "test_audio_with_freq.pkl"
         audio_df.to_pickle(pkl_freq_path)
 
         audio_paths[maneuver_name] = pkl_path
