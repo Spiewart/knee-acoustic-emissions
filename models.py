@@ -122,6 +122,35 @@ class BiomechanicsMetadata(BaseModel):
         return v
 
 
+class PassMetadata(pd.DataFrame):
+    """DataFrame subclass for biomechanics pass event metadata.
+
+    Required columns:
+    - Event Info: String describing the event (e.g., "SS Pass 1 Start", "Movement Start")
+    - Time (sec): Float timestamp in seconds
+    """
+
+    @classmethod
+    def __get_pydantic_core_schema__(cls, source_type, handler) -> CoreSchema:
+        def validate_dataframe(value):
+            if not isinstance(value, pd.DataFrame):
+                raise PydanticCustomError("not_dataframe", "Value is not a pandas DataFrame")
+
+            required_columns = ["Event Info", "Time (sec)"]
+            if not all(col in value.columns for col in required_columns):
+                missing = set(required_columns) - set(value.columns)
+                raise PydanticCustomError(
+                    "missing_column",
+                    f"DataFrame is missing required columns: {', '.join(missing)}"
+                )
+            return cls(value)
+
+        return core_schema.no_info_after_validator_function(
+            validate_dataframe,
+            core_schema.any_schema()
+        )
+
+
 class BiomechanicsRecording(pd.DataFrame):
     @classmethod
     def __get_pydantic_core_schema__(cls, source_type, handler) -> CoreSchema:
@@ -141,9 +170,18 @@ class BiomechanicsRecording(pd.DataFrame):
 
 
 class BiomechanicsCycle(BiomechanicsMetadata):
-    """Pydantic Model for biomechanics data and associated metadata."""
+    """Pydantic Model for biomechanics data and associated metadata.
+
+    Additional fields for walking maneuvers:
+    - sync_left_time: Time of left foot stomp sync event (seconds)
+    - sync_right_time: Time of right foot stomp sync event (seconds)
+    - pass_metadata: DataFrame containing event metadata for the pass
+    """
 
     data: BiomechanicsRecording
+    sync_left_time: float | None = None
+    sync_right_time: float | None = None
+    pass_metadata: PassMetadata | None = None
 
 
 class SynchronizedRecording(pd.DataFrame):
