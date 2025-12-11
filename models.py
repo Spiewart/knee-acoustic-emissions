@@ -63,7 +63,6 @@ class AcousticsRecording(pd.DataFrame):
         def validate_dataframe(value):
             if not isinstance(value, pd.DataFrame):
                 raise PydanticCustomError("not_dataframe", "Value is not a pandas DataFrame")
-            # TODO: Add more specific DataFrame structure validation here
             required_columns = ["tt", "ch1", "ch2", "ch3", "ch4", "f_ch1", "f_ch2", "f_ch3", "f_ch4"]
             if not all(col in value.columns for col in required_columns):
                 msg = f"DataFrame is missing required columns: {', '.join(set(required_columns) - set(value.columns))}"
@@ -158,7 +157,6 @@ class BiomechanicsRecording(pd.DataFrame):
         def validate_dataframe(value):
             if not isinstance(value, pd.DataFrame):
                 raise PydanticCustomError("not_dataframe", "Value is not a pandas DataFrame")
-            # TODO: Add more specific DataFrame structure validation here
             if "TIME" not in value.columns:
                 raise PydanticCustomError("missing_column", "DataFrame must contain 'required_col'")
             return cls(value)  # Ensure it's an instance of MyDataFrame
@@ -191,7 +189,6 @@ class SynchronizedRecording(pd.DataFrame):
         def validate_dataframe(value):
             if not isinstance(value, pd.DataFrame):
                 raise PydanticCustomError("not_dataframe", "Value is not a pandas DataFrame")
-            # TODO: Add more specific DataFrame structure validation here
             required_columns = ["tt", "ch1", "ch2", "ch3", "ch4", "f_ch1", "f_ch2", "f_ch3", "f_ch4", "TIME"]
             if not all(col in value.columns for col in required_columns):
                 msg = f"DataFrame is missing required columns: {', '.join(set(required_columns) - set(value.columns))}"

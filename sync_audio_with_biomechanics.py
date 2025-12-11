@@ -154,6 +154,7 @@ def sync_audio_with_biomechanics(
 
     # Merge biomechanics into audio to preserve all audio data
     # using adjusted 'tt' and biomechanics 'TIME' columns
+    # TODO: investigate whether this is the cause of the abnormal joint angles in sync'd data
     synchronized_df = pd.merge_asof(
         audio_df.sort_values('tt'),
         bio_df.sort_values('TIME'),
@@ -168,26 +169,26 @@ def sync_audio_with_biomechanics(
 
 def clip_synchronized_data(
     synchronized_df: "pd.DataFrame",
-    bio_df: "pd.DataFrame",
+    start_time: datetime,
+    end_time: datetime,
 ) -> "pd.DataFrame":
-    """Clip synchronized DataFrame to the exact biomechanics data time range.
+    """Clip synchronized DataFrame to the provided biomechanics time window.
 
     Args:
-        synchronized_df (pd.DataFrame): DataFrame containing synchronized audio and biomechanics data.
-        bio_df (pd.DataFrame): DataFrame containing biomechanics data with timestamps.
+        synchronized_df: Synchronized audio + biomechanics DataFrame
+            with `tt` timestamps.
+        start_time: Start time of the maneuver window
+            (timedelta or datetime-like).
+        end_time: End time of the maneuver window
+            (timedelta or datetime-like).
 
     Returns:
-        pd.DataFrame: Clipped synchronized DataFrame within biomechanics time range.
+        DataFrame clipped to rows where `tt` is within [start_time, end_time].
     """
 
-    # Get biomechanics start and end times
-    bio_start_time = bio_df['TIME'].min()
-    bio_end_time = bio_df['TIME'].max()
-
-    # Clip synchronized DataFrame to biomechanics time range
     clipped_df = synchronized_df[
-        (synchronized_df['tt'] >= bio_start_time) &
-        (synchronized_df['tt'] <= bio_end_time)
+        (synchronized_df["tt"] >= start_time) &
+        (synchronized_df["tt"] <= end_time)
     ].reset_index(drop=True)
 
     return clipped_df

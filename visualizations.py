@@ -6,6 +6,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import pandas as pd
 from matplotlib.figure import Figure
+from scipy.signal import savgol_filter
 
 
 def plot_syncd_data(
@@ -18,13 +19,15 @@ def plot_syncd_data(
 
     Creates a dual-axis plot with:
     - Audio channels (ch1-ch4) on the left y-axis
-    - Normalized left and right knee angles on the right y-axis
+    - Normalized joint angle on the right y-axis
     - Time on the x-axis
+
+    Note: Assumes biomechanics columns no longer have laterality prefixes
+    (e.g., "Knee Angle Z" instead of "Left Knee Angle Z").
 
     Args:
         syncd_data_path: Path to pickled synchronized DataFrame.
-        joint_angle_col: Base name for joint angle columns. Will look for
-            "Left {joint_angle_col}" and "Right {joint_angle_col}".
+        joint_angle_col: Name for joint angle column.
             Default: "Knee Angle Z"
         figsize: Figure size as (width, height) in inches.
         save_path: Optional path to save the figure. If None, figure is
@@ -56,20 +59,10 @@ def plot_syncd_data(
             f"Missing audio channels in DataFrame: {missing_channels}"
         )
 
-    # Auto-detect joint angle column if not provided
-    left_angle_col = f"Left {joint_angle_col}"
-    right_angle_col = f"Right {joint_angle_col}"
-
-    # Check if both columns exist
-    missing_cols = []
-    if left_angle_col not in syncd_df.columns:
-        missing_cols.append(left_angle_col)
-    if right_angle_col not in syncd_df.columns:
-        missing_cols.append(right_angle_col)
-
-    if missing_cols:
+    # Check if joint angle column exists (no laterality prefix)
+    if joint_angle_col not in syncd_df.columns:
         raise ValueError(
-            f"Joint angle columns not found: {missing_cols}. "
+            f"Joint angle column '{joint_angle_col}' not found. "
             f"Available columns: {list(syncd_df.columns)}"
         )
 
@@ -88,29 +81,49 @@ def plot_syncd_data(
         time_data = syncd_df[time_col]
         time_label = "Time"
 
-    # Normalize joint angles to [0, 1] range
-    # Combine both angles to get overall min/max for consistent scaling
-    left_angle_data = syncd_df[left_angle_col].dropna()
-    right_angle_data = syncd_df[right_angle_col].dropna()
-    all_angle_data = pd.concat([left_angle_data, right_angle_data])
+    # Normalize joint angle to [0, 1] range and convert to numeric
+    # Handle potential object dtype by converting to numeric first
+    angle_series = pd.to_numeric(syncd_df[joint_angle_col], errors='coerce')
+    angle_data = angle_series.dropna()
 
-    if len(all_angle_data) > 0:
-        angle_min = all_angle_data.min()
-        angle_max = all_angle_data.max()
+    if len(angle_data) > 0:
+        angle_min = angle_data.min()
+        angle_max = angle_data.max()
         angle_range = angle_max - angle_min
         if angle_range > 0:
-            normalized_left = (
-                syncd_df[left_angle_col] - angle_min
-            ) / angle_range
-            normalized_right = (
-                syncd_df[right_angle_col] - angle_min
-            ) / angle_range
+            # Normalize to [0, 1] then scale to 50% of range [0.25, 0.75]
+            normalized_angle = (angle_series - angle_min) / angle_range
+            normalized_angle = 0.25 + (normalized_angle * 0.5)
+
+            # Apply Savitzky-Goyal smoothing directly to sparse data
+            # Biomechanics data is sparse (390-780 sample gaps at 52 kHz).
+            # Smooth the sparse points directly without interpolation.
+            valid_mask = ~normalized_angle.isna()
+            valid_indices = valid_mask[valid_mask].index
+
+            if len(valid_indices) > 5:
+                # Extract only the valid (sparse) data points
+                valid_data = normalized_angle[valid_indices]
+
+                # Small window for joint motion (~2 Hz at 120 Hz = 60 pts)
+                # Base window on number of valid points, not indices
+                window_length = min(21, max(len(valid_indices) // 10, 5))
+                if window_length % 2 == 0:
+                    window_length += 1
+
+                # Apply filter directly to valid data values
+                smoothed_valid = savgol_filter(
+                    valid_data.values,
+                    window_length=window_length,
+                    polyorder=3
+                )
+
+                # Replace values with smoothed version at sparse locations
+                normalized_angle[valid_indices] = smoothed_valid
         else:
-            normalized_left = syncd_df[left_angle_col]
-            normalized_right = syncd_df[right_angle_col]
+            normalized_angle = angle_series * 0 + 0.5  # Constant at midpoint
     else:
-        normalized_left = syncd_df[left_angle_col]
-        normalized_right = syncd_df[right_angle_col]
+        normalized_angle = angle_series
 
     # Create figure with dual y-axes
     fig, ax1 = plt.subplots(figsize=figsize)
@@ -134,31 +147,43 @@ def plot_syncd_data(
     ax1.legend(loc="upper left", fontsize=10)
     ax1.grid(True, alpha=0.3)
 
-    # Create second y-axis for normalized joint angles
+    # Create second y-axis for normalized joint angle
     ax2 = ax1.twinx()
+
+    # Plot as smooth continuous waveform
+    # Filter to only plot valid (non-NaN) data points
+    valid_mask = ~normalized_angle.isna()
+    valid_time = time_data[valid_mask]
+    valid_angle = normalized_angle[valid_mask]
+
     ax2.plot(
-        time_data,
-        normalized_left,
-        label=f"Left {joint_angle_col} (normalized)",
+        valid_time,
+        valid_angle,
+        label=f"{joint_angle_col} (normalized)",
         color="purple",
         linewidth=1.5,
-        linestyle="--",
-        alpha=0.8,
-    )
-    ax2.plot(
-        time_data,
-        normalized_right,
-        label=f"Right {joint_angle_col} (normalized)",
-        color="magenta",
-        linewidth=1.5,
-        linestyle="-.",
-        alpha=0.8,
+        alpha=0.9,
+        linestyle="-",
     )
 
-    ax2.set_ylabel("Normalized Joint Angle", fontsize=12, color="purple")
+    ax2.set_ylabel(f"{joint_angle_col} (degrees)", fontsize=12, color="purple")
     ax2.tick_params(axis="y", labelcolor="purple")
+
+    # Create custom y-axis labels showing actual angle values
+    if len(angle_data) > 0:
+        angle_min = angle_data.min()
+        angle_max = angle_data.max()
+        # Show 5 tick marks with actual angle values
+        tick_positions = [0.25, 0.375, 0.5, 0.625, 0.75]
+        tick_labels = [
+            f"{angle_min + (pos - 0.25) / 0.5 * (angle_max - angle_min):.1f}"
+            for pos in tick_positions
+        ]
+        ax2.set_yticks(tick_positions)
+        ax2.set_yticklabels(tick_labels)
+
     ax2.legend(loc="upper right", fontsize=10)
-    ax2.set_ylim(-0.1, 1.1)  # Slightly expand to show full range
+    ax2.set_ylim(0, 1)  # Full range, with angle occupying middle 50%
 
     # Set title
     filename = syncd_path.stem

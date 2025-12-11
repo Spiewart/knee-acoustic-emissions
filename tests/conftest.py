@@ -385,6 +385,66 @@ def _create_biomechanics_excel(
 
 
 @pytest.fixture
+def syncd_data(tmp_path):
+    """Create a sample synchronized DataFrame with expected columns.
+
+    This fixture generates realistic synchronized audio and biomechanics
+    data with the following characteristics:
+    - Audio channels (ch1-ch4) with varying amplitudes
+    - Time column (tt) in seconds
+    - Single biomechanics column (no laterality prefix): "Knee Angle Z"
+    - Realistic temporal dynamics
+
+    Returns:
+        Tuple of (pkl_path, syncd_dataframe) for testing
+    """
+    # Create time array (5 seconds at 100 Hz)
+    num_samples = 500
+    time_array = np.linspace(0, 5, num_samples)
+
+    # Generate realistic audio channels with noise
+    np.random.seed(42)
+    ch1 = (
+        np.sin(2 * np.pi * 5 * time_array) +
+        0.5 * np.random.randn(num_samples)
+    )
+    ch2 = (
+        0.7 * np.sin(2 * np.pi * 7 * time_array) +
+        0.5 * np.random.randn(num_samples)
+    )
+    ch3 = (
+        0.5 * np.sin(2 * np.pi * 10 * time_array) +
+        0.5 * np.random.randn(num_samples)
+    )
+    ch4 = (
+        0.3 * np.sin(2 * np.pi * 12 * time_array) +
+        0.5 * np.random.randn(num_samples)
+    )
+
+    # Generate joint angle with natural dynamics
+    # Simulating knee movement: slow start, acceleration, peak, deceleration
+    knee_angle = (
+        20 + 30 * (1 - np.cos(np.pi * time_array / 5)) +
+        5 * np.random.randn(num_samples)
+    )
+
+    syncd_df = pd.DataFrame({
+        "tt": time_array,
+        "ch1": ch1,
+        "ch2": ch2,
+        "ch3": ch3,
+        "ch4": ch4,
+        "Knee Angle Z": knee_angle,
+    })
+
+    # Save to pickle file
+    pkl_path = tmp_path / "syncd_data.pkl"
+    syncd_df.to_pickle(pkl_path)
+
+    return pkl_path, syncd_df
+
+
+@pytest.fixture
 def fake_participant_directory(tmp_path_factory):
     """Create a fake participant directory tree for integration tests."""
 
