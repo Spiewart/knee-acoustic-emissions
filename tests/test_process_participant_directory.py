@@ -9,6 +9,7 @@ import pytest
 from process_participant_directory import (
     _generate_synced_filename,
     _load_event_data,
+    _trim_and_rename_biomechanics_columns,
     dir_has_acoustic_file_legend,
     find_participant_directories,
     get_audio_file_name,
@@ -515,3 +516,175 @@ def test_process_participant_validation_passed_message(
     process_participant(participant_dir)
 
     assert "Directory validation passed" in caplog.text
+
+
+# Tests for _trim_and_rename_biomechanics_columns
+
+
+def test_trim_and_rename_left_knee_removes_right_columns():
+    """Test that right knee columns are removed when knee_side='Left'."""
+    df = pd.DataFrame({
+        "tt": [0.0, 0.1, 0.2],
+        "ch1": [1, 2, 3],
+        "Left Knee Angle_X": [10.0, 11.0, 12.0],
+        "Left Knee Angle_Y": [20.0, 21.0, 22.0],
+        "Right Knee Angle_X": [30.0, 31.0, 32.0],
+        "Right Knee Angle_Y": [40.0, 41.0, 42.0],
+    })
+
+    result = _trim_and_rename_biomechanics_columns(df, "Left")
+
+    # Right knee columns should be removed
+    assert "Right Knee Angle_X" not in result.columns
+    assert "Right Knee Angle_Y" not in result.columns
+
+    # Left knee columns should be present and renamed
+    assert "Knee Angle X" in result.columns
+    assert "Knee Angle Y" in result.columns
+
+    # Non-biomechanics columns should remain unchanged
+    assert "tt" in result.columns
+    assert "ch1" in result.columns
+    assert result.shape[0] == 3
+
+
+def test_trim_and_rename_right_knee_removes_left_columns():
+    """Test that left knee columns are removed when knee_side='Right'."""
+    df = pd.DataFrame({
+        "tt": [0.0, 0.1, 0.2],
+        "ch1": [1, 2, 3],
+        "Left Knee Angle_X": [10.0, 11.0, 12.0],
+        "Left Knee Angle_Y": [20.0, 21.0, 22.0],
+        "Right Knee Angle_X": [30.0, 31.0, 32.0],
+        "Right Knee Angle_Y": [40.0, 41.0, 42.0],
+    })
+
+    result = _trim_and_rename_biomechanics_columns(df, "Right")
+
+    # Left knee columns should be removed
+    assert "Left Knee Angle_X" not in result.columns
+    assert "Left Knee Angle_Y" not in result.columns
+
+    # Right knee columns should be present and renamed
+    assert "Knee Angle X" in result.columns
+    assert "Knee Angle Y" in result.columns
+
+    # Non-biomechanics columns should remain unchanged
+    assert "tt" in result.columns
+    assert "ch1" in result.columns
+    assert result.shape[0] == 3
+
+
+def test_trim_and_rename_removes_underscores():
+    """Test that underscores before axes are replaced with spaces."""
+    df = pd.DataFrame({
+        "Left Knee Angle_X": [1.0, 2.0],
+        "Left Knee Velocity_Y": [3.0, 4.0],
+        "Left Knee Force_Z": [5.0, 6.0],
+    })
+
+    result = _trim_and_rename_biomechanics_columns(df, "Left")
+
+    # Underscores should be replaced with spaces
+    assert "Knee Angle X" in result.columns
+    assert "Knee Velocity Y" in result.columns
+    assert "Knee Force Z" in result.columns
+
+    # Original column names should not be present
+    assert "Left Knee Angle_X" not in result.columns
+
+
+def test_trim_and_rename_preserves_column_order():
+    """Test that column order is preserved."""
+    df = pd.DataFrame({
+        "tt": [1.0, 2.0],
+        "ch1": [10, 20],
+        "Left Knee Angle_X": [100, 200],
+        "ch2": [30, 40],
+        "Left Knee Angle_Y": [300, 400],
+    })
+
+    result = _trim_and_rename_biomechanics_columns(df, "Left")
+
+    # Check that all original columns (except Right knee) are present
+    assert len(result.columns) == 5
+    assert "tt" in result.columns
+    assert "ch1" in result.columns
+    assert "ch2" in result.columns
+    assert "Knee Angle X" in result.columns
+    assert "Knee Angle Y" in result.columns
+
+
+def test_trim_and_rename_case_insensitive():
+    """Test that knee_side is case-insensitive."""
+    df = pd.DataFrame({
+        "Left Knee Angle_X": [1.0],
+        "Right Knee Angle_X": [2.0],
+    })
+
+    result_upper = _trim_and_rename_biomechanics_columns(df, "LEFT")
+    result_lower = _trim_and_rename_biomechanics_columns(df, "left")
+    result_title = _trim_and_rename_biomechanics_columns(df, "Left")
+
+    # All should have the same columns
+    assert set(result_upper.columns) == set(result_lower.columns)
+    assert set(result_lower.columns) == set(result_title.columns)
+    assert "Knee Angle X" in result_upper.columns
+
+
+def test_trim_and_rename_invalid_knee_side():
+    """Test that invalid knee_side raises ValueError."""
+    df = pd.DataFrame({"Left Knee Angle_X": [1.0]})
+
+    with pytest.raises(ValueError, match="knee_side must be"):
+        _trim_and_rename_biomechanics_columns(df, "Middle")
+
+    with pytest.raises(ValueError, match="knee_side must be"):
+        _trim_and_rename_biomechanics_columns(df, "invalid")
+
+
+def test_trim_and_rename_dataframe_values_preserved():
+    """Test that DataFrame values are preserved (no data loss)."""
+    df = pd.DataFrame({
+        "tt": [0.0, 0.1],
+        "Left Knee Angle_X": [10.5, 11.5],
+        "Right Knee Angle_X": [20.5, 21.5],
+    })
+
+    result = _trim_and_rename_biomechanics_columns(df, "Left")
+
+    # Values should be preserved
+    assert result["tt"].tolist() == [0.0, 0.1]
+    assert result["Knee Angle X"].tolist() == [10.5, 11.5]
+
+    # Shape should be correct (removed 1 column: Right Knee Angle_X)
+    assert result.shape == (2, 2)
+
+
+def test_trim_and_rename_empty_dataframe():
+    """Test behavior with empty DataFrame."""
+    df = pd.DataFrame({
+        "Left Knee Angle_X": [],
+        "Right Knee Angle_X": [],
+    })
+
+    result = _trim_and_rename_biomechanics_columns(df, "Left")
+
+    # Should have left knee column renamed
+    assert "Knee Angle X" in result.columns
+    assert "Right Knee Angle_X" not in result.columns
+    assert len(result) == 0
+
+
+def test_trim_and_rename_no_knee_columns():
+    """Test with DataFrame containing no knee columns."""
+    df = pd.DataFrame({
+        "tt": [1.0, 2.0],
+        "ch1": [10, 20],
+    })
+
+    result = _trim_and_rename_biomechanics_columns(df, "Left")
+
+    # Should return DataFrame with same columns
+    assert set(result.columns) == {"tt", "ch1"}
+    assert result.shape == (2, 2)

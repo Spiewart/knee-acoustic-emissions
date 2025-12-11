@@ -362,6 +362,13 @@ def _sync_and_save_recording(
     # Clip synchronized data
     clipped_df = clip_synchronized_data(synced_df, bio_df)
 
+    # Trim biomechanics columns to only those for the knee laterality
+    # Update their names to remove laterality and "_" delimiter between the
+    # biomechanics variable and the axis if present
+    trimmed_df = _trim_and_rename_biomechanics_columns(
+        clipped_df, knee_side
+    )
+
     # Generate filename (but don't save yet)
     filename = _generate_synced_filename(
         knee_side=knee_side,
@@ -372,7 +379,69 @@ def _sync_and_save_recording(
 
     output_path = synced_dir / f"{filename}.pkl"
 
-    return output_path, clipped_df
+    return output_path, trimmed_df
+
+
+def _trim_and_rename_biomechanics_columns(
+    df: pd.DataFrame,
+    knee_side: str,
+) -> pd.DataFrame:
+    """Trim biomechanics columns to only those for the desired knee side.
+
+    Removes columns for the opposite knee and renames columns to remove
+    the laterality prefix and the "_" delimiter between the biomechanics
+    variable and axis.
+
+    Examples:
+        "Left Knee Angle_X" -> "Knee Angle X"
+        "Right Knee Angle_Z" -> removed (if knee_side is "Left")
+
+    Args:
+        df: DataFrame containing synchronized audio and biomechanics data
+        knee_side: "Left" or "Right" (case-insensitive)
+
+    Returns:
+        DataFrame with only desired knee columns, renamed
+    """
+    # Normalize knee_side input
+    knee_side_lower = knee_side.lower()
+    if knee_side_lower not in ("left", "right"):
+        raise ValueError(
+            f"knee_side must be 'Left' or 'Right', got '{knee_side}'"
+        )
+
+    # Determine which prefix to keep and which to remove
+    # Capitalize for proper prefix matching
+    keep_side = "Left" if knee_side_lower == "left" else "Right"
+    remove_side = "Right" if knee_side_lower == "left" else "Left"
+
+    keep_prefix = f"{keep_side} "
+    remove_prefix = f"{remove_side} "
+
+    # Create a copy to avoid modifying original
+    result_df = df.copy()
+
+    # Remove columns with the opposite knee prefix
+    cols_to_remove = [
+        col for col in result_df.columns
+        if col.startswith(remove_prefix)
+    ]
+    result_df = result_df.drop(columns=cols_to_remove)
+
+    # Rename columns: remove knee_side prefix and underscore before axis
+    rename_mapping = {}
+    for col in result_df.columns:
+        if col.startswith(keep_prefix):
+            # Remove the knee_side prefix (e.g., "Left ")
+            without_prefix = col[len(keep_prefix):]
+            # Replace underscore before axis with space
+            # (e.g., "Angle_X" -> "Angle X")
+            renamed = without_prefix.replace("_", " ")
+            rename_mapping[col] = renamed
+
+    result_df = result_df.rename(columns=rename_mapping)
+
+    return result_df
 
 
 def _load_event_data(
