@@ -28,6 +28,8 @@ from process_biomechanics import import_biomechanics_recordings
 from sync_audio_with_biomechanics import (
     clip_synchronized_data,
     get_audio_stomp_time,
+    get_bio_end_time,
+    get_bio_start_time,
     get_stomp_time,
     load_audio_data,
     sync_audio_with_biomechanics,
@@ -199,7 +201,12 @@ def _sync_maneuver_data(
     # Import biomechanics recordings
     if maneuver_key == "walk":
         # For walking, process each speed
-        for speed in ["slow", "medium", "fast"]:
+        walk_speeds: tuple[Literal["slow", "medium", "fast"], ...] = (
+            "slow",
+            "medium",
+            "fast",
+        )
+        for speed in walk_speeds:
             speed_synced_data = _process_walk_speed(
                 speed=speed,
                 biomechanics_file=biomechanics_file,
@@ -240,7 +247,7 @@ def _sync_maneuver_data(
 
 
 def _process_walk_speed(
-    speed: str,
+    speed: Literal["slow", "medium", "fast"],
     biomechanics_file: Path,
     audio_df: pd.DataFrame,
     maneuver_dir: Path,
@@ -252,7 +259,8 @@ def _process_walk_speed(
     Processes and synchronizes data but does NOT write files.
 
     Args:
-        speed: "slow", "medium", or "fast"
+        speed: One of "slow", "medium", or "fast". Note: "medium" is
+            translated to "normal" for event metadata lookups.
         biomechanics_file: Path to the biomechanics Excel file
         audio_df: Audio data DataFrame
         maneuver_dir: Path to the maneuver directory
@@ -289,6 +297,7 @@ def _process_walk_speed(
                 maneuver_key="walk",
                 knee_side=knee_side,
                 pass_number=recording.pass_number,
+                # Keep original speed for filename; events normalized later
                 speed=speed,
             )
             synced_data.append((output_path, synced_df))
@@ -359,8 +368,40 @@ def _sync_and_save_recording(
         bio_df=bio_df,
     )
 
-    # Clip synchronized data
-    clipped_df = clip_synchronized_data(synced_df, bio_df)
+    # Clip synchronized data to maneuver window from metadata
+    # Normalize speed for event metadata lookups (medium -> normal)
+    normalized_speed: Literal["slow", "normal", "fast"] | None = None
+    if speed is not None:
+        event_speed_map: dict[str, Literal["slow", "normal", "fast"]] = {
+            "slow": "slow",
+            "medium": "normal",
+            "fast": "fast",
+        }
+        normalized_speed = event_speed_map[speed]
+
+    start_time = get_bio_start_time(
+        event_metadata=event_meta_data,
+        maneuver=cast(
+            Literal["walk", "sit_to_stand", "flexion_extension"],
+            maneuver_key,
+        ),
+        speed=normalized_speed,
+        pass_number=pass_number,
+    )
+    end_time = get_bio_end_time(
+        event_metadata=event_meta_data,
+        maneuver=cast(
+            Literal["walk", "sit_to_stand", "flexion_extension"],
+            maneuver_key,
+        ),
+        speed=normalized_speed,
+        pass_number=pass_number,
+    )
+    clipped_df = clip_synchronized_data(
+        synchronized_df=synced_df,
+        start_time=start_time,
+        end_time=end_time,
+    )
 
     # Trim biomechanics columns to only those for the knee laterality
     # Update their names to remove laterality and "_" delimiter between the
