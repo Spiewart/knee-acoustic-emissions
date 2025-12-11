@@ -4,7 +4,7 @@ Stomp events are identified by the first peak in the audio channels exceeding
 a threshold defined by the overall signal statistics."""
 
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal, Optional
 
 import pandas as pd
 
@@ -191,3 +191,121 @@ def clip_synchronized_data(
     ].reset_index(drop=True)
 
     return clipped_df
+
+
+def _get_walking_event_name(
+    speed: Literal["slow", "normal", "fast"],
+    pass_number: int,
+    event_type: Literal["Start", "End"],
+) -> str:
+    """Construct walking event name from speed and pass number.
+
+    Args:
+        speed: Walking speed ("slow", "normal", "fast").
+        pass_number: Pass number (1, 2, etc.).
+        event_type: Event type ("Start" or "End").
+
+    Returns:
+        Event name like "SS Pass 1 Start" or "NS Pass 2 End".
+    """
+    speed_map = {
+        "slow": "SS",
+        "normal": "NS",
+        "fast": "FS",
+    }
+    speed_code = speed_map[speed]
+    return f"{speed_code} Pass {pass_number} {event_type}"
+
+
+def get_bio_start_time(
+    event_metadata: "pd.DataFrame",
+    maneuver: Literal["walk", "sit_to_stand", "flexion_extension"],
+    speed: Optional[Literal["slow", "normal", "fast"]] = None,
+    pass_number: Optional[int] = None,
+) -> datetime:
+    """Get the start time of the biomechanics data for the specified maneuver.
+
+    For sit-to-stand and flexion-extension, looks for "Movement Start" event.
+    For walking, constructs event name from speed and pass number
+    (e.g., "SS Pass 1 Start" for slow speed pass 1).
+
+    Args:
+        event_metadata: DataFrame containing biomechanics event metadata.
+        maneuver: The maneuver type
+            ("walk", "sit_to_stand", "flexion_extension").
+        speed: Speed of the maneuver
+            ("slow", "normal", "fast"), required for walk.
+        pass_number: Pass number for walking maneuvers, required for walk.
+
+    Returns:
+        Start time of the biomechanics data for the specified maneuver.
+
+    Raises:
+        ValueError: If required parameters are missing or event not found.
+    """
+    if maneuver == "walk":
+        if speed is None or pass_number is None:
+            raise ValueError(
+                f"speed and pass_number required for walk maneuver, "
+                f"got speed={speed}, pass_number={pass_number}"
+            )
+        event_name = _get_walking_event_name(speed, pass_number, "Start")
+    elif maneuver in ["sit_to_stand", "flexion_extension"]:
+        event_name = "Movement Start"
+    else:
+        raise ValueError(f"Unknown maneuver: {maneuver}")
+
+    event_data = get_event_metadata(event_metadata, event_name)
+    start_times = event_data["Time (sec)"].dropna().tolist()
+
+    if not start_times:
+        raise ValueError(f"No start time found for event: {event_name}")
+
+    return pd.to_timedelta(start_times[0], unit="s").to_pytimedelta()
+
+
+def get_bio_end_time(
+    event_metadata: "pd.DataFrame",
+    maneuver: Literal["walk", "sit_to_stand", "flexion_extension"],
+    speed: Optional[Literal["slow", "normal", "fast"]] = None,
+    pass_number: Optional[int] = None,
+) -> datetime:
+    """Get the end time of the biomechanics data for the specified maneuver.
+
+    For sit-to-stand and flexion-extension, looks for "Movement End" event.
+    For walking, constructs event name from speed and pass number
+    (e.g., "SS Pass 1 End" for slow speed pass 1).
+
+    Args:
+        event_metadata: DataFrame containing biomechanics event metadata.
+        maneuver: The maneuver type
+            ("walk", "sit_to_stand", "flexion_extension").
+        speed: Speed of the maneuver
+            ("slow", "normal", "fast"), required for walk.
+        pass_number: Pass number for walking maneuvers, required for walk.
+
+    Returns:
+        End time of the biomechanics data for the specified maneuver.
+
+    Raises:
+        ValueError: If required parameters are missing or event not found.
+    """
+    if maneuver == "walk":
+        if speed is None or pass_number is None:
+            raise ValueError(
+                f"speed and pass_number required for walk maneuver, "
+                f"got speed={speed}, pass_number={pass_number}"
+            )
+        event_name = _get_walking_event_name(speed, pass_number, "End")
+    elif maneuver in ["sit_to_stand", "flexion_extension"]:
+        event_name = "Movement End"
+    else:
+        raise ValueError(f"Unknown maneuver: {maneuver}")
+
+    event_data = get_event_metadata(event_metadata, event_name)
+    end_times = event_data["Time (sec)"].dropna().tolist()
+
+    if not end_times:
+        raise ValueError(f"No end time found for event: {event_name}")
+
+    return pd.to_timedelta(end_times[0], unit="s").to_pytimedelta()

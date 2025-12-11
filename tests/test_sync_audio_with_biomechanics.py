@@ -1,10 +1,13 @@
 """Test data for sync_audio_with_biomechanics module."""
 
 import pandas as pd
+import pytest
 
 from process_biomechanics import import_biomechanics_recordings
 from sync_audio_with_biomechanics import (
     get_audio_stomp_time,
+    get_bio_end_time,
+    get_bio_start_time,
     get_right_stomp_time,
     get_stomp_time,
     load_audio_data,
@@ -99,3 +102,195 @@ def test_sync_audio_with_biomechanics(fake_participant_directory):
     )
 
     assert not synchronized_df.empty, "Synchronized DataFrame is empty."
+
+
+def test_get_bio_start_time_walk(fake_participant_directory):
+    """Test get_bio_start_time for walking maneuver."""
+    events_df = pd.read_excel(
+        fake_participant_directory["biomechanics"]["excel_path"],
+        sheet_name=fake_participant_directory["biomechanics"][
+            "events_sheets"
+        ]["walk_pass"],
+    )
+
+    start_time = get_bio_start_time(
+        event_metadata=events_df,
+        maneuver="walk",
+        speed="slow",
+        pass_number=1,
+    )
+
+    assert start_time is not None
+    td_type = type(pd.to_timedelta(1, unit="s").to_pytimedelta())
+    assert isinstance(start_time, td_type)
+
+
+def test_get_bio_start_time_sit_to_stand(fake_participant_directory):
+    """Test get_bio_start_time for sit-to-stand maneuver."""
+    events_df = pd.read_excel(
+        fake_participant_directory["biomechanics"]["excel_path"],
+        sheet_name=fake_participant_directory["biomechanics"][
+            "events_sheets"
+        ]["sit_to_stand"],
+    )
+
+    start_time = get_bio_start_time(
+        event_metadata=events_df,
+        maneuver="sit_to_stand",
+    )
+
+    assert start_time is not None
+    td_type = type(pd.to_timedelta(1, unit="s").to_pytimedelta())
+    assert isinstance(start_time, td_type)
+
+
+def test_get_bio_start_time_flexion_extension(fake_participant_directory):
+    """Test get_bio_start_time for flexion-extension maneuver."""
+    events_df = pd.read_excel(
+        fake_participant_directory["biomechanics"]["excel_path"],
+        sheet_name=fake_participant_directory["biomechanics"][
+            "events_sheets"
+        ]["flexion_extension"],
+    )
+
+    start_time = get_bio_start_time(
+        event_metadata=events_df,
+        maneuver="flexion_extension",
+    )
+
+    assert start_time is not None
+    td_type = type(pd.to_timedelta(1, unit="s").to_pytimedelta())
+    assert isinstance(start_time, td_type)
+
+
+def test_get_bio_start_time_walk_missing_params():
+    """Test get_bio_start_time raises error for walk without speed."""
+    events_df = pd.DataFrame(
+        {"Event Info": ["SS Pass 1 Start"], "Time (sec)": [10.0]}
+    )
+
+    with pytest.raises(ValueError, match="speed and pass_number required"):
+        get_bio_start_time(
+            event_metadata=events_df,
+            maneuver="walk",
+        )
+
+
+def test_get_bio_end_time_walk(fake_participant_directory):
+    """Test get_bio_end_time for walking maneuver."""
+    events_df = pd.read_excel(
+        fake_participant_directory["biomechanics"]["excel_path"],
+        sheet_name=fake_participant_directory["biomechanics"][
+            "events_sheets"
+        ]["walk_pass"],
+    )
+
+    end_time = get_bio_end_time(
+        event_metadata=events_df,
+        maneuver="walk",
+        speed="slow",
+        pass_number=1,
+    )
+
+    assert end_time is not None
+    td_type = type(pd.to_timedelta(1, unit="s").to_pytimedelta())
+    assert isinstance(end_time, td_type)
+
+
+def test_get_bio_end_time_sit_to_stand(fake_participant_directory):
+    """Test get_bio_end_time for sit-to-stand maneuver."""
+    events_df = pd.read_excel(
+        fake_participant_directory["biomechanics"]["excel_path"],
+        sheet_name=fake_participant_directory["biomechanics"][
+            "events_sheets"
+        ]["sit_to_stand"],
+    )
+
+    end_time = get_bio_end_time(
+        event_metadata=events_df,
+        maneuver="sit_to_stand",
+    )
+
+    assert end_time is not None
+    td_type = type(pd.to_timedelta(1, unit="s").to_pytimedelta())
+    assert isinstance(end_time, td_type)
+
+
+def test_get_bio_end_time_flexion_extension(fake_participant_directory):
+    """Test get_bio_end_time for flexion-extension maneuver."""
+    events_df = pd.read_excel(
+        fake_participant_directory["biomechanics"]["excel_path"],
+        sheet_name=fake_participant_directory["biomechanics"][
+            "events_sheets"
+        ]["flexion_extension"],
+    )
+
+    end_time = get_bio_end_time(
+        event_metadata=events_df,
+        maneuver="flexion_extension",
+    )
+
+    assert end_time is not None
+    td_type = type(pd.to_timedelta(1, unit="s").to_pytimedelta())
+    assert isinstance(end_time, td_type)
+
+
+def test_get_bio_end_time_walk_missing_params():
+    """Test get_bio_end_time raises error for walk without pass_number."""
+    events_df = pd.DataFrame(
+        {"Event Info": ["SS Pass 1 End"], "Time (sec)": [30.0]}
+    )
+
+    with pytest.raises(ValueError, match="speed and pass_number required"):
+        get_bio_end_time(
+            event_metadata=events_df,
+            maneuver="walk",
+            speed="slow",
+        )
+
+
+def test_bio_start_end_times_ordering(fake_participant_directory):
+    """Test that start time is before end time for all maneuvers."""
+    # Test walk maneuver
+    events_df = pd.read_excel(
+        fake_participant_directory["biomechanics"]["excel_path"],
+        sheet_name=fake_participant_directory["biomechanics"][
+            "events_sheets"
+        ]["walk_pass"],
+    )
+
+    start_time = get_bio_start_time(
+        event_metadata=events_df,
+        maneuver="walk",
+        speed="slow",
+        pass_number=1,
+    )
+
+    end_time = get_bio_end_time(
+        event_metadata=events_df,
+        maneuver="walk",
+        speed="slow",
+        pass_number=1,
+    )
+
+    assert start_time < end_time
+
+    # Test sit-to-stand maneuver
+    events_df = pd.read_excel(
+        fake_participant_directory["biomechanics"]["excel_path"],
+        sheet_name=fake_participant_directory["biomechanics"][
+            "events_sheets"
+        ]["sit_to_stand"],
+    )
+
+    start_time = get_bio_start_time(
+        event_metadata=events_df,
+        maneuver="sit_to_stand",
+    )
+
+    end_time = get_bio_end_time(
+        event_metadata=events_df,
+        maneuver="sit_to_stand",
+    )
+
+    assert start_time < end_time

@@ -263,10 +263,15 @@ def _create_biomechanics_excel(
         {"Event Info": "Sync Left", "Time (sec)": 16.23},
         {"Event Info": "Sync Right", "Time (sec)": 17.48},
         {"Event Info": "SS Pass 1 Start", "Time (sec)": 19.28},
+        {"Event Info": "SS Pass 1 End", "Time (sec)": 26.50},
         {"Event Info": "SS Pass 2 Start", "Time (sec)": 27.80},
+        {"Event Info": "SS Pass 2 End", "Time (sec)": 34.95},
         {"Event Info": "NS Pass 1 Start", "Time (sec)": 136.96},
+        {"Event Info": "NS Pass 1 End", "Time (sec)": 144.00},
         {"Event Info": "NS Pass 2 Start", "Time (sec)": 144.13},
+        {"Event Info": "NS Pass 2 End", "Time (sec)": 151.25},
         {"Event Info": "FS Pass 1 Start", "Time (sec)": 210.15},
+        {"Event Info": "FS Pass 1 End", "Time (sec)": 216.80},
     ]
 
     sts_events_df = pd.DataFrame(
