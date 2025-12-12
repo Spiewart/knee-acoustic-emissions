@@ -29,6 +29,8 @@ from sync_audio_with_biomechanics import (
     get_audio_stomp_time,
     get_bio_end_time,
     get_bio_start_time,
+    get_left_stomp_time,
+    get_right_stomp_time,
     get_stomp_time,
     load_audio_data,
     sync_audio_with_biomechanics,
@@ -345,15 +347,30 @@ def _sync_and_save_recording(
     """
     bio_df = recording.data
 
-    # Get stomp times
-    audio_stomp_time = get_audio_stomp_time(audio_df)
-
     # Read event data from biomechanics file
     event_meta_data = _load_event_data(
         biomechanics_file=biomechanics_file,
         maneuver_key=maneuver_key,
     )
 
+    # Get both stomp times from biomechanics for dual-knee disambiguation
+    right_stomp_time = get_right_stomp_time(event_meta_data)
+    left_stomp_time = get_left_stomp_time(event_meta_data)
+
+    # Get recorded knee from knee_side ("Left" or "Right" -> "left"/"right")
+    recorded_knee: Literal["left", "right"] = (
+        "left" if knee_side == "Left" else "right"
+    )
+
+    # Get audio stomp time with dual-knee disambiguation
+    audio_stomp_time = get_audio_stomp_time(
+        audio_df,
+        recorded_knee=recorded_knee,
+        right_stomp_time=right_stomp_time,
+        left_stomp_time=left_stomp_time,
+    )
+
+    # Get biomechanics stomp time for the recorded knee
     bio_stomp_time = get_stomp_time(
         bio_meta=event_meta_data,
         foot=_get_foot_from_knee_side(knee_side),

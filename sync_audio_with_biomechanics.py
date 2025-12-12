@@ -3,10 +3,12 @@ Uses foot stomp events (Sync Left and Sync Right) to align the two datasets.
 Stomp events are identified by the first peak in the audio channels exceeding
 a threshold defined by the overall signal statistics."""
 
-from datetime import datetime
+from datetime import timedelta
 from typing import TYPE_CHECKING, Literal, Optional
 
+import numpy as np
 import pandas as pd
+from scipy.signal import find_peaks
 
 if TYPE_CHECKING:
 
@@ -52,7 +54,7 @@ def get_event_metadata(
 def get_stomp_time(
     bio_meta: "pd.DataFrame",
     foot: str,
-) -> datetime:
+) -> timedelta:
     """Extract the timestamp of the foot stomp event from biomechanics metadata.
     foot: 'left' or 'right'"""
 
@@ -70,7 +72,7 @@ def get_stomp_time(
 
 def get_right_stomp_time(
     bio_meta: "pd.DataFrame",
-) -> datetime:
+) -> timedelta:
     """Extract the timestamp of the right foot stomp event from biomechanics metadata.
     Sync Right is a item in the first row Event Info. The second column Time (sec)
     will contain the timestamp."""
@@ -80,7 +82,7 @@ def get_right_stomp_time(
 
 def get_left_stomp_time(
     bio_meta: "pd.DataFrame",
-) -> datetime:
+) -> timedelta:
     """Extract the timestamp of the left foot stomp event from biomechanics metadata."""
 
     return get_stomp_time(bio_meta, foot="left")
@@ -98,17 +100,110 @@ def load_audio_data(
 
 def get_audio_stomp_time(
     audio_df: "pd.DataFrame",
-) -> datetime:
+    recorded_knee: Optional[Literal["left", "right"]] = None,
+    right_stomp_time: Optional[timedelta] = None,
+    left_stomp_time: Optional[timedelta] = None,
+) -> timedelta:
     """Get the timestamp (column = tt) of the foot stomp event from the
-    audio data DataFrame by finding the first peak in the audio channels
-    exceeding a threshold."""
+    audio data DataFrame.
 
-    # Define threshold for stomp detection
+    When both knees are stomped (dual recording), both stomps may appear
+    in the audio. This function can disambiguate by finding 2 peaks and
+    selecting the one that temporally matches the recorded knee's stomp
+    from biomechanics data.
+
+    Args:
+        audio_df: DataFrame containing audio data with 'tt' and channel
+            columns (ch1-ch4).
+        recorded_knee: Which knee is being recorded ("left" or "right").
+            Required if providing stomp times from biomechanics.
+        right_stomp_time: Timestamp of right knee stomp from biomechanics
+            metadata (timedelta).
+        left_stomp_time: Timestamp of left knee stomp from biomechanics
+            metadata (timedelta).
+
+    Returns:
+        Timestamp of the stomp event for the recorded knee.
+
+    Raises:
+        ValueError: If recorded_knee is provided without both stomp times,
+            or if fewer than 2 peaks are found when expected.
+    """
+    # Validate parameters
+    if recorded_knee is not None:
+        if right_stomp_time is None or left_stomp_time is None:
+            raise ValueError(
+                "When recorded_knee is specified, both right_stomp_time "
+                "and left_stomp_time must be provided"
+            )
+
+    # Get audio channel data
     audio_channels = audio_df.loc[
         :, audio_df.columns.isin(["ch1", "ch2", "ch3", "ch4"])
     ].values
+
+    # Define threshold for stomp detection
     threshold = audio_channels.mean() + (3 * audio_channels.std())
 
+    # If dual-knee disambiguation is needed
+    if (recorded_knee is not None and
+            right_stomp_time is not None and
+            left_stomp_time is not None):
+
+        # Compute max signal across all channels at each time point
+        max_signal = audio_channels.max(axis=1)
+
+        # Find peaks above threshold
+        peak_indices, _ = find_peaks(
+            max_signal,
+            height=threshold,
+            distance=int(0.5 * 52000),  # At least 0.5s apart (52kHz)
+        )
+
+        if len(peak_indices) < 2:
+            raise ValueError(
+                f"Expected at least 2 stomp peaks for dual-knee recording, "
+                f"found {len(peak_indices)}"
+            )
+
+        # Get timestamps of top 2 peaks by amplitude
+        peak_heights = max_signal[peak_indices]
+        top_2_idx = np.argsort(peak_heights)[-2:]
+        top_2_peaks = peak_indices[top_2_idx]
+        top_2_peaks_sorted = np.sort(top_2_peaks)  # Sort by time
+
+        # Get corresponding timestamps as datetime.timedelta
+        peak_times = []
+        for idx in top_2_peaks_sorted:
+            tt_value = audio_df.loc[idx, 'tt']
+            if isinstance(tt_value, pd.Timedelta):
+                peak_times.append(tt_value.to_pytimedelta())
+            elif isinstance(tt_value, float):
+                peak_times.append(
+                    pd.Timedelta(seconds=tt_value).to_pytimedelta()
+                )
+            else:  # Already a timedelta
+                peak_times.append(tt_value)
+
+        # Biomechanics stomp times are already datetime.timedelta
+        # Determine which biomechanics stomp came first
+        bio_stomps_sorted = sorted([
+            (right_stomp_time, "right"),
+            (left_stomp_time, "left"),
+        ], key=lambda x: x[0])
+
+        # Match audio peaks to biomechanics stomps based on temporal order
+        # First audio peak -> first bio stomp, second audio peak -> second
+        audio_to_bio_mapping = {
+            "right": peak_times[0] if bio_stomps_sorted[0][1] == "right"
+            else peak_times[1],
+            "left": peak_times[0] if bio_stomps_sorted[0][1] == "left"
+            else peak_times[1],
+        }
+
+        return audio_to_bio_mapping[recorded_knee]
+
+    # Fallback: original single-peak detection
     # Find the first index where any channel exceeds the threshold
     stomp_index = audio_df.loc[:, audio_df.columns.isin([
         "ch1", "ch2", "ch3", "ch4"]
@@ -124,12 +219,12 @@ def get_audio_stomp_time(
 
 
 def sync_audio_with_biomechanics(
-    audio_stomp_time: datetime,
-    bio_stomp_time: datetime,
+    audio_stomp_time: timedelta,
+    bio_stomp_time: timedelta,
     audio_df: "pd.DataFrame",
     bio_df: "pd.DataFrame",
-    bio_start_time: Optional[datetime] = None,
-    bio_end_time: Optional[datetime] = None,
+    bio_start_time: Optional[timedelta] = None,
+    bio_end_time: Optional[timedelta] = None,
 ) -> "pd.DataFrame":
     """Synchronize audio with biomechanics using stomp times.
 
@@ -277,7 +372,7 @@ def get_bio_start_time(
     maneuver: Literal["walk", "sit_to_stand", "flexion_extension"],
     speed: Optional[Literal["slow", "normal", "fast"]] = None,
     pass_number: Optional[int] = None,
-) -> datetime:
+) -> timedelta:
     """Get the start time of the biomechanics data for the specified maneuver.
 
     For sit-to-stand and flexion-extension, looks for "Movement Start" event.
@@ -324,7 +419,7 @@ def get_bio_end_time(
     maneuver: Literal["walk", "sit_to_stand", "flexion_extension"],
     speed: Optional[Literal["slow", "normal", "fast"]] = None,
     pass_number: Optional[int] = None,
-) -> datetime:
+) -> timedelta:
     """Get the end time of the biomechanics data for the specified maneuver.
 
     For sit-to-stand and flexion-extension, looks for "Movement End" event.
