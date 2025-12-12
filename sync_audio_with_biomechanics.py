@@ -86,7 +86,8 @@ def get_left_stomp_time(
     return get_stomp_time(bio_meta, foot="left")
 
 
-# Modules for loading pickled audio data and labeling as right or left via audio metadata
+# Modules for loading pickled audio data and labeling as right or left
+# via audio metadata
 def load_audio_data(
     audio_file: "Path",
 ) -> "pd.DataFrame":
@@ -103,11 +104,10 @@ def get_audio_stomp_time(
     exceeding a threshold."""
 
     # Define threshold for stomp detection
-    threshold = (
-        audio_df.loc[:, audio_df.columns.isin(["ch1", "ch2", "ch3", "ch4"])].values.mean() + (
-                3 * audio_df.loc[:, audio_df.columns.isin(["ch1", "ch2", "ch3", "ch4"])].values.std()
-        )
-    )
+    audio_channels = audio_df.loc[
+        :, audio_df.columns.isin(["ch1", "ch2", "ch3", "ch4"])
+    ].values
+    threshold = audio_channels.mean() + (3 * audio_channels.std())
 
     # Find the first index where any channel exceeds the threshold
     stomp_index = audio_df.loc[:, audio_df.columns.isin([
@@ -128,18 +128,33 @@ def sync_audio_with_biomechanics(
     bio_stomp_time: datetime,
     audio_df: "pd.DataFrame",
     bio_df: "pd.DataFrame",
+    bio_start_time: Optional[datetime] = None,
+    bio_end_time: Optional[datetime] = None,
 ) -> "pd.DataFrame":
-    """Synchronize audio DataFrame with biomechanics DataFrame using stomp times.
+    """Synchronize audio with biomechanics using stomp times.
+
+        Clips biomechanics and audio to maneuver window ±0.5s before merging to
+        reduce file size. Then interpolates biomechanics to match audio
+        sampling rate.
 
     Args:
-        audio_stomp_time (datetime): Timestamp of the foot stomp event in the audio data.
-        bio_stomp_time (datetime): Timestamp of the foot stomp event in the biomechanics data.
-        audio_df (pd.DataFrame): DataFrame containing audio data with timestamps.
-        bio_df (pd.DataFrame): DataFrame containing biomechanics data with timestamps.
+        audio_stomp_time: Timestamp of the foot stomp event in
+            the audio data.
+        bio_stomp_time: Timestamp of the foot stomp event in
+            the biomechanics data.
+        audio_df: DataFrame containing audio data with timestamps.
+        bio_df: DataFrame containing biomechanics data with
+            timestamps.
+        bio_start_time: Start time of biomechanics maneuver
+            window (timedelta). If provided, biomechanics before
+            (start - 0.5s) are excluded.
+        bio_end_time: End time of biomechanics maneuver window
+            (timedelta). If provided, biomechanics after (end + 0.5s)
+            are excluded.
 
     Returns:
-        pd.DataFrame: Synchronized audio DataFrame with adjusted timestamps and
-                      aligned biomechanics data.
+        Synchronized audio DataFrame with interpolated biomechanics
+        data.
     """
 
     # Calculate time difference between biomechanics and audio stomp times
@@ -147,51 +162,90 @@ def sync_audio_with_biomechanics(
     # Convert the audio_df 'tt' column to timedelta
     audio_df['tt'] = pd.to_timedelta(audio_df['tt'], unit='s')
 
-    # Adjust audio timestamps by the time difference
-    audio_df['tt'] = audio_df['tt'] + pd.to_timedelta(time_difference, unit='s')
+    # Warn if audio coverage is shorter than biomechanics time span
+    audio_duration = audio_df['tt'].max() - audio_df['tt'].min()
+    bio_duration = bio_df['TIME'].max() - bio_df['TIME'].min()
+    if bio_duration > audio_duration:
+        print(
+            "Warning: biomechanics duration exceeds audio coverage; "
+            "synced output will be truncated to audio range.",
+        )
+
     # Drop any trailing NaT values in the biomechanics TIME column
     bio_df = bio_df.dropna(subset=['TIME']).reset_index(drop=True)
 
-    # Merge biomechanics into audio to preserve all audio data
-    # using adjusted 'tt' and biomechanics 'TIME' columns
-    # TODO: investigate whether this is the cause of the abnormal joint angles in sync'd data
+    # Clip biomechanics to maneuver window ±0.5s to avoid stale rows
+    # during merge (movement window provided)
+    if bio_start_time is not None and bio_end_time is not None:
+        margin = pd.Timedelta(seconds=0.5)
+        bio_clip_start = bio_start_time - margin
+        bio_clip_end = bio_end_time + margin
+
+        bio_df = bio_df[
+            (bio_df['TIME'] >= bio_clip_start) &
+            (bio_df['TIME'] <= bio_clip_end)
+        ].reset_index(drop=True)
+
+    # Clip audio to match biomechanics data range (if clipping was applied)
+    # This ensures no stale unmatched rows in the result
+    if bio_start_time is not None and bio_end_time is not None:
+        margin = pd.Timedelta(seconds=0.5)
+        bio_clip_start = bio_start_time - margin
+        bio_clip_end = bio_end_time + margin
+
+        # Get the actual TIME range from clipped biomechanics
+        # (accounting for the time shift between audio and bio)
+        time_diff_td = pd.to_timedelta(time_difference, unit='s')
+        # Clipped bio TIME range in audio time coordinates:
+        audio_match_start = bio_clip_start - time_diff_td
+        audio_match_end = bio_clip_end - time_diff_td
+
+        # Clip audio to ensure all kept rows will have matching biomechanics
+        audio_df = audio_df[
+            (audio_df['tt'] >= audio_match_start) &
+            (audio_df['tt'] <= audio_match_end)
+        ].reset_index(drop=True)
+    # Adjust audio timestamps by the time difference (after clipping)
+    audio_df['tt'] = (
+        audio_df['tt'] + pd.to_timedelta(time_difference, unit='s')
+    )
+    # Use tolerance based on biomechanics sampling interval (defaults to 20 ms)
+    tolerance = pd.Timedelta(milliseconds=20)
+    if len(bio_df) > 1:
+        median_step = bio_df['TIME'].diff().median()
+        if pd.notna(median_step) and isinstance(median_step, pd.Timedelta):
+            tolerance = max(tolerance, median_step)
+
+    # Merge clipped audio with clipped biomechanics
     synchronized_df = pd.merge_asof(
         audio_df.sort_values('tt'),
         bio_df.sort_values('TIME'),
         right_on='TIME',
         left_on='tt',
-        direction='nearest',
-        tolerance=pd.Timedelta(seconds=0.00001)  # Adjust tolerance as needed
+        direction='nearest',  # Nearest with tolerance to avoid stale rows
+        tolerance=tolerance,
     )
+    # Interpolate biomechanics columns to upsample from ~120Hz to 52kHz
+    # Identify biomechanics columns (everything except audio & tt)
+    audio_cols = {'tt', 'ch1', 'ch2', 'ch3', 'ch4',
+                  'f_ch1', 'f_ch2', 'f_ch3', 'f_ch4'}
+    bio_cols = [col for col in synchronized_df.columns
+                if col not in audio_cols and col != 'TIME']
+
+    # Use linear interpolation (much faster than time-based for
+    # large datasets). This is valid since audio samples are
+    # uniformly spaced
+    for col in bio_cols:
+        # Only interpolate numeric columns
+        if pd.api.types.is_numeric_dtype(synchronized_df[col]):
+            synchronized_df[col] = (
+                synchronized_df[col].interpolate(
+                    method='linear',
+                    limit_area='inside'  # Only interpolate valid values
+                )
+            )
 
     return synchronized_df
-
-
-def clip_synchronized_data(
-    synchronized_df: "pd.DataFrame",
-    start_time: datetime,
-    end_time: datetime,
-) -> "pd.DataFrame":
-    """Clip synchronized DataFrame to the provided biomechanics time window.
-
-    Args:
-        synchronized_df: Synchronized audio + biomechanics DataFrame
-            with `tt` timestamps.
-        start_time: Start time of the maneuver window
-            (timedelta or datetime-like).
-        end_time: End time of the maneuver window
-            (timedelta or datetime-like).
-
-    Returns:
-        DataFrame clipped to rows where `tt` is within [start_time, end_time].
-    """
-
-    clipped_df = synchronized_df[
-        (synchronized_df["tt"] >= start_time) &
-        (synchronized_df["tt"] <= end_time)
-    ].reset_index(drop=True)
-
-    return clipped_df
 
 
 def _get_walking_event_name(

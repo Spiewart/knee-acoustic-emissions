@@ -26,7 +26,6 @@ import pandas as pd
 
 from process_biomechanics import import_biomechanics_recordings
 from sync_audio_with_biomechanics import (
-    clip_synchronized_data,
     get_audio_stomp_time,
     get_bio_end_time,
     get_bio_start_time,
@@ -360,15 +359,6 @@ def _sync_and_save_recording(
         foot=_get_foot_from_knee_side(knee_side),
     )
 
-    # Sync audio with biomechanics
-    synced_df = sync_audio_with_biomechanics(
-        audio_stomp_time=audio_stomp_time,
-        bio_stomp_time=bio_stomp_time,
-        audio_df=audio_df.copy(),
-        bio_df=bio_df,
-    )
-
-    # Clip synchronized data to maneuver window from metadata
     # Normalize speed for event metadata lookups (medium -> normal)
     normalized_speed: Literal["slow", "normal", "fast"] | None = None
     if speed is not None:
@@ -379,28 +369,60 @@ def _sync_and_save_recording(
         }
         normalized_speed = event_speed_map[speed]
 
-    start_time = get_bio_start_time(
-        event_metadata=event_meta_data,
-        maneuver=cast(
-            Literal["walk", "sit_to_stand", "flexion_extension"],
-            maneuver_key,
-        ),
-        speed=normalized_speed,
-        pass_number=pass_number,
-    )
-    end_time = get_bio_end_time(
-        event_metadata=event_meta_data,
-        maneuver=cast(
-            Literal["walk", "sit_to_stand", "flexion_extension"],
-            maneuver_key,
-        ),
-        speed=normalized_speed,
-        pass_number=pass_number,
-    )
-    clipped_df = clip_synchronized_data(
-        synchronized_df=synced_df,
-        start_time=start_time,
-        end_time=end_time,
+    # Get maneuver timing for pre-merge clipping
+    # For walking, use Movement Start/End to clip to specific passes
+    # For flexion-extension and sit-to-stand, Movement Start/End often
+    # excludes the actual periodic cycles, so sync the full recording
+    if maneuver_key == "walk":
+        bio_start_time = get_bio_start_time(
+            event_metadata=event_meta_data,
+            maneuver=cast(
+                Literal["walk", "sit_to_stand", "flexion_extension"],
+                maneuver_key,
+            ),
+            speed=normalized_speed,
+            pass_number=pass_number,
+        )
+        bio_end_time = get_bio_end_time(
+            event_metadata=event_meta_data,
+            maneuver=cast(
+                Literal["walk", "sit_to_stand", "flexion_extension"],
+                maneuver_key,
+            ),
+            speed=normalized_speed,
+            pass_number=pass_number,
+        )
+    else:
+        # For non-walk maneuvers, clip to Movement Start/End to
+        # truncate the synchronized output to the maneuver window.
+        bio_start_time = get_bio_start_time(
+            event_metadata=event_meta_data,
+            maneuver=cast(
+                Literal["walk", "sit_to_stand", "flexion_extension"],
+                maneuver_key,
+            ),
+            speed=None,
+            pass_number=None,
+        )
+        bio_end_time = get_bio_end_time(
+            event_metadata=event_meta_data,
+            maneuver=cast(
+                Literal["walk", "sit_to_stand", "flexion_extension"],
+                maneuver_key,
+            ),
+            speed=None,
+            pass_number=None,
+        )
+
+    # Sync audio with biomechanics, clipping bio to maneuver window
+    # ±0.5s before merge to reduce file size (only for walk)
+    clipped_df = sync_audio_with_biomechanics(
+        audio_stomp_time=audio_stomp_time,
+        bio_stomp_time=bio_stomp_time,
+        audio_df=audio_df.copy(),
+        bio_df=bio_df,
+        bio_start_time=bio_start_time,
+        bio_end_time=bio_end_time,
     )
 
     # Trim biomechanics columns to only those for the knee laterality
@@ -891,6 +913,222 @@ def process_participant(participant_dir: Path) -> bool:
         return False
 
 
+def _extract_metadata_from_audio_path(
+    audio_pkl_path: Path,
+) -> dict:
+    """Extract participant, knee, and maneuver info from audio file path.
+
+    Walks backwards from the audio file path to find the participant
+    directory and extract metadata.
+
+    Args:
+        audio_pkl_path: Path to the audio pickle file
+            (e.g., /path/to/#1011/Left Knee/Walking/audio_outputs/audio.pkl)
+
+    Returns:
+        Dictionary with keys: participant_dir, knee_side, maneuver_key
+
+    Raises:
+        ValueError: If path structure is invalid
+    """
+    audio_pkl_path = Path(audio_pkl_path)
+
+    if not audio_pkl_path.exists():
+        raise FileNotFoundError(f"Audio file not found: {audio_pkl_path}")
+
+    # Walk backwards to find participant directory (one with "#" prefix)
+    current = audio_pkl_path.parent
+    participant_dir = None
+
+    while current != current.parent:  # Stop at root
+        if current.name.startswith("#"):
+            participant_dir = current
+            break
+        current = current.parent
+
+    if not participant_dir:
+        raise ValueError(
+            f"Could not find participant directory "
+            f"(with '#' prefix) in path: {audio_pkl_path}"
+        )
+
+    # Extract knee_side from path (should be "Left Knee" or "Right Knee")
+    knee_side = None
+    for part in audio_pkl_path.parts:
+        if part in ("Left Knee", "Right Knee"):
+            knee_side = part.split()[0]  # "Left" or "Right"
+            break
+
+    if not knee_side:
+        raise ValueError(
+            f"Could not determine knee side from path: {audio_pkl_path}"
+        )
+
+    # Extract maneuver from path
+    maneuver_folder_map: dict[str, Literal[
+        "walk",
+        "sit_to_stand",
+        "flexion_extension",
+    ]] = {
+        "Walking": "walk",
+        "Sit-Stand": "sit_to_stand",
+        "Flexion-Extension": "flexion_extension",
+    }
+
+    maneuver_key = None
+    for folder_name, maneuver in maneuver_folder_map.items():
+        if folder_name in audio_pkl_path.parts:
+            maneuver_key = maneuver
+            break
+
+    if not maneuver_key:
+        raise ValueError(
+            f"Could not determine maneuver type from path: {audio_pkl_path}"
+        )
+
+    return {
+        "participant_dir": participant_dir,
+        "knee_side": knee_side,
+        "maneuver_key": maneuver_key,
+    }
+
+
+def sync_single_audio_file(
+    audio_pkl_path: str | Path,
+) -> bool:
+    """Synchronize a single audio file with biomechanics.
+
+    Works with unsynced audio pickle files from the _outputs/ folder.
+    Do NOT use with files already in the Synced/ folder.
+
+    Args:
+        audio_pkl_path: Path to the unsynced audio pickle file
+            (should be in {maneuver}/_outputs/, not Synced/)
+
+    Returns:
+        True if successful, False otherwise
+    """
+    try:
+        audio_pkl_path = Path(audio_pkl_path)
+        logging.info("Synchronizing audio file: %s", audio_pkl_path)
+
+        # Check if file is in Synced folder (already synchronized)
+        if "Synced" in audio_pkl_path.parts:
+            logging.error(
+                "File is already synchronized (in Synced/ folder). "
+                "Use --sync-single with unsynced audio files from _outputs/"
+            )
+            return False
+
+        # Extract metadata from path
+        metadata = _extract_metadata_from_audio_path(audio_pkl_path)
+        participant_dir = metadata["participant_dir"]
+        knee_side = metadata["knee_side"]
+        maneuver_key = metadata["maneuver_key"]
+
+        logging.info(
+            "Extracted metadata: knee=%s, maneuver=%s, participant=%s",
+            knee_side,
+            maneuver_key,
+            participant_dir.name,
+        )
+
+        # Get biomechanics file
+        study_id = participant_dir.name.lstrip("#")
+        biomechanics_file = participant_dir / "Motion Capture" / (
+            f"AOA{study_id}_Biomechanics_Full_Set.xlsx"
+        )
+
+        if not biomechanics_file.exists():
+            logging.error(
+                "Biomechanics file not found: %s", biomechanics_file
+            )
+            return False
+
+        # Load audio data
+        audio_df = load_audio_data(audio_pkl_path)
+
+        # Validate audio data has required columns
+        required_audio_cols = {"tt", "ch1", "ch2", "ch3", "ch4"}
+        if not required_audio_cols.issubset(audio_df.columns):
+            missing = required_audio_cols - set(audio_df.columns)
+            logging.error(
+                "Audio file missing required columns: %s. "
+                "Are you sure this is an unsynced audio file?",
+                missing,
+            )
+            return False
+
+        # Import biomechanics recordings
+        if maneuver_key == "walk":
+            # Infer speed from the path or use all speeds
+            # For now, try to infer from parent directory naming
+            recordings = import_biomechanics_recordings(
+                biomechanics_file=biomechanics_file,
+                maneuver="walk",
+                speed="slow",  # type: ignore[arg-type]
+            )
+            if not recordings:
+                logging.error(
+                    "No biomechanics recordings found for walk/slow"
+                )
+                return False
+            recording = recordings[0]
+            pass_number = recording.pass_number
+            speed = "slow"
+        else:
+            recordings = import_biomechanics_recordings(
+                biomechanics_file=biomechanics_file,
+                maneuver=cast(
+                    Literal["sit_to_stand", "flexion_extension"],
+                    maneuver_key,
+                ),
+                speed=None,
+            )
+            if not recordings:
+                logging.error(
+                    "No biomechanics recordings found for %s", maneuver_key
+                )
+                return False
+            recording = recordings[0]
+            pass_number = None
+            speed = None
+
+        # Determine output directory
+        maneuver_dir = None
+        maneuver_folder_map_rev = {
+            "walk": "Walking",
+            "sit_to_stand": "Sit-Stand",
+            "flexion_extension": "Flexion-Extension",
+        }
+        maneuver_folder = maneuver_folder_map_rev[maneuver_key]
+        knee_dir = participant_dir / f"{knee_side} Knee"
+        maneuver_dir = knee_dir / maneuver_folder
+        synced_dir = maneuver_dir / "Synced"
+
+        # Sync the recording
+        output_path, synced_df = _sync_and_save_recording(
+            recording=recording,
+            audio_df=audio_df,
+            synced_dir=synced_dir,
+            biomechanics_file=biomechanics_file,
+            maneuver_key=maneuver_key,
+            knee_side=knee_side,
+            pass_number=pass_number,
+            speed=speed,
+        )
+
+        # Write the file
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        synced_df.to_pickle(output_path)
+        logging.info("Saved synchronized data to %s", output_path)
+        return True
+
+    except Exception as e:  # pylint: disable=broad-except
+        logging.error("Error syncing audio file: %s", str(e))
+        return False
+
+
 def main() -> None:
     """Main entry point for command-line script."""
     parser = argparse.ArgumentParser(
@@ -903,16 +1141,24 @@ def main() -> None:
             "Examples:\n"
             "  python process_participant_directory.py /path/to/studies\n"
             "  python process_participant_directory.py /path/to/studies "
-            "--limit 5"
+            "--limit 5\n"
+            "  python process_participant_directory.py --sync-single "
+            "/path/to/audio.pkl"
         ),
     )
 
     parser.add_argument(
         "path",
+        nargs="?",
         help=(
             "Path to directory containing participant folders "
-            "(e.g., #1011, #2024)"
+            "(e.g., #1011, #2024), or to audio file with --sync-single"
         ),
+    )
+    parser.add_argument(
+        "--sync-single",
+        action="store_true",
+        help="Sync a single audio file (PATH should be audio file path)",
     )
     parser.add_argument(
         "--limit",
@@ -933,7 +1179,23 @@ def main() -> None:
     log_file = Path(args.log) if args.log else None
     setup_logging(log_file)
 
+    # Handle single-file sync
+    if args.sync_single:
+        if not args.path:
+            logging.error(
+                "--sync-single requires PATH argument (audio file path)"
+            )
+            return
+        success = sync_single_audio_file(args.path)
+        if not success:
+            logging.error("Failed to sync audio file: %s", args.path)
+        return
+
     # Validate input path
+    if not args.path:
+        parser.print_help()
+        return
+
     path = Path(args.path)
     if not path.exists():
         logging.error("Path does not exist: %s", path)

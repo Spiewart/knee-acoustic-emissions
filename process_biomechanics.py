@@ -351,10 +351,9 @@ def import_biomechanics_recordings(
                 pass_speed=metadata.speed,
             )
         else:
-            start_time = get_non_walk_start_time(
-                event_data_df=event_data_df,
-                maneuver=maneuver,
-            )
+            # Non-walk maneuvers already have TIME relative to their own
+            # recording start; do not frameshift by Movement Start.
+            start_time = pd.Timedelta(seconds=0)
 
         # Extract and normalize recording data
         recording_df = extract_recording_data(bio_df, uid_clean)
@@ -378,7 +377,8 @@ def import_biomechanics_recordings(
             )
         )
 
-    # Flexion-Extension and Sit-to-Stand maneuvers should have only one recording
+    # Flexion-Extension and Sit-to-Stand maneuvers should have only one
+    # recording
     # Walking should have one or more recordings (i.e. 1 or more passes)
     if (
         maneuver in ["sit_to_stand", "flexion_extension"]
@@ -397,7 +397,9 @@ def import_biomechanics_recordings(
     return recordings
 
 
-def _extract_maneuver_from_uid(uid: str) -> Literal["walk", "sit_to_stand", "flexion_extension"]:
+def _extract_maneuver_from_uid(
+    uid: str,
+) -> Literal["walk", "sit_to_stand", "flexion_extension"]:
     """Extract and normalize maneuver type from unique identifier.
 
     Converts from UID format (CamelCase) to Pydantic format (snake_case).
@@ -415,7 +417,10 @@ def _extract_maneuver_from_uid(uid: str) -> Literal["walk", "sit_to_stand", "fle
     maneuver_raw = ''.join(filter(str.isalpha, uid.split("_")[1])).lower()
 
     # Map raw extracted maneuver to valid Pydantic Literal values
-    maneuver_map: dict[str, Literal["walk", "sit_to_stand", "flexion_extension"]] = {
+    maneuver_map: dict[
+        str,
+        Literal["walk", "sit_to_stand", "flexion_extension"],
+    ] = {
         "walk": "walk",
         "sittostand": "sit_to_stand",
         "sitstand": "sit_to_stand",  # Common abbreviation
@@ -458,14 +463,18 @@ def _extract_walking_pass_info(
     speed = speed_map.get(pass_speed_code)
     if speed is None:
         raise ValueError(
-            f"Unknown speed code '{pass_speed_code}' in pass info '{pass_info}'"
+            (
+                f"Unknown speed code '{pass_speed_code}' in pass info "
+                f"'{pass_info}'"
+            )
         )
 
     return pass_number, speed
 
 
 def get_biomechanics_metadata(uid: str) -> BiomechanicsMetadata:
-    """Extract maneuver, pass number, and speed from biomechanics unique identifier.
+    """Extract maneuver, pass number, and speed from biomechanics unique
+    identifier.
 
     UID Format: Study{StudyID}_{Maneuver}{StudyNum}_{SpeedPass}_{Filt}
     Example: Study123_Walk0001_NSP1_Filt
@@ -503,7 +512,8 @@ def get_non_walk_start_time(
     event_data_df: pd.DataFrame,
     maneuver: Literal["sit_to_stand", "flexion_extension"],
 ) -> pd.Timedelta:
-    """Get the start time for a non-walking maneuver from the event data DataFrame."""
+    """Get the start time for a non-walking maneuver from the event data
+    DataFrame."""
 
     maneuver_map: dict[
         Literal["sit_to_stand", "flexion_extension"],
