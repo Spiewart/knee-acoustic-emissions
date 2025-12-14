@@ -8,7 +8,7 @@ This project processes acoustic emissions data from knee joint recordings during
 
 1. **Audio Processing**: Converts `.bin` files from audio boards to pandas DataFrames
 2. **Biomechanics Data**: Reads and processes motion capture data from Excel files
-3. **Data Synchronization**: Aligns audio and biomechanics data using foot stomp events
+3. **Data Synchronization**: Aligns audio and biomechanics data using foot stomp events (supports dual-knee recordings)
 4. **Analysis**: Computes spectrograms, instantaneous frequency, and per-channel metrics
 
 ---
@@ -81,11 +81,12 @@ Pydantic models for data validation:
 
 - **`process_biomechanics.py`**: Extract, normalize, and import biomechanics recordings
   - `get_biomechanics_metadata()`: Parses UIDs to extract maneuver, speed, pass_number (with conditional logic)
-  - `import_biomechanics_recordings()`: Currently processes only "walk" maneuvers (TODO: extend to sit_to_stand, flexion_extension)
+  - `import_walk_biomechanics()` / `import_fe_sts_biomechanics()`: Specialized imports for walk vs. non-walk maneuvers
+  - `import_biomechanics_recordings()`: Dispatcher that validates inputs and routes to the specialized functions
 
 - **`parse_acoustic_file_legend.py`**: Reads Excel legends to extract audio metadata
 
-- **`sync_audio_with_biomechanics.py`**: Synchronizes audio and biomechanics using foot stomp events
+- **`sync_audio_with_biomechanics.py`**: Synchronizes audio and biomechanics using foot stomp events; `get_audio_stomp_time` supports dual-knee disambiguation when both biomechanics stomps are provided
 
 - **`read_audio_board_file.py`**: Core translator for `.bin` files → DataFrames + JSON metadata
 
@@ -107,7 +108,7 @@ Tests located in `tests/` directory:
 - `test_smoke.py` - End-to-end smoke tests
 - `conftest.py` - Shared pytest fixtures
 
-Run tests with: `pytest tests/ -v`
+Run tests with: `PYTHONPATH=. pytest -v`
 
 ---
 
@@ -168,7 +169,7 @@ def validate_speed_for_maneuver(cls, v: str | None, info) -> str | None:
 Similar logic applies to `pass_number`. When extending to non-walk maneuvers, ensure:
 1. `get_biomechanics_metadata()` returns `speed=None, pass_number=None` for non-walk maneuvers
 2. `import_biomechanics_recordings()` handles the TODO for sit_to_stand and flexion_extension
-3. Start time extraction logic is adapted (currently only for walking passes with event data)
+3. Start time extraction logic: walking uses pass-specific start/end; non-walk uses Movement Start/End with no frameshift
 
 ### UID Format
 

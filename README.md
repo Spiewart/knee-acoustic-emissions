@@ -1,138 +1,98 @@
-Project: Audio board .bin processing (Python)
-=============================================
+Project Overview
+================
 
-This folder contains Python utilities converted from the original
-`read_audio_board_file.m` MATLAB reader and several helper scripts to
-export CSVs, plot waveforms, compute instantaneous frequency, and
-generate spectrograms. The scripts were refactored to provide a
-command-line interface and basic logging.
+Python utilities for two workflows:
 
-Files of interest
------------------
+1) **Audio board .bin processing**: convert device `.bin` files to DataFrames/JSON, export CSVs, plot waveforms, compute instantaneous frequency, and generate spectrograms.
+2) **Participant synchronization**: parse participant directories, import biomechanics Excel, and synchronize audio with biomechanics using stomp events (supports dual-knee recordings with disambiguation). Run AFTER audio board processing.
 
-- `read_audio_board_file.py` — Core translator that parses the 512-byte
-  header and audio payload, converts ADC counts to voltages, builds a
-  pandas DataFrame and writes a pickle (`<base>.pkl`) and metadata JSON
-  (`<base>_meta.json`). Use as: `python read_audio_board_file.py <file.bin> --out <outdir>`.
-
-Project: Audio-board .bin processing (Python)
-===========================================
-
-This folder contains Python utilities converted from the original
-`read_audio_board_file.m` MATLAB reader and several helper scripts to:
-
-- convert a device `.bin` to a pandas DataFrame and metadata JSON
-- export per-channel CSVs
-- produce per-channel waveform plots
-- compute instantaneous frequency (Hilbert) per channel
-- compute and save spectrograms (STFT)
-
-Quick start
+Quick Start
 -----------
 
-1) Create and activate a virtual environment (PowerShell example):
+1) Create and activate a virtual environment:
 
-```powershell
+```bash
 python -m venv .venv
-.\.venv\Scripts\Activate.ps1
+source .venv/bin/activate  # macOS/Linux
 ```
 
-2) Install runtime deps (pinned versions are in `requirements.txt`):
+2) Install runtime dependencies:
 
-```powershell
+```bash
 pip install -r requirements.txt
 ```
 
-3) (Optional) install developer tools for formatting and testing:
+3) (Optional) install developer tools:
 
-```powershell
+```bash
 pip install -r dev-requirements.txt
 ```
 
-Basic usage examples
---------------------
+Common Commands
+---------------
 
-Convert a single `.bin` (writes `<base>.pkl` and `<base>_meta.json` by default):
+- Convert a `.bin` to pickle + JSON metadata:
+  ```bash
+  python read_audio_board_file.py path/to/file.bin --out ./outputs
+  ```
+- Export per-channel CSV:
+  ```bash
+  python dump_channels_to_csv.py ./outputs/file.pkl
+  ```
+- Plot per-channel waveforms:
+  ```bash
+  python plot_per_channel.py ./outputs/file.pkl
+  ```
+- Add instantaneous frequency:
+  ```bash
+  python add_instantaneous_frequency.py ./outputs/file.pkl
+  ```
+- Compute spectrograms:
+  ```bash
+  python compute_spectrogram.py ./outputs/file.pkl
+  ```
+- Process a participant directory (sync audio + biomechanics):
+  ```bash
+  python process_participant_directory.py /path/to/study/#1011
+  ```
 
-```powershell
-python read_audio_board_file.py path\to\HP_... .bin --out ./outputs
-```
+Biomechanics Excel (walking)
+----------------------------
 
-Export channels CSV from the pickle produced above:
+- `Walk0001`: shared pass metadata + sync events (`Sync Left`/`Sync Right`) for all walking speeds.
+- Speed data sheets: `Slow_Walking`, `Medium_Walking`, `Fast_Walking` (V3D UIDs encode pass numbers/speed).
+- Speed-specific `*_Walking_Events` exports may exist but stomp sync uses `Walk0001`.
 
-```powershell
-python dump_channels_to_csv.py ./outputs\HP_... .pkl
-```
+Outputs
+-------
 
-Save stacked per-channel waveform (4 rows):
+- `<base>.pkl`: audio DataFrame (`tt`, `ch1`-`ch4`, optional `f_ch*`).
+- `<base>_meta.json`: header metadata (fs, firmware, timestamps).
+- `<base>_channels.csv`: per-channel CSV.
+- `<base>_waveform_per_channel.png`: 4-row waveform plot.
+- `<base>_with_freq.pkl` / `_with_freq_channels.csv`: instantaneous frequency results.
+- `<base>_spectrogram.npz` + `_spec_ch*.png`: STFT outputs.
+- Synchronized outputs saved under maneuver folders per participant.
 
-```powershell
-python plot_per_channel.py ./outputs\HP_... .pkl
-```
+Dual-Knee Synchronization Notes
+-------------------------------
 
-Compute instantaneous frequency per channel (default band-pass 10–5000 Hz):
-
-```powershell
-python add_instantaneous_frequency.py ./outputs\HP_... .pkl
-```
-
-Compute spectrograms (STFT) and save PNGs + compressed NPZ:
-
-```powershell
-python compute_spectrogram.py ./outputs\HP_... .pkl
-```
-
-Run the full pipeline on a single file or a directory (wrapper):
-
-```powershell
-python process_bin_files.py path\to\file.bin
-# or
-python process_bin_files.py path\to\directory_with_bin_files
-```
-
-Process participant study data (parse directory structure and synchronize audio with biomechanics):
-
-```powershell
-python process_participant_directories.py path\to\studies
-# or with options
-python process_participant_directories.py path\to\studies --limit 5 --log output.log
-```
-
-Biomechanics Excel structure (walking)
---------------------------------------
-
-- The sheet named `Walk0001` is pass metadata for *all* walking speeds. It always has the same name for every participant (the `0001` suffix is just export nomenclature). It contains the sync events (`Sync Left` / `Sync Right`) and pass timing markers.
-- Speed-specific biomech data lives in `Slow_Walking`, `Medium_Walking`, and `Fast_Walking`. These sheets hold the V3D column UIDs (e.g., `Walk0001_SSP4_Filt`) used to derive pass numbers and speeds.
-- Event sheets per speed (e.g., `Slow_Walking_Events`) may exist from exports but are not used for stomp-time sync; `Walk0001` provides the authoritative sync events.
-
-What each script produces
--------------------------
-
-- `<base>.pkl` — pandas DataFrame pickle with columns like `tt,ch1,ch2,ch3,ch4`
-- `<base>_meta.json` — extracted header metadata (fs, board firmware, times)
-- `<base>_channels.csv` — CSV with `tt,ch1..ch4` (if available)
-- `<base>_waveform_per_channel.png` — stacked 4-channel time series
-- `<base>_with_freq.pkl` and `_with_freq_channels.csv` — DataFrame + CSV with `f_ch1..f_ch4`
-- `<base>_spec_ch1.png` .. `_spec_ch4.png` and `<base>_spectrogram.npz` — STFT visuals + arrays
-- `<base>_outputs\<base>.log` — per-run log captured by the wrapper
-
-Troubleshooting & notes
------------------------
-
-- If the scripts cannot determine a sampling frequency (`fs`), they
-  will try `tt` in the DataFrame, then `<base>_meta.json`. If both are
-  missing, some operations (Hilbert, STFT) will raise an error.
-- Hilbert-based instantaneous frequency is noisy without pre-filtering;
-  we apply a default 10–5000 Hz band-pass which you can change with
-  `--lowcut` / `--highcut` on `add_instantaneous_frequency.py`.
-- Large files may use a lot of memory during STFT; consider using
-  `nperseg`/`noverlap` adjustments in `compute_spectrogram.py`.
-- The repository includes a `dev-requirements.txt` with formatter and
-  test tools (black, isort, pytest). Formatting was already applied to
-  the project files; the virtualenv folder `matlab_conv` is excluded.
+- `get_audio_stomp_time` can accept biomechanics stomp times for both knees and disambiguate two audio peaks by temporal order (recorded vs. contralateral knee).
+- Non-walk maneuvers clip synchronized output to Movement Start/End ±0.5s.
+- Walking uses pass-specific start/end based on speed and pass number.
 
 Testing
---------------------------------
+-------
 
-To run all tests:
-python -m pytest -q
+Run the full suite (from repo root with venv active):
+
+```bash
+PYTHONPATH=. pytest -v
+```
+
+Troubleshooting
+---------------
+
+- Missing sampling frequency (`fs`): scripts fall back to `tt` or metadata JSON; if absent, some analyses fail.
+- Hilbert instantaneous frequency is sensitive to filtering; adjust `--lowcut/--highcut` as needed.
+- Large spectrograms may need `nperseg`/`noverlap` tweaks to manage memory.
