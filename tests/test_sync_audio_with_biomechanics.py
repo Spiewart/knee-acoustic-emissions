@@ -1,5 +1,6 @@
 """Test data for sync_audio_with_biomechanics module."""
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -69,6 +70,66 @@ def test_get_audio_stomp_time(fake_participant_directory):
     assert "0:00:16" in time_str, (
         f"Audio stomp time unexpected: got {time_str}"
     )
+
+
+def _build_dual_stomp_audio(
+    fs: int = 52000,
+    duration: float = 3.0,
+    first_stomp_time: float = 1.0,
+    second_stomp_time: float = 2.2,
+) -> pd.DataFrame:
+    """Create deterministic dual-stomp audio for disambiguation tests."""
+    n_samples = int(duration * fs)
+    tt = np.arange(n_samples) / fs
+    signal = np.zeros(n_samples)
+    first_idx = int(first_stomp_time * fs)
+    second_idx = int(second_stomp_time * fs)
+    # Inject narrow stomp pulses well above baseline noise
+    signal[first_idx:first_idx + int(0.05 * fs)] = 5000
+    signal[second_idx:second_idx + int(0.05 * fs)] = 6000
+    return pd.DataFrame({
+        "tt": tt,
+        "ch1": signal,
+        "ch2": signal,
+        "ch3": signal,
+        "ch4": signal,
+    })
+
+
+def test_get_audio_stomp_time_requires_both_bio_stomps_when_knee_provided():
+    audio_df = _build_dual_stomp_audio()
+    with pytest.raises(ValueError, match="both right_stomp_time and left_stomp_time"):
+        get_audio_stomp_time(
+            audio_df,
+            recorded_knee="left",
+            right_stomp_time=None,
+            left_stomp_time=None,
+        )
+
+
+def test_get_audio_stomp_time_dual_knee_selection():
+    audio_df = _build_dual_stomp_audio(
+        first_stomp_time=1.0,
+        second_stomp_time=2.2,
+    )
+    right_bio = pd.Timedelta(seconds=1.05).to_pytimedelta()
+    left_bio = pd.Timedelta(seconds=2.25).to_pytimedelta()
+
+    right_detected = get_audio_stomp_time(
+        audio_df,
+        recorded_knee="right",
+        right_stomp_time=right_bio,
+        left_stomp_time=left_bio,
+    )
+    left_detected = get_audio_stomp_time(
+        audio_df,
+        recorded_knee="left",
+        right_stomp_time=right_bio,
+        left_stomp_time=left_bio,
+    )
+
+    assert abs(right_detected.total_seconds() - 1.0) < 0.1
+    assert abs(left_detected.total_seconds() - 2.2) < 0.1
 
 
 def test_sync_audio_with_biomechanics(fake_participant_directory):

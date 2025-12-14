@@ -254,8 +254,6 @@ def _process_biomechanics_recordings(
     bio_df: pd.DataFrame,
     event_data_df: pd.DataFrame,
     maneuver: Literal["walk", "sit_to_stand", "flexion_extension"],
-    speed: Literal["slow", "normal", "fast"] | None = None,
-    pass_number: int | None = None,
 ) -> list[BiomechanicsCycle]:
     """Process biomechanics data into BiomechanicsCycle objects.
 
@@ -267,8 +265,6 @@ def _process_biomechanics_recordings(
         bio_df: DataFrame containing biomechanics data
         event_data_df: DataFrame containing event metadata
         maneuver: Type of maneuver
-        speed: Speed level (for walk maneuvers)
-        pass_number: Pass number (for walk maneuvers)
 
     Returns:
         List of BiomechanicsCycle objects
@@ -391,8 +387,6 @@ def import_walk_biomechanics(
         bio_df=bio_df,
         event_data_df=event_data_df,
         maneuver="walk",
-        speed=speed,
-        pass_number=pass_number,
     )
 
     # Validate: walking should have one or more recordings
@@ -448,8 +442,6 @@ def import_fe_sts_biomechanics(
         bio_df=bio_df,
         event_data_df=event_data_df,
         maneuver=maneuver,
-        speed=None,
-        pass_number=None,
     )
 
     # Validate: non-walk maneuvers should have exactly one recording
