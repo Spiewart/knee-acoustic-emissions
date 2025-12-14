@@ -542,8 +542,9 @@ def test_trim_and_rename_left_knee_removes_right_columns():
     assert "Knee Angle X" in result.columns
     assert "Knee Angle Y" in result.columns
 
-    # Non-biomechanics columns should remain unchanged
+    # tt column should be retained for timestamp alignment
     assert "tt" in result.columns
+    # Other audio columns should remain unchanged
     assert "ch1" in result.columns
     assert result.shape[0] == 3
 
@@ -569,8 +570,9 @@ def test_trim_and_rename_right_knee_removes_left_columns():
     assert "Knee Angle X" in result.columns
     assert "Knee Angle Y" in result.columns
 
-    # Non-biomechanics columns should remain unchanged
+    # tt column should be retained for timestamp alignment
     assert "tt" in result.columns
+    # Other audio columns should remain unchanged
     assert "ch1" in result.columns
     assert result.shape[0] == 3
 
@@ -578,6 +580,7 @@ def test_trim_and_rename_right_knee_removes_left_columns():
 def test_trim_and_rename_removes_underscores():
     """Test that underscores before axes are replaced with spaces."""
     df = pd.DataFrame({
+        "tt": [0.0, 0.1],
         "Left Knee Angle_X": [1.0, 2.0],
         "Left Knee Velocity_Y": [3.0, 4.0],
         "Left Knee Force_Z": [5.0, 6.0],
@@ -606,7 +609,7 @@ def test_trim_and_rename_preserves_column_order():
 
     result = _trim_and_rename_biomechanics_columns(df, "Left")
 
-    # Check that all original columns (except Right knee) are present
+    # Check that all columns are present (Right knee removed; tt retained)
     assert len(result.columns) == 5
     assert "tt" in result.columns
     assert "ch1" in result.columns
@@ -618,6 +621,7 @@ def test_trim_and_rename_preserves_column_order():
 def test_trim_and_rename_case_insensitive():
     """Test that knee_side is case-insensitive."""
     df = pd.DataFrame({
+        "tt": [0.0],
         "Left Knee Angle_X": [1.0],
         "Right Knee Angle_X": [2.0],
     })
@@ -654,25 +658,26 @@ def test_trim_and_rename_dataframe_values_preserved():
     result = _trim_and_rename_biomechanics_columns(df, "Left")
 
     # Values should be preserved
-    assert result["tt"].tolist() == [0.0, 0.1]
     assert result["Knee Angle X"].tolist() == [10.5, 11.5]
 
-    # Shape should be correct (removed 1 column: Right Knee Angle_X)
+    # Shape should be correct (removed Right Knee Angle_X; tt retained)
     assert result.shape == (2, 2)
 
 
 def test_trim_and_rename_empty_dataframe():
     """Test behavior with empty DataFrame."""
     df = pd.DataFrame({
+        "tt": [],
         "Left Knee Angle_X": [],
         "Right Knee Angle_X": [],
     })
 
     result = _trim_and_rename_biomechanics_columns(df, "Left")
 
-    # Should have left knee column renamed
+    # Should have left knee column renamed and tt retained
     assert "Knee Angle X" in result.columns
     assert "Right Knee Angle_X" not in result.columns
+    assert "tt" in result.columns
     assert len(result) == 0
 
 
@@ -685,6 +690,6 @@ def test_trim_and_rename_no_knee_columns():
 
     result = _trim_and_rename_biomechanics_columns(df, "Left")
 
-    # Should return DataFrame with same columns
-    assert set(result.columns) == {"tt", "ch1"}
+    # Should return DataFrame with tt retained
+    assert set(result.columns) == {"ch1", "tt"}
     assert result.shape == (2, 2)
