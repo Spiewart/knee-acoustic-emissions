@@ -56,6 +56,30 @@ Common Commands
   python process_participant_directory.py /path/to/study/#1011
   ```
 
+Audio QC (maneuver-specific)
+----------------------------
+
+- Single file QC (flexion-extension or sit-to-stand):
+  ```bash
+  python audio_qc.py file /path/to/audio.pkl --maneuver flexion_extension --freq 0.25 --tail 5
+  python audio_qc.py file /path/to/audio.pkl --maneuver sit_to_stand --freq 0.25 --tail 5
+  ```
+- Walking QC on a single file (detects passes and step rates):
+  ```bash
+  python audio_qc.py file /path/to/walk_audio.pkl --maneuver walk --resample-walk 100 --min-pass-peaks 6 --min-gap-s 2
+  ```
+- QC an entire participant directory (Left/Right knees, all maneuvers):
+  ```bash
+  python audio_qc.py dir /Users/spiewart/kae_signal_processing_ml/sample_project_directory/#1013 --maneuver all
+  ```
+- Useful flags:
+  - `--time tt` to set the time column name in the pickle
+  - `--channels ch1 ch2 ch3 ch4` to choose audio channels to average
+  - `--bandpower-min-ratio 0.2` to require spectral support around the target/detected frequency
+  - `--resample-walk`, `--min-pass-peaks`, `--min-gap-s` tune walking heel-strike detection
+  - Walking defaults are lenient for coverage and period tolerance (tuned for real study data); tighten via `--min-pass-peaks`, `--period-tolerance`, or `--min-coverage` if your data are very clean.
+  - Periodic maneuvers can return bandpower ratios with `--bandpower-min-ratio` to gate passes on spectral energy.
+
 Biomechanics Excel (walking)
 ----------------------------
 
