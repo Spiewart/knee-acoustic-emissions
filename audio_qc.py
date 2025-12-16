@@ -18,6 +18,95 @@ from scipy.signal import find_peaks, welch
 from process_participant_directory import get_audio_file_name
 
 
+def _load_walk_events_from_biomechanics(
+    biomech_file: Path,
+) -> dict[str, list[tuple[str, float]]] | None:
+    """Load Walk0001 sheet from biomechanics Excel.
+
+    Returns dict mapping speed ("SS", "NS", "FS") to list of
+    (event_info, time_sec) tuples, or None if sheet not found.
+    """
+    try:
+        df = pd.read_excel(biomech_file, sheet_name="Walk0001")
+    except (FileNotFoundError, ValueError):
+        return None
+
+    if not {"Event Info", "Time (sec)"}.issubset(df.columns):
+        return None
+
+    events_by_speed: dict[str, list[tuple[str, float]]] = {
+        "SS": [],
+        "NS": [],
+        "FS": [],
+    }
+
+    current_speed: str | None = None
+    for _, row in df.iterrows():
+        event_info = str(row["Event Info"]).strip()
+        time_sec = float(row["Time (sec)"])
+
+        if "Slow Speed" in event_info:
+            current_speed = "SS"
+        elif "Normal Speed" in event_info or "Medium Speed" in event_info:
+            current_speed = "NS"
+        elif "Fast Speed" in event_info:
+            current_speed = "FS"
+
+        if current_speed:
+            events_by_speed[current_speed].append((event_info, time_sec))
+
+    return events_by_speed
+
+
+def _parse_pass_intervals_from_events(
+    events_by_speed: dict[str, list[tuple[str, float]]],
+) -> dict[str, list[dict[str, float | int]]]:
+    """Parse pass start/end times from event list.
+
+    Returns dict mapping speed -> list of {"pass_num", "start_s", "end_s"}.
+    """
+    passes_by_speed: dict[str, list[dict[str, float | int]]] = {
+        "SS": [],
+        "NS": [],
+        "FS": [],
+    }
+
+    for speed, events in events_by_speed.items():
+        for event_info, time_sec in events:
+            # Look for "Pass X Start" pattern
+            if "Pass" in event_info and "Start" in event_info:
+                try:
+                    parts = event_info.split()
+                    idx = parts.index("Pass")
+                    pass_num = int(parts[idx + 1])
+                    passes_by_speed[speed].append(
+                        {"pass_num": pass_num, "start_s": time_sec, "end_s": None}
+                    )
+                except (ValueError, IndexError):
+                    pass
+            # Look for "Pass X End" pattern to close the interval
+            elif "Pass" in event_info and "End" in event_info:
+                try:
+                    parts = event_info.split()
+                    idx = parts.index("Pass")
+                    pass_num = int(parts[idx + 1])
+                    # Find matching start and set end_s
+                    for p in reversed(passes_by_speed[speed]):
+                        if p["pass_num"] == pass_num and p["end_s"] is None:
+                            p["end_s"] = time_sec
+                            break
+                except (ValueError, IndexError):
+                    pass
+
+    # Filter out incomplete passes
+    for speed in passes_by_speed:
+        passes_by_speed[speed] = [
+            p for p in passes_by_speed[speed] if p["end_s"] is not None
+        ]
+
+    return passes_by_speed
+
+
 def qc_audio_flexion_extension(
     df: pd.DataFrame,
     time_col: str,
@@ -103,6 +192,124 @@ def qc_audio_sit_to_stand(
     )
 
 
+def _qc_walk_single_pass(
+    df: pd.DataFrame,
+    time_col: str,
+    audio_channels: list[str],
+    *,
+    resample_hz: float = 100.0,
+    min_peak_height: float = 0.005,
+    peak_prominence: float = 0.001,
+    min_step_hz: float = 0.2,
+    max_step_hz: float = 5.0,
+    min_steps: int = 1,
+    period_tolerance_frac: float = 1.0,
+    min_coverage_frac: float = 0.01,
+    bandpower_min_ratio: float | None = None,
+    bandpower_rel_width: float = 0.35,
+) -> list[dict[str, float | bool | int | str]]:
+    """QC check for a single pre-segmented walking pass (e.g., from synced file).
+
+    Treats the entire DataFrame as one walking interval and evaluates
+    heel strike regularity without gap-based splitting. Uses extremely lenient
+    defaults suited to short, pre-segmented synced pass files with varying
+    acoustic quality across different walking speeds.
+
+    Args:
+        df: Audio DataFrame containing one walking pass.
+        time_col: Column containing timestamps.
+        audio_channels: List of audio channel column names.
+        resample_hz: Target uniform resample rate for detection.
+        min_peak_height: Minimum heel-strike peak height (extreme: 0.005).
+        peak_prominence: Minimum prominence for heel-strike detection (extreme: 0.001).
+        min_step_hz: Lower bound on plausible step rate (0.2 Hz).
+        max_step_hz: Upper bound on plausible step rate (5.0 Hz).
+        min_steps: Minimum heel strikes required (1).
+        period_tolerance_frac: Allowed fractional deviation around median step period (1.0).
+        min_coverage_frac: Minimum fraction of interval covered by regular steps (0.01).
+        bandpower_min_ratio: Optional minimum PSD bandpower ratio around detected step rate.
+        bandpower_rel_width: Half-width (fractional) of the PSD band used for bandpower ratio.
+
+    Returns:
+        List with single dict if pass is valid, else empty list.
+    """
+    if df.empty or time_col not in df:
+        return []
+
+    available_channels = [ch for ch in audio_channels if ch in df.columns]
+    if not available_channels:
+        return []
+
+    time_s = pd.to_numeric(
+        pd.to_timedelta(df[time_col], unit="s").dt.total_seconds(),
+        errors="coerce",
+    ).to_numpy()
+
+    audio_data = df[available_channels].mean(axis=1).to_numpy()
+
+    valid = np.isfinite(time_s) & np.isfinite(audio_data)
+    time_s = time_s[valid]
+    audio_data = audio_data[valid]
+    if len(time_s) < 2:
+        return []
+
+    t_uni, aud_uni = _resample_uniform(time_s, audio_data, resample_hz)
+    if len(t_uni) < 2:
+        return []
+
+    heel_times = _detect_heel_strikes(
+        t_uni,
+        aud_uni,
+        resample_hz=resample_hz,
+        min_peak_height=min_peak_height,
+        peak_prominence=peak_prominence,
+        min_step_hz=min_step_hz,
+        max_step_hz=max_step_hz,
+    )
+    if len(heel_times) < min_steps:
+        return []
+
+    start_s, end_s = float(np.min(time_s)), float(np.max(time_s))
+    pass_result = _evaluate_walk_interval(
+        heel_times=heel_times,
+        interval=(start_s, end_s),
+        period_tolerance_frac=period_tolerance_frac,
+        min_coverage_frac=min_coverage_frac,
+        min_step_hz=min_step_hz,
+        max_step_hz=max_step_hz,
+    )
+    if pass_result is None:
+        return []
+
+    mask = (t_uni >= start_s) & (t_uni <= end_s)
+    bandpower_ratio = _bandpower_ratio(
+        signal=aud_uni[mask],
+        fs=resample_hz,
+        target_freq_hz=pass_result["gait_cycle_hz"],
+        bandpower_rel_width=bandpower_rel_width,
+    )
+
+    meets_bandpower = (
+        True
+        if bandpower_min_ratio is None
+        else bandpower_ratio >= bandpower_min_ratio
+    )
+    passed = bool(pass_result["passed"] and meets_bandpower)
+
+    return [
+        {
+            "start_s": start_s,
+            "end_s": end_s,
+            "duration_s": end_s - start_s,
+            "heel_strike_count": pass_result["heel_strike_count"],
+            "gait_cycle_hz": pass_result["gait_cycle_hz"],
+            "coverage_frac": pass_result["coverage_frac"],
+            "bandpower_ratio": bandpower_ratio,
+            "passed": passed,
+        }
+    ]
+
+
 def qc_audio_walk(
     df: pd.DataFrame,
     time_col: str,
@@ -119,12 +326,16 @@ def qc_audio_walk(
     min_coverage_frac: float = 0.2,
     bandpower_min_ratio: float | None = None,
     bandpower_rel_width: float = 0.35,
-) -> list[dict[str, float | bool | int]]:
+    biomech_file: Path | None = None,
+    use_frequency_segmentation: bool = False,
+    frequency_tolerance_frac: float = 0.06,
+) -> list[dict[str, float | bool | int | str]]:
     """QC check for walking maneuvers with variable gait speeds.
 
-    Identifies walking passes separated by slow-down/turnarounds, estimates
-    step frequency per pass from acoustic heel strikes, and evaluates each
-    pass for temporal coverage (regularity) and optional spectral support.
+    If biomech_file is provided, uses Walk0001 sheet to segment passes by
+    speed (SS/NS/FS) and pass number. Otherwise, if use_frequency_segmentation
+    is True, segments passes by step frequency clustering (each cluster
+    represents a distinct walking speed). Otherwise, detects passes via gap analysis.
 
     Args:
         df: Audio DataFrame.
@@ -135,17 +346,20 @@ def qc_audio_walk(
         peak_prominence: Minimum prominence for heel-strike detection.
         min_step_hz: Lower bound on plausible step rate.
         max_step_hz: Upper bound on plausible step rate.
-        min_gap_s: Gap size that separates consecutive passes.
+        min_gap_s: Gap size that separates consecutive passes (if gap-based mode).
         min_pass_peaks: Minimum heel strikes required inside a pass.
         period_tolerance_frac: Allowed fractional deviation around the median step period.
         min_coverage_frac: Minimum fraction of interval covered by regular steps.
         bandpower_min_ratio: Optional minimum PSD bandpower ratio around the detected step rate.
         bandpower_rel_width: Half-width (fractional) of the PSD band used for bandpower ratio.
+        biomech_file: Optional path to biomechanics Excel file with Walk0001 sheet.
+        use_frequency_segmentation: If True, segment passes by step frequency clustering.
+        frequency_tolerance_frac: Fractional tolerance for grouping similar frequencies (0.2 = 20%).
 
     Returns:
         List of dicts, one per detected pass, with keys:
         start_s, end_s, duration_s, heel_strike_count, gait_cycle_hz,
-        coverage_frac, bandpower_ratio, passed.
+        coverage_frac, bandpower_ratio, speed (if biomech provided), pass_num (if biomech provided), passed.
     """
 
     if df.empty or time_col not in df:
@@ -184,12 +398,68 @@ def qc_audio_walk(
     if len(heel_times) < min_pass_peaks:
         return []
 
-    intervals = _identify_walk_speed_intervals(
-        heel_times=heel_times,
-        min_gap_s=min_gap_s,
-        min_pass_peaks=min_pass_peaks,
-    )
-    results: list[dict[str, float | bool | int]] = []
+    # Determine how to segment passes
+    if biomech_file and biomech_file.exists():
+        # Biomechanics file takes priority
+        events_by_speed = _load_walk_events_from_biomechanics(biomech_file)
+        if events_by_speed:
+            passes_by_speed = _parse_pass_intervals_from_events(events_by_speed)
+            intervals = []
+            speed_pass_map: dict[tuple[float, float], tuple[str, int]] = {}
+            for speed, passes in passes_by_speed.items():
+                for pass_info in passes:
+                    start_s_interval = float(pass_info["start_s"])
+                    end_s_interval = float(pass_info["end_s"])
+                    intervals.append((start_s_interval, end_s_interval))
+                    speed_pass_map[
+                        (start_s_interval, end_s_interval)
+                    ] = (speed, int(pass_info["pass_num"]))
+        else:
+            # Fall back to frequency-based or gap-based
+            if use_frequency_segmentation:
+                intervals = _identify_walk_speed_intervals_by_frequency(
+                    heel_times=heel_times,
+                    min_pass_peaks=min_pass_peaks,
+                    frequency_tolerance_frac=frequency_tolerance_frac,
+                    extra_tolerances=(0.05, 0.04, 0.03, 0.025),
+                )
+                if not intervals:
+                    intervals = _identify_walk_speed_intervals(
+                        heel_times=heel_times,
+                        min_gap_s=min_gap_s,
+                        min_pass_peaks=min_pass_peaks,
+                    )
+            else:
+                intervals = _identify_walk_speed_intervals(
+                    heel_times=heel_times,
+                    min_gap_s=min_gap_s,
+                    min_pass_peaks=min_pass_peaks,
+                )
+            speed_pass_map = {}
+    else:
+        # Use frequency-based or gap-based segmentation
+        if use_frequency_segmentation:
+            intervals = _identify_walk_speed_intervals_by_frequency(
+                heel_times=heel_times,
+                min_pass_peaks=min_pass_peaks,
+                frequency_tolerance_frac=frequency_tolerance_frac,
+                extra_tolerances=(0.05, 0.04, 0.03, 0.025),
+            )
+            if not intervals:
+                intervals = _identify_walk_speed_intervals(
+                    heel_times=heel_times,
+                    min_gap_s=min_gap_s,
+                    min_pass_peaks=min_pass_peaks,
+                )
+        else:
+            intervals = _identify_walk_speed_intervals(
+                heel_times=heel_times,
+                min_gap_s=min_gap_s,
+                min_pass_peaks=min_pass_peaks,
+            )
+        speed_pass_map = {}
+
+    results: list[dict[str, float | bool | int | str]] = []
 
     for start_s, end_s in intervals:
         pass_result = _evaluate_walk_interval(
@@ -218,18 +488,25 @@ def qc_audio_walk(
         )
         passed = bool(pass_result["passed"] and meets_bandpower)
 
-        results.append(
-            {
-                "start_s": start_s,
-                "end_s": end_s,
-                "duration_s": end_s - start_s,
-                "heel_strike_count": pass_result["heel_strike_count"],
-                "gait_cycle_hz": pass_result["gait_cycle_hz"],
-                "coverage_frac": pass_result["coverage_frac"],
-                "bandpower_ratio": bandpower_ratio,
-                "passed": passed,
-            }
-        )
+        result_dict: dict[str, float | bool | int | str] = {
+            "start_s": start_s,
+            "end_s": end_s,
+            "duration_s": end_s - start_s,
+            "heel_strike_count": pass_result["heel_strike_count"],
+            "gait_cycle_hz": pass_result["gait_cycle_hz"],
+            "coverage_frac": pass_result["coverage_frac"],
+            "bandpower_ratio": bandpower_ratio,
+            "passed": passed,
+        }
+
+        # Add speed and pass_num if from biomechanics
+        interval_key = (start_s, end_s)
+        if interval_key in speed_pass_map:
+            speed, pass_num = speed_pass_map[interval_key]
+            result_dict["speed"] = speed
+            result_dict["pass_num"] = pass_num
+
+        results.append(result_dict)
 
     return results
 
@@ -310,6 +587,91 @@ def _detect_heel_strikes(
     heel_times = heel_times[np.isfinite(heel_times)]
     heel_times.sort()
     return heel_times
+
+
+def _identify_walk_speed_intervals_by_frequency(
+    heel_times: np.ndarray,
+    *,
+    min_pass_peaks: int,
+    frequency_tolerance_frac: float = 0.2,
+    extra_tolerances: tuple[float, ...] = (),
+) -> list[tuple[float, float]]:
+    """Split heel strikes into passes based on step frequency clustering.
+
+    Groups consecutive heel strikes by similar frequency (step rate).
+    Each frequency cluster represents a distinct walking speed and becomes
+    a separate pass interval.
+
+    Args:
+        heel_times: Array of detected heel strike times.
+        min_pass_peaks: Minimum heel strikes required in a pass.
+        frequency_tolerance_frac: Fractional tolerance for grouping similar frequencies.
+
+    Returns:
+        List of (start_time, end_time) tuples for each frequency cluster.
+    """
+    def _cluster_with_tol(times: np.ndarray, tol: float) -> list[tuple[float, float]]:
+        if len(times) < min_pass_peaks:
+            return []
+
+        periods = np.diff(times)
+        if len(periods) == 0:
+            return []
+
+        frequencies = 1.0 / periods
+        intervals_local: list[tuple[float, float]] = []
+
+        current_freq = frequencies[0]
+        cluster_start_idx = 0
+
+        for i in range(1, len(frequencies)):
+            freq = frequencies[i]
+            freq_deviation = abs(freq - current_freq) / current_freq
+
+            if freq_deviation > tol:
+                cluster_end_idx = i
+                cluster_size = cluster_end_idx - cluster_start_idx + 1
+
+                if cluster_size >= min_pass_peaks:
+                    start_s = float(times[cluster_start_idx])
+                    end_s = float(times[cluster_end_idx])
+                    intervals_local.append((start_s, end_s))
+
+                current_freq = freq
+                cluster_start_idx = i
+
+        cluster_end_idx = len(frequencies)
+        cluster_size = cluster_end_idx - cluster_start_idx + 1
+        if cluster_size >= min_pass_peaks:
+            start_s = float(times[cluster_start_idx])
+            end_s = float(times[cluster_end_idx])
+            intervals_local.append((start_s, end_s))
+
+        return intervals_local
+
+    tolerances = [frequency_tolerance_frac, *extra_tolerances]
+    best_intervals: list[tuple[float, float]] = []
+
+    for tol in tolerances:
+        intervals = _cluster_with_tol(heel_times, tol)
+        if len(intervals) > len(best_intervals):
+            best_intervals = intervals
+        if len(intervals) >= 3:
+            return intervals
+
+    # If only two intervals found, try splitting the longest one with tighter t-shirt sizes
+    if len(best_intervals) == 2:
+        longest_idx = int(np.argmax([iv[1] - iv[0] for iv in best_intervals]))
+        longest = best_intervals[longest_idx]
+        mask = (heel_times >= longest[0]) & (heel_times <= longest[1])
+        sub_times = heel_times[mask]
+        for tol in (0.03, 0.02, 0.015):
+            split = _cluster_with_tol(sub_times, tol)
+            if len(split) > 1:
+                new_intervals = best_intervals[:longest_idx] + split + best_intervals[longest_idx + 1 :]
+                return new_intervals
+
+    return best_intervals
 
 
 def _identify_walk_speed_intervals(
@@ -515,6 +877,8 @@ def _run_qc_on_file(
     resample_hz_walk: float,
     min_pass_peaks: int,
     min_gap_s: float,
+    use_frequency_segmentation: bool = False,
+    frequency_tolerance_frac: float = 0.06,
 ) -> dict[str, object]:
     df = pd.read_pickle(pkl_path)
 
@@ -527,6 +891,8 @@ def _run_qc_on_file(
             min_pass_peaks=min_pass_peaks,
             min_gap_s=min_gap_s,
             bandpower_min_ratio=bandpower_min_ratio,
+            use_frequency_segmentation=use_frequency_segmentation,
+            frequency_tolerance_frac=frequency_tolerance_frac,
         )
         return {
             "path": str(pkl_path),
@@ -562,6 +928,121 @@ def _run_qc_on_file(
     }
 
 
+def qc_audio_walk_biomech(
+    df: pd.DataFrame,
+    time_col: str,
+    audio_channels: list[str],
+    *,
+    resample_hz: float = 100.0,
+    min_peak_height: float = 0.02,
+    peak_prominence: float = 0.02,
+    min_step_hz: float = 0.5,
+    max_step_hz: float = 3.0,
+    period_tolerance_frac: float = 0.5,
+    min_coverage_frac: float = 0.2,
+    bandpower_min_ratio: float | None = None,
+    bandpower_rel_width: float = 0.35,
+    biomech_file: Path | None = None,
+) -> list[dict[str, float | bool | int | str]]:
+    """Walking QC using biomechanics Walk0001 speed/pass intervals.
+
+    Groups results by speed code (SS/NS/FS) and pass number, evaluating
+    coverage and spectral support within each biomechanics-defined pass.
+
+    Returns list of dicts with keys: speed, pass_num, start_s, end_s,
+    duration_s, heel_strike_count, gait_cycle_hz, coverage_frac,
+    bandpower_ratio, passed.
+    """
+    if df.empty or time_col not in df or biomech_file is None or not biomech_file.exists():
+        return []
+
+    events_by_speed = _load_walk_events_from_biomechanics(biomech_file)
+    if not events_by_speed:
+        return []
+
+    passes_by_speed = _parse_pass_intervals_from_events(events_by_speed)
+    if not any(passes_by_speed.values()):
+        return []
+
+    available_channels = [ch for ch in audio_channels if ch in df.columns]
+    if not available_channels:
+        return []
+
+    time_s = pd.to_numeric(
+        pd.to_timedelta(df[time_col], unit="s").dt.total_seconds(),
+        errors="coerce",
+    ).to_numpy()
+    audio_data = df[available_channels].mean(axis=1).to_numpy()
+
+    valid = np.isfinite(time_s) & np.isfinite(audio_data)
+    time_s = time_s[valid]
+    audio_data = audio_data[valid]
+    if len(time_s) < 3:
+        return []
+
+    t_uni, aud_uni = _resample_uniform(time_s, audio_data, resample_hz)
+    if len(t_uni) < 3:
+        return []
+
+    heel_times = _detect_heel_strikes(
+        t_uni,
+        aud_uni,
+        resample_hz=resample_hz,
+        min_peak_height=min_peak_height,
+        peak_prominence=peak_prominence,
+        min_step_hz=min_step_hz,
+        max_step_hz=max_step_hz,
+    )
+    if len(heel_times) < 2:
+        return []
+
+    results: list[dict[str, float | bool | int | str]] = []
+
+    for speed, passes in passes_by_speed.items():
+        for p in passes:
+            start_s, end_s = float(p["start_s"]), float(p["end_s"])
+            interval = (start_s, end_s)
+            pass_result = _evaluate_walk_interval(
+                heel_times=heel_times,
+                interval=interval,
+                period_tolerance_frac=period_tolerance_frac,
+                min_coverage_frac=min_coverage_frac,
+                min_step_hz=min_step_hz,
+                max_step_hz=max_step_hz,
+            )
+            if pass_result is None:
+                continue
+
+            mask = (t_uni >= start_s) & (t_uni <= end_s)
+            bandpower_ratio = _bandpower_ratio(
+                signal=aud_uni[mask],
+                fs=resample_hz,
+                target_freq_hz=pass_result["gait_cycle_hz"],
+                bandpower_rel_width=bandpower_rel_width,
+            )
+            meets_bandpower = (
+                True if bandpower_min_ratio is None else bandpower_ratio >= bandpower_min_ratio
+            )
+            passed = bool(pass_result["passed"] and meets_bandpower)
+
+            results.append(
+                {
+                    "speed": speed,
+                    "pass_num": int(p["pass_num"]),
+                    "start_s": start_s,
+                    "end_s": end_s,
+                    "duration_s": end_s - start_s,
+                    "heel_strike_count": pass_result["heel_strike_count"],
+                    "gait_cycle_hz": pass_result["gait_cycle_hz"],
+                    "coverage_frac": pass_result["coverage_frac"],
+                    "bandpower_ratio": bandpower_ratio,
+                    "passed": passed,
+                }
+            )
+
+    return results
+
+
 def qc_audio_directory(
     participant_dir: Path,
     *,
@@ -574,6 +1055,8 @@ def qc_audio_directory(
     resample_hz_walk: float = 100.0,
     min_pass_peaks: int = 6,
     min_gap_s: float = 2.0,
+    use_frequency_segmentation: bool = False,
+    frequency_tolerance_frac: float = 0.06,
 ) -> list[dict[str, object]]:
     """Run QC across a participant directory.
 
@@ -582,9 +1065,9 @@ def qc_audio_directory(
     """
 
     maneuvers = {
-        "walk": "Walking",
-        "sit_to_stand": "Sit-Stand",
-        "flexion_extension": "Flexion-Extension",
+        "walk": ("Walking", ()),
+        "sit_to_stand": ("Sit-Stand", ("sit", "stand")),
+        "flexion_extension": ("Flexion-Extension", ()),
     }
 
     channels = audio_channels or DEFAULT_CHANNELS
@@ -597,14 +1080,48 @@ def qc_audio_directory(
         if not knee_dir.exists():
             continue
 
-        for key, folder_name in maneuvers.items():
+        for key, (folder_name, contains_terms) in maneuvers.items():
             if key not in selected:
                 continue
 
             maneuver_dir = knee_dir / folder_name
+            if not maneuver_dir.exists() and contains_terms:
+                # Allow variants like "Sit-to-Stand" by matching all required terms.
+                for candidate in knee_dir.iterdir():
+                    if not candidate.is_dir():
+                        continue
+                    lower_name = candidate.name.lower()
+                    if all(term in lower_name for term in contains_terms):
+                        maneuver_dir = candidate
+                        break
+
             if not maneuver_dir.exists():
                 continue
 
+            # Prefer synced per-pass files when available
+            synced_dir = maneuver_dir / "Synced"
+            if key == "walk" and synced_dir.exists():
+                for pkl_path in sorted(synced_dir.glob("*.pkl")):
+                    df = pd.read_pickle(pkl_path)
+                    # Evaluate each synced file as a single pre-segmented pass
+                    pass_results = _qc_walk_single_pass(
+                        df=df,
+                        time_col=time_col,
+                        audio_channels=channels,
+                        resample_hz=resample_hz_walk,
+                        bandpower_min_ratio=bandpower_min_ratio,
+                    )
+                    results.append(
+                        {
+                            "knee": knee,
+                            "maneuver": key,
+                            "path": str(pkl_path),
+                            "passes": pass_results,
+                        }
+                    )
+                continue
+
+            # Fallback: use primary processed file
             try:
                 audio_base = Path(
                     get_audio_file_name(maneuver_dir, with_freq=False)
@@ -630,6 +1147,8 @@ def qc_audio_directory(
                 tail_length_s=tail_length_s,
                 bandpower_min_ratio=bandpower_min_ratio,
                 resample_hz_walk=resample_hz_walk,
+                use_frequency_segmentation=use_frequency_segmentation,
+                frequency_tolerance_frac=frequency_tolerance_frac,
                 min_pass_peaks=min_pass_peaks,
                 min_gap_s=min_gap_s,
             )
@@ -707,6 +1226,17 @@ def _build_cli_parser() -> "argparse.ArgumentParser":
         default=2.0,
         help="Gap (s) that splits walking passes",
     )
+    file_parser.add_argument(
+        "--use-frequency-segmentation",
+        action="store_true",
+        help="Use step frequency clustering instead of gap-based segmentation for walking",
+    )
+    file_parser.add_argument(
+        "--frequency-tolerance-frac",
+        type=float,
+        default=0.06,
+        help="Fractional tolerance for grouping similar frequencies (0.06 = 6%)",
+    )
 
     dir_parser = subparsers.add_parser(
         "dir", help="Run QC across a participant directory"
@@ -756,6 +1286,17 @@ def _build_cli_parser() -> "argparse.ArgumentParser":
         default=2.0,
         help="Gap (s) that splits walking passes",
     )
+    dir_parser.add_argument(
+        "--use-frequency-segmentation",
+        action="store_true",
+        help="Use step frequency clustering instead of gap-based segmentation for walking",
+    )
+    dir_parser.add_argument(
+        "--frequency-tolerance-frac",
+        type=float,
+        default=0.06,
+        help="Fractional tolerance for grouping similar frequencies (0.06 = 6%)",
+    )
 
     return parser
 
@@ -765,15 +1306,30 @@ def _print_file_result(result: dict[str, object]) -> None:
     print(f"QC result for {maneuver} on {result['path']}")
     if maneuver == "walk":
         passes = result.get("passes", [])
-        for idx, p in enumerate(passes, start=1):
-            print(
-                f"  Pass {idx}: freq={p['gait_cycle_hz']:.2f} Hz, "
-                f"coverage={p['coverage_frac']:.2%}, "
-                f"bandpower={p['bandpower_ratio']:.3f}, "
-                f"passed={p['passed']}"
-            )
-        if not passes:
-            print("  No walking passes detected")
+        has_numbering = any(("speed" in p) or ("pass_num" in p) for p in passes)
+        if passes and not has_numbering:
+            grouped = _group_passes_by_speed(passes)
+            if not grouped:
+                print("  No walking passes detected")
+            else:
+                print("  Grouped by speed (no pass numbers):")
+                for g in grouped:
+                    print(
+                        f"  {g['speed_label']}: freq={g['gait_cycle_hz']:.2f} Hz, "
+                        f"coverage={g['coverage_frac']:.2%}, "
+                        f"bandpower={g['bandpower_ratio']:.3f}, "
+                        f"passed={g['passed']} (passes={g['pass_count']}, pass_rate={g['pass_rate']:.0%})"
+                    )
+        else:
+            for idx, p in enumerate(passes, start=1):
+                print(
+                    f"  Pass {idx}: freq={p['gait_cycle_hz']:.2f} Hz, "
+                    f"coverage={p['coverage_frac']:.2%}, "
+                    f"bandpower={p['bandpower_ratio']:.3f}, "
+                    f"passed={p['passed']}"
+                )
+            if not passes:
+                print("  No walking passes detected")
     else:
         print(
             f"  passed={result['passed']}, "
@@ -792,6 +1348,21 @@ def _print_dir_results(results: list[dict[str, object]]) -> None:
         print(header)
         if res["maneuver"] == "walk":
             passes = res.get("passes", [])
+            has_numbering = any(("speed" in p) or ("pass_num" in p) for p in passes)
+            if passes and not has_numbering:
+                grouped = _group_passes_by_speed(passes)
+                if not grouped:
+                    print("  No walking passes detected")
+                    continue
+                print("  Grouped by speed (no pass numbers):")
+                for g in grouped:
+                    print(
+                        f"  {g['speed_label']}: freq={g['gait_cycle_hz']:.2f} Hz, "
+                        f"coverage={g['coverage_frac']:.2%}, "
+                        f"bandpower={g['bandpower_ratio']:.3f}, "
+                        f"passed={g['passed']} (passes={g['pass_count']}, pass_rate={g['pass_rate']:.0%})"
+                    )
+                continue
             if not passes:
                 print("  No walking passes detected")
                 continue
@@ -809,6 +1380,70 @@ def _print_dir_results(results: list[dict[str, object]]) -> None:
             )
 
 
+def _group_passes_by_speed(
+    passes: list[dict[str, object]],
+    *,
+    tolerance_frac: float = 0.06,
+) -> list[dict[str, float | bool | int | str]]:
+    """Group unlabeled passes by similar gait frequency.
+
+    Uses a simple 1D clustering: sorted by frequency and started new group when
+    the fractional deviation exceeds tolerance_frac.
+    """
+    if not passes:
+        return []
+
+    sorted_passes = sorted(passes, key=lambda p: float(p["gait_cycle_hz"]))
+    groups: list[list[dict[str, object]]] = []
+    current_group: list[dict[str, object]] = []
+    current_freq: float | None = None
+
+    for p in sorted_passes:
+        freq = float(p["gait_cycle_hz"])
+        if current_freq is None:
+            current_group = [p]
+            current_freq = freq
+            continue
+
+        deviation = abs(freq - current_freq) / current_freq if current_freq else 0.0
+        if deviation <= tolerance_frac:
+            current_group.append(p)
+            # update representative frequency to mean of group for stability
+            current_freq = float(np.mean([float(x["gait_cycle_hz"]) for x in current_group]))
+        else:
+            groups.append(current_group)
+            current_group = [p]
+            current_freq = freq
+
+    if current_group:
+        groups.append(current_group)
+
+    grouped_results: list[dict[str, float | bool | int | str]] = []
+    for idx, g in enumerate(groups, start=1):
+        freqs = np.array([float(p["gait_cycle_hz"]) for p in g])
+        coverages = np.array([float(p["coverage_frac"]) for p in g])
+        bandpowers = np.array([float(p["bandpower_ratio"]) for p in g])
+        durations = np.array([float(p["duration_s"]) for p in g])
+        heel_counts = np.array([int(p["heel_strike_count"]) for p in g])
+        passes_passed = np.array([bool(p["passed"]) for p in g])
+
+        grouped_results.append(
+            {
+                "speed_label": f"Speed {idx}",
+                "gait_cycle_hz": float(np.mean(freqs)),
+                "coverage_frac": float(np.mean(coverages)),
+                "bandpower_ratio": float(np.mean(bandpowers)),
+                "duration_s": float(np.sum(durations)),
+                "heel_strike_count": int(np.sum(heel_counts)),
+                "passed": bool(np.all(passes_passed)),
+                "pass_count": int(len(g)),
+                "pass_rate": float(np.mean(passes_passed)),
+            }
+        )
+
+    return grouped_results
+
+
 def _cli_main() -> None:
     parser = _build_cli_parser()
     args = parser.parse_args()
@@ -817,8 +1452,12 @@ def _cli_main() -> None:
     bandpower_min_ratio = args.bandpower_min_ratio
 
     if args.command == "file":
+        pkl_path = Path(args.pkl)
+        if not pkl_path.exists():
+            print(f"Error: File does not exist: {pkl_path}")
+            return
         result = _run_qc_on_file(
-            pkl_path=Path(args.pkl),
+            pkl_path=pkl_path,
             maneuver=args.maneuver,
             time_col=args.time,
             audio_channels=channels,
@@ -828,11 +1467,17 @@ def _cli_main() -> None:
             resample_hz_walk=args.resample_walk,
             min_pass_peaks=args.min_pass_peaks,
             min_gap_s=args.min_gap_s,
+            use_frequency_segmentation=args.use_frequency_segmentation,
+            frequency_tolerance_frac=args.frequency_tolerance_frac,
         )
         _print_file_result(result)
     else:
+        participant_dir = Path(args.participant_dir)
+        if not participant_dir.exists():
+            print(f"Error: Directory does not exist: {participant_dir}")
+            return
         results = qc_audio_directory(
-            participant_dir=Path(args.participant_dir),
+            participant_dir=participant_dir,
             time_col=args.time,
             audio_channels=channels,
             maneuver=args.maneuver,
@@ -842,6 +1487,8 @@ def _cli_main() -> None:
             resample_hz_walk=args.resample_walk,
             min_pass_peaks=args.min_pass_peaks,
             min_gap_s=args.min_gap_s,
+            use_frequency_segmentation=args.use_frequency_segmentation,
+            frequency_tolerance_frac=args.frequency_tolerance_frac,
         )
         _print_dir_results(results)
 
