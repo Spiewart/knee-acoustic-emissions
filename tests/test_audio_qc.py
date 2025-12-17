@@ -169,6 +169,30 @@ def test_qc_audio_walk_requires_enough_peaks_in_pass():
     assert results == []
 
 
+def test_qc_audio_walk_frequency_segmentation():
+    """Test that frequency-based segmentation separates different walking speeds."""
+    # Create walking signal with 3 distinct speeds, no gaps between them
+    passes = [(1.0, 20.0), (1.5, 20.0), (2.0, 20.0)]
+    df = _walking_signal(passes, gap_s=0.1)  # Minimal gap
+
+    # With frequency segmentation, should detect 3 passes by speed
+    results = qc_audio_walk(
+        df=df,
+        time_col="tt",
+        audio_channels=["ch1", "ch2"],
+        use_frequency_segmentation=True,
+        frequency_tolerance_frac=0.2,
+        min_pass_peaks=6,
+    )
+
+    # Should detect multiple passes even with minimal gaps
+    assert len(results) >= 2, f"Expected at least 2 passes, got {len(results)}"
+
+    # Each pass should have a different frequency
+    freqs = [r["gait_cycle_hz"] for r in results]
+    assert len(set(np.round(freqs, 1))) >= 2, f"Expected different frequencies, got {freqs}"
+
+
 def _write_pickled_audio(tmp_path: Path, knee: str, folder: str, df: pd.DataFrame) -> Path:
     base_name = "test_audio"
     maneuver_dir = tmp_path / knee / folder
@@ -207,3 +231,42 @@ def test_qc_audio_directory_filters_maneuver(tmp_path: Path):
 
     assert len(results) == 1
     assert results[0]["maneuver"] == "flexion_extension"
+
+
+def test_cli_file_command_nonexistent_file(monkeypatch, capsys):
+    """Test that file command prints error when file does not exist."""
+    import sys
+
+    from audio_qc import _cli_main
+
+    monkeypatch.setattr(sys, "argv", [
+        "audio_qc.py",
+        "file",
+        "/nonexistent/path/to/file.pkl",
+        "--maneuver", "walk"
+    ])
+
+    _cli_main()
+
+    captured = capsys.readouterr()
+    assert "Error: File does not exist" in captured.out
+    assert "/nonexistent/path/to/file.pkl" in captured.out
+
+
+def test_cli_dir_command_nonexistent_directory(monkeypatch, capsys):
+    """Test that dir command prints error when directory does not exist."""
+    import sys
+
+    from audio_qc import _cli_main
+
+    monkeypatch.setattr(sys, "argv", [
+        "audio_qc.py",
+        "dir",
+        "/nonexistent/participant/directory"
+    ])
+
+    _cli_main()
+
+    captured = capsys.readouterr()
+    assert "Error: Directory does not exist" in captured.out
+    assert "/nonexistent/participant/directory" in captured.out
