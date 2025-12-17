@@ -31,30 +31,19 @@ pip install -r dev-requirements.txt
 Common Commands
 ---------------
 
-- Convert a `.bin` to pickle + JSON metadata:
-  ```bash
-  python read_audio_board_file.py path/to/file.bin --out ./outputs
-  ```
-- Export per-channel CSV:
-  ```bash
-  python dump_channels_to_csv.py ./outputs/file.pkl
-  ```
-- Plot per-channel waveforms:
-  ```bash
-  python plot_per_channel.py ./outputs/file.pkl
-  ```
-- Add instantaneous frequency:
-  ```bash
-  python add_instantaneous_frequency.py ./outputs/file.pkl
-  ```
-- Compute spectrograms:
-  ```bash
-  python compute_spectrogram.py ./outputs/file.pkl
-  ```
-- Process a participant directory (sync audio + biomechanics):
-  ```bash
-  python process_participant_directory.py /path/to/study/#1011
-  ```
+Bin processing (raw audio → analysis-ready files)
+- Convert `.bin` to pickle + JSON metadata: `python read_audio_board_file.py path/to/file.bin --out ./outputs` ([read_audio_board_file.py](read_audio_board_file.py))
+- Export per-channel CSV: `python dump_channels_to_csv.py ./outputs/file.pkl` ([dump_channels_to_csv.py](dump_channels_to_csv.py))
+- Plot per-channel waveforms: `python plot_per_channel.py ./outputs/file.pkl` ([plot_per_channel.py](plot_per_channel.py))
+- Add instantaneous frequency: `python add_instantaneous_frequency.py ./outputs/file.pkl` ([add_instantaneous_frequency.py](add_instantaneous_frequency.py))
+- Compute spectrograms: `python compute_spectrogram.py ./outputs/file.pkl` ([compute_spectrogram.py](compute_spectrogram.py))
+
+Synchronize audio with biomechanics
+- Process all participants under a root path: `python process_participant_directory.py /path/to/studies` ([process_participant_directory.py](process_participant_directory.py))
+- Process specific participants (with or without '#'): `python process_participant_directory.py /path/to/studies --participant 1011 #2024`
+- Limit the number of participants: `python process_participant_directory.py /path/to/studies --limit 5`
+- Sync a single unsynced audio pickle from a maneuver `_outputs/`: `python process_participant_directory.py /path/to/studies --sync-single /path/to/audio.pkl`
+- Write logs to file: `python process_participant_directory.py /path/to/studies --log run.log`
 
 Audio QC (maneuver-specific)
 ----------------------------

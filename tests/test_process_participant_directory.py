@@ -1,5 +1,6 @@
 import logging
 import shutil
+import sys
 from pathlib import Path
 from unittest.mock import patch
 
@@ -16,6 +17,7 @@ from process_participant_directory import (
     get_study_id_from_directory,
     knee_folder_has_subfolder_each_maneuver,
     knee_subfolder_has_acoustic_files,
+    main,
     motion_capture_folder_has_required_data,
     process_participant,
     setup_logging,
@@ -394,6 +396,99 @@ def test_find_participant_directories_sorting(tmp_path):
     result = find_participant_directories(tmp_path)
 
     assert [d.name for d in result] == ["#1011", "#2024", "#3001"]
+
+def test_main_filters_requested_participants(monkeypatch, tmp_path, caplog):
+    """Process only participants requested via --participant."""
+    participants = []
+    for name in ("#1011", "#2024", "#3001"):
+        participant = tmp_path / name
+        participant.mkdir()
+        participants.append(participant)
+
+    processed: list[str] = []
+
+    def fake_find(path: Path) -> list[Path]:
+        return participants
+
+    def fake_process(participant_dir: Path) -> bool:
+        processed.append(participant_dir.name)
+        return True
+
+    monkeypatch.setattr(
+        "process_participant_directory.setup_logging",
+        lambda log_file=None: None,
+    )
+    monkeypatch.setattr(
+        "process_participant_directory.find_participant_directories",
+        fake_find,
+    )
+    monkeypatch.setattr(
+        "process_participant_directory.process_participant",
+        fake_process,
+    )
+
+    caplog.set_level(logging.INFO)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "process_participant_directory.py",
+            str(tmp_path),
+            "--participant",
+            "2024",
+            "#3001",
+        ],
+    )
+
+    main()
+
+    assert processed == ["#2024", "#3001"]
+    assert "Found 2 participant directory(ies)" in caplog.text
+
+
+def test_main_warns_when_no_participant_matches(monkeypatch, tmp_path, caplog):
+    """Warn and abort when requested participants are missing."""
+    participant_dir = tmp_path / "#1011"
+    participant_dir.mkdir()
+    participants = [participant_dir]
+    processed: list[str] = []
+
+    def fake_find(path: Path) -> list[Path]:
+        return participants
+
+    def fake_process(participant_dir: Path) -> bool:
+        processed.append(participant_dir.name)
+        return True
+
+    monkeypatch.setattr(
+        "process_participant_directory.setup_logging",
+        lambda log_file=None: None,
+    )
+    monkeypatch.setattr(
+        "process_participant_directory.find_participant_directories",
+        fake_find,
+    )
+    monkeypatch.setattr(
+        "process_participant_directory.process_participant",
+        fake_process,
+    )
+
+    caplog.set_level(logging.WARNING)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "process_participant_directory.py",
+            str(tmp_path),
+            "--participant",
+            "9999",
+        ],
+    )
+
+    main()
+
+    assert processed == []
+    assert "No matching participant directories found" in caplog.text
 
 
 def test_setup_logging_console_only():

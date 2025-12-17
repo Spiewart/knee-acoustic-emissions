@@ -1235,7 +1235,7 @@ def _build_cli_parser() -> "argparse.ArgumentParser":
         "--frequency-tolerance-frac",
         type=float,
         default=0.06,
-        help="Fractional tolerance for grouping similar frequencies (0.06 = 6%)",
+        help="Fractional tolerance for grouping similar frequencies (0.06 = 6%%)",
     )
 
     dir_parser = subparsers.add_parser(
@@ -1295,7 +1295,7 @@ def _build_cli_parser() -> "argparse.ArgumentParser":
         "--frequency-tolerance-frac",
         type=float,
         default=0.06,
-        help="Fractional tolerance for grouping similar frequencies (0.06 = 6%)",
+        help="Fractional tolerance for grouping similar frequencies (0.06 = 6%%)",
     )
 
     return parser

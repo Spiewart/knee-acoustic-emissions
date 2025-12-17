@@ -33,6 +33,7 @@ from sync_audio_with_biomechanics import (
     get_right_stomp_time,
     get_stomp_time,
     load_audio_data,
+    plot_stomp_detection,
     sync_audio_with_biomechanics,
 )
 
@@ -63,6 +64,8 @@ def parse_participant_directory(participant_dir: Path) -> None:
 
     # Collect all synchronized data before writing anything (transactional)
     all_synced_data: list[tuple[Path, pd.DataFrame]] = []
+    # Also collect stomp visualization metadata
+    stomp_viz_data: list[tuple[Path, pd.DataFrame, tuple]] = []
 
     # Process each knee (Left and Right)
     for knee_side in ["Left", "Right"]:
@@ -72,10 +75,11 @@ def parse_participant_directory(participant_dir: Path) -> None:
             knee_side,
             study_id
         )
-        knee_synced_data = _process_knee_maneuvers(
+        knee_synced_data, knee_viz_data = _process_knee_maneuvers(
             knee_dir, biomechanics_file, knee_side
         )
         all_synced_data.extend(knee_synced_data)
+        stomp_viz_data.extend(knee_viz_data)
 
     # If we got here, all processing succeeded - now write all files
     logging.info(
@@ -89,6 +93,10 @@ def parse_participant_directory(participant_dir: Path) -> None:
         synced_df.to_pickle(output_path)
         logging.info("Saved synchronized data to %s", output_path)
 
+    # Save stomp visualizations
+    for output_path, audio_df, bio_df, synced_df, (audio_stomp, bio_left, bio_right) in stomp_viz_data:
+        plot_stomp_detection(audio_df, bio_df, synced_df, audio_stomp, bio_left, bio_right, output_path)
+
     logging.info("Completed processing participant %s", study_id)
 
 
@@ -96,12 +104,11 @@ def _process_knee_maneuvers(
     knee_dir: Path,
     biomechanics_file: Path,
     knee_side: str,
-) -> list[tuple[Path, pd.DataFrame]]:
+) -> tuple[list[tuple[Path, pd.DataFrame]], list[tuple[Path, pd.DataFrame, tuple]]]:
     """Process all maneuvers for a specific knee (Left or Right).
 
     Synchronizes audio and biomechanics data for all maneuvers but does NOT
-    write any files. Returns a list of (output_path, dataframe) tuples for
-    later writing.
+    write any files. Returns lists of data tuples for later writing and visualization.
 
     Args:
         knee_dir: Path to the knee directory (Left Knee or Right Knee)
@@ -109,7 +116,9 @@ def _process_knee_maneuvers(
         knee_side: "Left" or "Right"
 
     Returns:
-        List of (output_path, synchronized_dataframe) tuples
+        Tuple of:
+        - List of (output_path, synchronized_dataframe) tuples
+        - List of (output_path, audio_df, (audio_stomp, bio_left, bio_right)) tuples for visualization
 
     Raises:
         Exception: If any maneuver fails to process
@@ -125,6 +134,7 @@ def _process_knee_maneuvers(
     }
 
     all_synced_data: list[tuple[Path, pd.DataFrame]] = []
+    all_viz_data: list[tuple[Path, pd.DataFrame, tuple]] = []
 
     for maneuver_folder, maneuver_key in maneuver_mapping.items():
         maneuver_dir = knee_dir / maneuver_folder
@@ -139,7 +149,7 @@ def _process_knee_maneuvers(
         # Create Synced folder path (don't create yet)
         synced_dir = maneuver_dir / "Synced"
 
-        maneuver_synced_data = _sync_maneuver_data(
+        maneuver_synced_data, maneuver_viz_data = _sync_maneuver_data(
             maneuver_dir=maneuver_dir,
             synced_dir=synced_dir,
             biomechanics_file=biomechanics_file,
@@ -150,8 +160,9 @@ def _process_knee_maneuvers(
             knee_side=knee_side,
         )
         all_synced_data.extend(maneuver_synced_data)
+        all_viz_data.extend(maneuver_viz_data)
 
-    return all_synced_data
+    return all_synced_data, all_viz_data
 
 
 def _sync_maneuver_data(
@@ -161,7 +172,7 @@ def _sync_maneuver_data(
     maneuver_key: Literal["walk", "sit_to_stand", "flexion_extension"],
     knee_side: str,
     with_freq: bool = True,
-) -> list[tuple[Path, pd.DataFrame]]:
+) -> tuple[list[tuple[Path, pd.DataFrame]], list[tuple[Path, pd.DataFrame, tuple]]]:
     """Synchronize audio and biomechanics data for a specific maneuver.
 
     Processes and synchronizes data but does NOT write files.
@@ -174,12 +185,15 @@ def _sync_maneuver_data(
         knee_side: "Left" or "Right"
 
     Returns:
-        List of (output_path, synchronized_dataframe) tuples
+        Tuple of:
+        - List of (output_path, synchronized_dataframe) tuples
+        - List of (output_path, audio_df, (audio_stomp, bio_left, bio_right)) tuples for visualization
 
     Raises:
         Exception: If processing fails
     """
     synced_data: list[tuple[Path, pd.DataFrame]] = []
+    viz_data: list[tuple[Path, pd.DataFrame, tuple]] = []
 
     # Get audio file name
     audio_file_name = get_audio_file_name(maneuver_dir, with_freq=False)
@@ -208,7 +222,7 @@ def _sync_maneuver_data(
             "fast",
         )
         for speed in walk_speeds:
-            speed_synced_data = _process_walk_speed(
+            speed_synced_data, speed_viz_data = _process_walk_speed(
                 speed=speed,
                 biomechanics_file=biomechanics_file,
                 audio_df=audio_df,
@@ -217,6 +231,7 @@ def _sync_maneuver_data(
                 knee_side=knee_side,
             )
             synced_data.extend(speed_synced_data)
+            viz_data.extend(speed_viz_data)
     else:
         # For sit-to-stand and flexion-extension, single recording
         recordings = import_biomechanics_recordings(
@@ -232,7 +247,7 @@ def _sync_maneuver_data(
 
         # Process first (and only) recording
         recording = recordings[0]
-        output_path, synced_df = _sync_and_save_recording(
+        output_path, synced_df, stomp_times, bio_df = _sync_and_save_recording(
             recording=recording,
             audio_df=audio_df,
             synced_dir=synced_dir,
@@ -243,8 +258,9 @@ def _sync_maneuver_data(
             speed=None,
         )
         synced_data.append((output_path, synced_df))
+        viz_data.append((output_path, audio_df, bio_df, synced_df, stomp_times))
 
-    return synced_data
+    return synced_data, viz_data
 
 
 def _process_walk_speed(
@@ -254,7 +270,7 @@ def _process_walk_speed(
     maneuver_dir: Path,
     synced_dir: Path,
     knee_side: str,
-) -> list[tuple[Path, pd.DataFrame]]:
+) -> tuple[list[tuple[Path, pd.DataFrame]], list[tuple[Path, pd.DataFrame, tuple]]]:
     """Process walking data for a specific speed.
 
     Processes and synchronizes data but does NOT write files.
@@ -269,9 +285,12 @@ def _process_walk_speed(
         knee_side: "Left" or "Right"
 
     Returns:
-        List of (output_path, synchronized_dataframe) tuples
+        Tuple of:
+        - List of (output_path, synchronized_dataframe) tuples
+        - List of (output_path, audio_df, (audio_stomp, bio_left, bio_right)) tuples for visualization
     """
     synced_data: list[tuple[Path, pd.DataFrame]] = []
+    viz_data: list[tuple[Path, pd.DataFrame, tuple]] = []
 
     try:
         recordings = import_biomechanics_recordings(
@@ -286,11 +305,11 @@ def _process_walk_speed(
                 "walk",
                 speed,
             )
-            return synced_data
+            return synced_data, viz_data
 
         # Process each pass/recording at this speed
         for recording in recordings:
-            output_path, synced_df = _sync_and_save_recording(
+            output_path, synced_df, stomp_times, bio_df = _sync_and_save_recording(
                 recording=recording,
                 audio_df=audio_df,
                 synced_dir=synced_dir,
@@ -302,6 +321,7 @@ def _process_walk_speed(
                 speed=speed,
             )
             synced_data.append((output_path, synced_df))
+            viz_data.append((output_path, audio_df, bio_df, synced_df, stomp_times))
 
     except Exception as e:
         logging.error(
@@ -312,7 +332,7 @@ def _process_walk_speed(
         )
         raise
 
-    return synced_data
+    return synced_data, viz_data
 
 
 def _sync_and_save_recording(
@@ -324,7 +344,7 @@ def _sync_and_save_recording(
     knee_side: str,
     pass_number: int | None,
     speed: str | None,
-) -> tuple[Path, pd.DataFrame]:
+) -> tuple[Path, pd.DataFrame, tuple]:
     """Synchronize a single biomechanics recording with audio.
 
     Processes and synchronizes data but does NOT write files.
@@ -340,7 +360,7 @@ def _sync_and_save_recording(
         speed: Speed level (for walking), None otherwise
 
     Returns:
-        Tuple of (output_path, synchronized_dataframe)
+        Tuple of (output_path, synchronized_dataframe, (audio_stomp, bio_left, bio_right))
 
     Raises:
         Exception: If synchronization fails
@@ -440,6 +460,10 @@ def _sync_and_save_recording(
         bio_df=bio_df,
         bio_start_time=bio_start_time,
         bio_end_time=bio_end_time,
+        maneuver_key=maneuver_key,
+        knee_side=knee_side,
+        pass_number=pass_number,
+        speed=speed,
     )
 
     # Trim biomechanics columns to only those for the knee laterality
@@ -459,7 +483,10 @@ def _sync_and_save_recording(
 
     output_path = synced_dir / f"{filename}.pkl"
 
-    return output_path, trimmed_df
+    # Return path, dataframe, stomp times, and original bio_df for visualization
+    stomp_times = (audio_stomp_time, left_stomp_time, right_stomp_time)
+
+    return output_path, trimmed_df, stomp_times, bio_df
 
 
 def _trim_and_rename_biomechanics_columns(
@@ -1124,7 +1151,7 @@ def sync_single_audio_file(
         synced_dir = maneuver_dir / "Synced"
 
         # Sync the recording
-        output_path, synced_df = _sync_and_save_recording(
+        output_path, synced_df, stomp_times, bio_df = _sync_and_save_recording(
             recording=recording,
             audio_df=audio_df,
             synced_dir=synced_dir,
@@ -1139,6 +1166,11 @@ def sync_single_audio_file(
         output_path.parent.mkdir(parents=True, exist_ok=True)
         synced_df.to_pickle(output_path)
         logging.info("Saved synchronized data to %s", output_path)
+
+        # Generate stomp visualization
+        audio_stomp, bio_left, bio_right = stomp_times
+        plot_stomp_detection(audio_df, bio_df, synced_df, audio_stomp, bio_left, bio_right, output_path)
+        logging.info("Saved stomp detection visualization")
         return True
 
     except Exception as e:  # pylint: disable=broad-except
@@ -1182,6 +1214,14 @@ def main() -> None:
         type=int,
         default=0,
         help="Process at most N participant directories (0 = all, default: 0)",
+    )
+    parser.add_argument(
+        "--participant",
+        nargs="+",
+        help=(
+            "One or more participant folder names to process within PATH "
+            "(with or without leading '#', e.g., 1011 #2024)"
+        ),
     )
     parser.add_argument(
         "--log",
@@ -1230,6 +1270,18 @@ def main() -> None:
             path,
         )
         return
+
+    # Filter to specific participants if requested
+    if args.participant:
+        requested = {p.lstrip("#") for p in args.participant}
+        participants = [d for d in participants if d.name.lstrip("#") in requested]
+        if not participants:
+            logging.warning(
+                "No matching participant directories found for %s in %s",
+                sorted(requested),
+                path,
+            )
+            return
 
     # Apply limit if specified
     if args.limit > 0:
