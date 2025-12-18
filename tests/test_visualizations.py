@@ -61,14 +61,16 @@ def test_plot_syncd_data_custom_figsize(syncd_data):
 def test_plot_syncd_data_with_timedelta_time(tmp_path):
     """Test plotting with timedelta time column."""
     # Create DataFrame with timedelta time column
-    syncd_df = pd.DataFrame({
-        "TIME": pd.to_timedelta([0, 100, 200, 300, 400], unit="ms"),
-        "ch1": [1.0, 2.0, 3.0, 4.0, 5.0],
-        "ch2": [2.0, 3.0, 4.0, 5.0, 6.0],
-        "ch3": [3.0, 4.0, 5.0, 6.0, 7.0],
-        "ch4": [4.0, 5.0, 6.0, 7.0, 8.0],
-        "Knee Angle Z": [10.0, 12.0, 14.0, 16.0, 18.0],
-    })
+    syncd_df = pd.DataFrame(
+        {
+            "TIME": pd.to_timedelta([0, 100, 200, 300, 400], unit="ms"),
+            "ch1": [1.0, 2.0, 3.0, 4.0, 5.0],
+            "ch2": [2.0, 3.0, 4.0, 5.0, 6.0],
+            "ch3": [3.0, 4.0, 5.0, 6.0, 7.0],
+            "ch4": [4.0, 5.0, 6.0, 7.0, 8.0],
+            "Knee Angle Z": [10.0, 12.0, 14.0, 16.0, 18.0],
+        }
+    )
 
     pkl_path = tmp_path / "syncd_timedelta.pkl"
     syncd_df.to_pickle(pkl_path)
@@ -82,14 +84,16 @@ def test_plot_syncd_data_with_timedelta_time(tmp_path):
 
 def test_plot_syncd_data_with_nan_values(tmp_path):
     """Test plotting with NaN values in joint angle column."""
-    syncd_df = pd.DataFrame({
-        "tt": [0.0, 0.1, 0.2, 0.3, 0.4],
-        "ch1": [1.0, 2.0, 3.0, 4.0, 5.0],
-        "ch2": [2.0, 3.0, 4.0, 5.0, 6.0],
-        "ch3": [3.0, 4.0, 5.0, 6.0, 7.0],
-        "ch4": [4.0, 5.0, 6.0, 7.0, 8.0],
-        "Knee Angle Z": [10.0, float('nan'), 14.0, float('nan'), 18.0],
-    })
+    syncd_df = pd.DataFrame(
+        {
+            "tt": [0.0, 0.1, 0.2, 0.3, 0.4],
+            "ch1": [1.0, 2.0, 3.0, 4.0, 5.0],
+            "ch2": [2.0, 3.0, 4.0, 5.0, 6.0],
+            "ch3": [3.0, 4.0, 5.0, 6.0, 7.0],
+            "ch4": [4.0, 5.0, 6.0, 7.0, 8.0],
+            "Knee Angle Z": [10.0, float("nan"), 14.0, float("nan"), 18.0],
+        }
+    )
 
     pkl_path = tmp_path / "syncd_nan.pkl"
     syncd_df.to_pickle(pkl_path)
@@ -179,14 +183,16 @@ def test_plot_syncd_data_normalization(syncd_data):
 def test_plot_syncd_data_constant_joint_angle(tmp_path):
     """Test plotting when joint angle has constant value (no range)."""
     # Create DataFrame with constant joint angle
-    syncd_df = pd.DataFrame({
-        "tt": [0.0, 0.1, 0.2, 0.3, 0.4],
-        "ch1": [1.0, 2.0, 3.0, 4.0, 5.0],
-        "ch2": [2.0, 3.0, 4.0, 5.0, 6.0],
-        "ch3": [3.0, 4.0, 5.0, 6.0, 7.0],
-        "ch4": [4.0, 5.0, 6.0, 7.0, 8.0],
-        "Knee Angle Z": [10.0, 10.0, 10.0, 10.0, 10.0],
-    })
+    syncd_df = pd.DataFrame(
+        {
+            "tt": [0.0, 0.1, 0.2, 0.3, 0.4],
+            "ch1": [1.0, 2.0, 3.0, 4.0, 5.0],
+            "ch2": [2.0, 3.0, 4.0, 5.0, 6.0],
+            "ch3": [3.0, 4.0, 5.0, 6.0, 7.0],
+            "ch4": [4.0, 5.0, 6.0, 7.0, 8.0],
+            "Knee Angle Z": [10.0, 10.0, 10.0, 10.0, 10.0],
+        }
+    )
 
     pkl_path = tmp_path / "syncd_constant.pkl"
     syncd_df.to_pickle(pkl_path)
@@ -201,14 +207,16 @@ def test_plot_syncd_data_constant_joint_angle(tmp_path):
 
 def test_plot_syncd_data_empty_dataframe(tmp_path):
     """Test error handling with empty DataFrame."""
-    df = pd.DataFrame({
-        "tt": [],
-        "ch1": [],
-        "ch2": [],
-        "ch3": [],
-        "ch4": [],
-        "Knee Angle Z": [],
-    })
+    df = pd.DataFrame(
+        {
+            "tt": [],
+            "ch1": [],
+            "ch2": [],
+            "ch3": [],
+            "ch4": [],
+            "Knee Angle Z": [],
+        }
+    )
     pkl_path = tmp_path / "syncd_empty.pkl"
     df.to_pickle(pkl_path)
 

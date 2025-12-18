@@ -20,14 +20,12 @@ def test_get_stomp_time(fake_participant_directory):
     """Test the get_stomp_time function for both feet."""
 
     # Create a DataFrame from the fake biomechanics events
-    events_data = fake_participant_directory["biomechanics"][
-        "events_data"
-    ]
+    events_data = fake_participant_directory["biomechanics"]["events_data"]
     bio_meta = pd.DataFrame(events_data)
 
     # Test left foot stomp time
     left_stomp_time = get_stomp_time(bio_meta, foot="left")
-    expected_left_time = pd.to_timedelta(16.23, unit='s').to_pytimedelta()
+    expected_left_time = pd.to_timedelta(16.23, unit="s").to_pytimedelta()
     assert left_stomp_time == expected_left_time, (
         f"Left stomp time mismatch: expected {expected_left_time}, "
         f"got {left_stomp_time}"
@@ -35,7 +33,7 @@ def test_get_stomp_time(fake_participant_directory):
 
     # Test right foot stomp time
     right_stomp_time = get_stomp_time(bio_meta, foot="right")
-    expected_right_time = pd.to_timedelta(17.48, unit='s').to_pytimedelta()
+    expected_right_time = pd.to_timedelta(17.48, unit="s").to_pytimedelta()
     assert right_stomp_time == expected_right_time, (
         f"Right stomp time mismatch: expected {expected_right_time}, "
         f"got {right_stomp_time}"
@@ -44,9 +42,7 @@ def test_get_stomp_time(fake_participant_directory):
 
 def test_load_audio_data(fake_participant_directory):
     """Test loading audio data from pickle file."""
-    audio_path = fake_participant_directory["audio_paths"]["left"][
-        "Walking"
-    ]
+    audio_path = fake_participant_directory["audio_paths"]["left"]["Walking"]
     audio_data = load_audio_data(audio_path)
 
     assert not audio_data.empty, "Loaded audio data is empty."
@@ -54,9 +50,7 @@ def test_load_audio_data(fake_participant_directory):
 
 def test_get_audio_stomp_time(fake_participant_directory):
     """Test getting stomp time from audio data."""
-    audio_path = fake_participant_directory["audio_paths"]["left"][
-        "Walking"
-    ]
+    audio_path = fake_participant_directory["audio_paths"]["left"]["Walking"]
     audio_data = load_audio_data(audio_path)
 
     stomp_time = get_audio_stomp_time(audio_data)
@@ -67,9 +61,7 @@ def test_get_audio_stomp_time(fake_participant_directory):
     # Check string representation to avoid type checking issues
     time_str = str(stomp_time)
     # Should be in the 16.2x second range
-    assert "0:00:16" in time_str, (
-        f"Audio stomp time unexpected: got {time_str}"
-    )
+    assert "0:00:16" in time_str, f"Audio stomp time unexpected: got {time_str}"
 
 
 def _build_dual_stomp_audio(
@@ -85,15 +77,17 @@ def _build_dual_stomp_audio(
     first_idx = int(first_stomp_time * fs)
     second_idx = int(second_stomp_time * fs)
     # Inject narrow stomp pulses well above baseline noise
-    signal[first_idx:first_idx + int(0.05 * fs)] = 5000
-    signal[second_idx:second_idx + int(0.05 * fs)] = 6000
-    return pd.DataFrame({
-        "tt": tt,
-        "ch1": signal,
-        "ch2": signal,
-        "ch3": signal,
-        "ch4": signal,
-    })
+    signal[first_idx : first_idx + int(0.05 * fs)] = 5000
+    signal[second_idx : second_idx + int(0.05 * fs)] = 6000
+    return pd.DataFrame(
+        {
+            "tt": tt,
+            "ch1": signal,
+            "ch2": signal,
+            "ch3": signal,
+            "ch4": signal,
+        }
+    )
 
 
 def test_get_audio_stomp_time_requires_both_bio_stomps_when_knee_provided():
@@ -144,9 +138,7 @@ def test_sync_audio_with_biomechanics(fake_participant_directory):
         speed="slow",
     )
 
-    audio_path = fake_participant_directory["audio_paths"]["left"][
-        "Walking"
-    ]
+    audio_path = fake_participant_directory["audio_paths"]["left"]["Walking"]
     audio_data = load_audio_data(audio_path)
 
     bio_meta = fake_participant_directory["biomechanics"]["events_data"]
@@ -169,9 +161,9 @@ def test_get_bio_start_time_walk(fake_participant_directory):
     """Test get_bio_start_time for walking maneuver."""
     events_df = pd.read_excel(
         fake_participant_directory["biomechanics"]["excel_path"],
-        sheet_name=fake_participant_directory["biomechanics"][
-            "events_sheets"
-        ]["walk_pass"],
+        sheet_name=fake_participant_directory["biomechanics"]["events_sheets"][
+            "walk_pass"
+        ],
     )
 
     start_time = get_bio_start_time(
@@ -190,9 +182,9 @@ def test_get_bio_start_time_sit_to_stand(fake_participant_directory):
     """Test get_bio_start_time for sit-to-stand maneuver."""
     events_df = pd.read_excel(
         fake_participant_directory["biomechanics"]["excel_path"],
-        sheet_name=fake_participant_directory["biomechanics"][
-            "events_sheets"
-        ]["sit_to_stand"],
+        sheet_name=fake_participant_directory["biomechanics"]["events_sheets"][
+            "sit_to_stand"
+        ],
     )
 
     start_time = get_bio_start_time(
@@ -209,9 +201,9 @@ def test_get_bio_start_time_flexion_extension(fake_participant_directory):
     """Test get_bio_start_time for flexion-extension maneuver."""
     events_df = pd.read_excel(
         fake_participant_directory["biomechanics"]["excel_path"],
-        sheet_name=fake_participant_directory["biomechanics"][
-            "events_sheets"
-        ]["flexion_extension"],
+        sheet_name=fake_participant_directory["biomechanics"]["events_sheets"][
+            "flexion_extension"
+        ],
     )
 
     start_time = get_bio_start_time(
@@ -226,9 +218,7 @@ def test_get_bio_start_time_flexion_extension(fake_participant_directory):
 
 def test_get_bio_start_time_walk_missing_params():
     """Test get_bio_start_time raises error for walk without speed."""
-    events_df = pd.DataFrame(
-        {"Event Info": ["SS Pass 1 Start"], "Time (sec)": [10.0]}
-    )
+    events_df = pd.DataFrame({"Event Info": ["SS Pass 1 Start"], "Time (sec)": [10.0]})
 
     with pytest.raises(ValueError, match="speed and pass_number required"):
         get_bio_start_time(
@@ -241,9 +231,9 @@ def test_get_bio_end_time_walk(fake_participant_directory):
     """Test get_bio_end_time for walking maneuver."""
     events_df = pd.read_excel(
         fake_participant_directory["biomechanics"]["excel_path"],
-        sheet_name=fake_participant_directory["biomechanics"][
-            "events_sheets"
-        ]["walk_pass"],
+        sheet_name=fake_participant_directory["biomechanics"]["events_sheets"][
+            "walk_pass"
+        ],
     )
 
     end_time = get_bio_end_time(
@@ -262,9 +252,9 @@ def test_get_bio_end_time_sit_to_stand(fake_participant_directory):
     """Test get_bio_end_time for sit-to-stand maneuver."""
     events_df = pd.read_excel(
         fake_participant_directory["biomechanics"]["excel_path"],
-        sheet_name=fake_participant_directory["biomechanics"][
-            "events_sheets"
-        ]["sit_to_stand"],
+        sheet_name=fake_participant_directory["biomechanics"]["events_sheets"][
+            "sit_to_stand"
+        ],
     )
 
     end_time = get_bio_end_time(
@@ -281,9 +271,9 @@ def test_get_bio_end_time_flexion_extension(fake_participant_directory):
     """Test get_bio_end_time for flexion-extension maneuver."""
     events_df = pd.read_excel(
         fake_participant_directory["biomechanics"]["excel_path"],
-        sheet_name=fake_participant_directory["biomechanics"][
-            "events_sheets"
-        ]["flexion_extension"],
+        sheet_name=fake_participant_directory["biomechanics"]["events_sheets"][
+            "flexion_extension"
+        ],
     )
 
     end_time = get_bio_end_time(
@@ -298,9 +288,7 @@ def test_get_bio_end_time_flexion_extension(fake_participant_directory):
 
 def test_get_bio_end_time_walk_missing_params():
     """Test get_bio_end_time raises error for walk without pass_number."""
-    events_df = pd.DataFrame(
-        {"Event Info": ["SS Pass 1 End"], "Time (sec)": [30.0]}
-    )
+    events_df = pd.DataFrame({"Event Info": ["SS Pass 1 End"], "Time (sec)": [30.0]})
 
     with pytest.raises(ValueError, match="speed and pass_number required"):
         get_bio_end_time(
@@ -315,9 +303,9 @@ def test_bio_start_end_times_ordering(fake_participant_directory):
     # Test walk maneuver
     events_df = pd.read_excel(
         fake_participant_directory["biomechanics"]["excel_path"],
-        sheet_name=fake_participant_directory["biomechanics"][
-            "events_sheets"
-        ]["walk_pass"],
+        sheet_name=fake_participant_directory["biomechanics"]["events_sheets"][
+            "walk_pass"
+        ],
     )
 
     start_time = get_bio_start_time(
@@ -339,9 +327,9 @@ def test_bio_start_end_times_ordering(fake_participant_directory):
     # Test sit-to-stand maneuver
     events_df = pd.read_excel(
         fake_participant_directory["biomechanics"]["excel_path"],
-        sheet_name=fake_participant_directory["biomechanics"][
-            "events_sheets"
-        ]["sit_to_stand"],
+        sheet_name=fake_participant_directory["biomechanics"]["events_sheets"][
+            "sit_to_stand"
+        ],
     )
 
     start_time = get_bio_start_time(

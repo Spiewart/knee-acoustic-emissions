@@ -1,10 +1,14 @@
 """Global pytest fixtures for the test suite."""
 
+import sys
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import pytest
+
+# Add parent directory to path for module imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 
 def _create_acoustic_legend(participant_dir: Path) -> Path:
@@ -134,7 +138,7 @@ def _generate_audio_dataframe(
     stomp_idx = int(stomp_time * sample_rate)
     spike_samples = int(0.01 * sample_rate)
     audio_df.loc[
-        stomp_idx: stomp_idx + spike_samples,
+        stomp_idx : stomp_idx + spike_samples,
         ["ch1", "ch2", "ch3", "ch4"],
     ] = 10.0
 
@@ -233,9 +237,7 @@ def _create_biomechanics_excel(
     """
 
     motion_capture_dir.mkdir(parents=True, exist_ok=True)
-    excel_path = motion_capture_dir / (
-        f"AOA{study_id}_Biomechanics_Full_Set.xlsx"
-    )
+    excel_path = motion_capture_dir / (f"AOA{study_id}_Biomechanics_Full_Set.xlsx")
 
     time_points = np.linspace(0, 10, 50)
 
@@ -308,35 +310,41 @@ def _create_biomechanics_excel(
         )
 
         # Speed-specific event sheets contain stomp/event timing data
-        slow_events = pd.DataFrame([
-            {"Event Info": "Sync Left", "Time (sec)": 16.23},
-            {"Event Info": "Sync Right", "Time (sec)": 17.48},
-            {"Event Info": "SS Pass 1 Start", "Time (sec)": 19.28},
-            {"Event Info": "SS Pass 2 Start", "Time (sec)": 27.80},
-        ])
+        slow_events = pd.DataFrame(
+            [
+                {"Event Info": "Sync Left", "Time (sec)": 16.23},
+                {"Event Info": "Sync Right", "Time (sec)": 17.48},
+                {"Event Info": "SS Pass 1 Start", "Time (sec)": 19.28},
+                {"Event Info": "SS Pass 2 Start", "Time (sec)": 27.80},
+            ]
+        )
         slow_events.to_excel(
             writer,
             sheet_name=f"AOA{study_id}_Slow_Walking_Events",
             index=False,
         )
 
-        medium_events = pd.DataFrame([
-            {"Event Info": "Sync Left", "Time (sec)": 16.23},
-            {"Event Info": "Sync Right", "Time (sec)": 17.48},
-            {"Event Info": "NS Pass 1 Start", "Time (sec)": 136.96},
-            {"Event Info": "NS Pass 2 Start", "Time (sec)": 144.13},
-        ])
+        medium_events = pd.DataFrame(
+            [
+                {"Event Info": "Sync Left", "Time (sec)": 16.23},
+                {"Event Info": "Sync Right", "Time (sec)": 17.48},
+                {"Event Info": "NS Pass 1 Start", "Time (sec)": 136.96},
+                {"Event Info": "NS Pass 2 Start", "Time (sec)": 144.13},
+            ]
+        )
         medium_events.to_excel(
             writer,
             sheet_name=f"AOA{study_id}_Medium_Walking_Events",
             index=False,
         )
 
-        fast_events = pd.DataFrame([
-            {"Event Info": "Sync Left", "Time (sec)": 16.23},
-            {"Event Info": "Sync Right", "Time (sec)": 17.48},
-            {"Event Info": "FS Pass 1 Start", "Time (sec)": 210.15},
-        ])
+        fast_events = pd.DataFrame(
+            [
+                {"Event Info": "Sync Left", "Time (sec)": 16.23},
+                {"Event Info": "Sync Right", "Time (sec)": 17.48},
+                {"Event Info": "FS Pass 1 Start", "Time (sec)": 210.15},
+            ]
+        )
         fast_events.to_excel(
             writer,
             sheet_name=f"AOA{study_id}_Fast_Walking_Events",
@@ -385,63 +393,187 @@ def _create_biomechanics_excel(
 
 
 @pytest.fixture
-def syncd_data(tmp_path):
-    """Create a sample synchronized DataFrame with expected columns.
-
-    This fixture generates realistic synchronized audio and biomechanics
-    data with the following characteristics:
-    - Audio channels (ch1-ch4) with varying amplitudes
-    - Time column (tt) in seconds
-    - Single biomechanics column (no laterality prefix): "Knee Angle Z"
-    - Realistic temporal dynamics
+def syncd_walk(tmp_path):
+    """Create synchronized walking data with realistic gait cycles.
 
     Returns:
-        Tuple of (pkl_path, syncd_dataframe) for testing
+        pd.DataFrame with 3-4 complete gait cycles (heel strike to heel strike)
     """
-    # Create time array (5 seconds at 100 Hz)
-    num_samples = 500
-    time_array = np.linspace(0, 5, num_samples)
-
-    # Generate realistic audio channels with noise
     np.random.seed(42)
-    ch1 = (
-        np.sin(2 * np.pi * 5 * time_array) +
-        0.5 * np.random.randn(num_samples)
-    )
-    ch2 = (
-        0.7 * np.sin(2 * np.pi * 7 * time_array) +
-        0.5 * np.random.randn(num_samples)
-    )
-    ch3 = (
-        0.5 * np.sin(2 * np.pi * 10 * time_array) +
-        0.5 * np.random.randn(num_samples)
-    )
-    ch4 = (
-        0.3 * np.sin(2 * np.pi * 12 * time_array) +
-        0.5 * np.random.randn(num_samples)
-    )
 
-    # Generate joint angle with natural dynamics
-    # Simulating knee movement: slow start, acceleration, peak, deceleration
+    # Walking: 4 gait cycles at ~1 second per cycle
+    num_samples = 4000  # 4 seconds at 1000 Hz
+    time_array = np.linspace(0, 4, num_samples)
+
+    # Gait cycle: knee angle oscillates with minima at heel strikes
+    # Heel strikes at 0, 1.0, 2.0, 3.0, 4.0 seconds
+    gait_freq = 1.0  # Hz (1 cycle per second)
+    # Use -cos to get minima at integer seconds
+    # Reduce noise to 0.5° to avoid spurious minima
     knee_angle = (
-        20 + 30 * (1 - np.cos(np.pi * time_array / 5)) +
-        5 * np.random.randn(num_samples)
+        20
+        - 30 * np.cos(2 * np.pi * gait_freq * time_array)
+        + np.random.randn(num_samples) * 0.5
     )
 
-    syncd_df = pd.DataFrame({
-        "tt": time_array,
-        "ch1": ch1,
-        "ch2": ch2,
-        "ch3": ch3,
-        "ch4": ch4,
-        "Knee Angle Z": knee_angle,
-    })
+    # Acoustic events at heel strikes (impacts)
+    acoustic_base = np.random.randn(num_samples) * 0.001
+    f_ch_base = np.random.randn(num_samples) * 0.01
 
-    # Save to pickle file
-    pkl_path = tmp_path / "syncd_data.pkl"
-    syncd_df.to_pickle(pkl_path)
+    # Add acoustic spikes at heel strikes (0, 1, 2, 3 seconds)
+    for heel_strike_time in [0.0, 1.0, 2.0, 3.0]:
+        idx = int(heel_strike_time * 1000)
+        spike_width = 50  # 50ms spike
+        acoustic_base[idx : idx + spike_width] += (
+            np.exp(-np.arange(spike_width) / 10) * 0.1
+        )
+        f_ch_base[idx : idx + spike_width] += np.exp(-np.arange(spike_width) / 10) * 1.0
 
-    return pkl_path, syncd_df
+    syncd_df = pd.DataFrame(
+        {
+            "tt": time_array,
+            "ch1": acoustic_base + np.random.randn(num_samples) * 0.0005,
+            "ch2": acoustic_base + np.random.randn(num_samples) * 0.0005,
+            "ch3": acoustic_base + np.random.randn(num_samples) * 0.0005,
+            "ch4": acoustic_base + np.random.randn(num_samples) * 0.0005,
+            "f_ch1": f_ch_base + np.random.randn(num_samples) * 0.005,
+            "f_ch2": f_ch_base + np.random.randn(num_samples) * 0.005,
+            "f_ch3": f_ch_base + np.random.randn(num_samples) * 0.005,
+            "f_ch4": f_ch_base + np.random.randn(num_samples) * 0.005,
+            "TIME": pd.to_timedelta(time_array, unit="s"),
+            "Knee Angle Z": knee_angle,
+        }
+    )
+
+    return syncd_df
+
+
+@pytest.fixture
+def syncd_sit_to_stand(tmp_path):
+    """Create synchronized sit-to-stand data with standing and seated phases.
+
+    Returns:
+        pd.DataFrame with 3 sit-to-stand cycles (seated -> standing -> seated)
+    """
+    np.random.seed(43)
+
+    # Sit-to-stand: 3 cycles over 15 seconds
+    num_samples = 15000  # 15 seconds at 1000 Hz
+    time_array = np.linspace(0, 15, num_samples)
+
+    # Knee angle: seated (~90°), transition, standing (~10°)
+    # Cycles at 0-5s, 5-10s, 10-15s
+    knee_angle = np.zeros(num_samples)
+    for cycle in range(3):
+        start_idx = cycle * 5000
+        # Seated phase (0-2s): ~90°
+        knee_angle[start_idx : start_idx + 2000] = 90 + np.random.randn(2000) * 3
+        # Transition (2-3s): rapid extension
+        transition = np.linspace(90, 10, 1000) + np.random.randn(1000) * 5
+        knee_angle[start_idx + 2000 : start_idx + 3000] = transition
+        # Standing phase (3-5s): ~10°
+        knee_angle[start_idx + 3000 : start_idx + 5000] = 10 + np.random.randn(2000) * 3
+
+    # Acoustic activity during transitions (standing peaks)
+    acoustic_base = np.random.randn(num_samples) * 0.001
+    f_ch_base = np.random.randn(num_samples) * 0.01
+
+    for cycle in range(3):
+        # Peak acoustic activity during extension (standing)
+        peak_idx = cycle * 5000 + 2500
+        spike_width = 500  # 500ms of activity
+        acoustic_base[peak_idx : peak_idx + spike_width] += (
+            np.exp(-np.arange(spike_width) / 100) * 0.05
+        )
+        f_ch_base[peak_idx : peak_idx + spike_width] += (
+            np.exp(-np.arange(spike_width) / 100) * 0.5
+        )
+
+    syncd_df = pd.DataFrame(
+        {
+            "tt": time_array,
+            "ch1": acoustic_base + np.random.randn(num_samples) * 0.0005,
+            "ch2": acoustic_base + np.random.randn(num_samples) * 0.0005,
+            "ch3": acoustic_base + np.random.randn(num_samples) * 0.0005,
+            "ch4": acoustic_base + np.random.randn(num_samples) * 0.0005,
+            "f_ch1": f_ch_base + np.random.randn(num_samples) * 0.005,
+            "f_ch2": f_ch_base + np.random.randn(num_samples) * 0.005,
+            "f_ch3": f_ch_base + np.random.randn(num_samples) * 0.005,
+            "f_ch4": f_ch_base + np.random.randn(num_samples) * 0.005,
+            "TIME": pd.to_timedelta(time_array, unit="s"),
+            "Knee Angle Z": knee_angle,
+        }
+    )
+
+    return syncd_df
+
+
+@pytest.fixture
+def syncd_flexion_extension(tmp_path):
+    """Create synchronized flexion-extension data with extension peaks.
+
+    Returns:
+        pd.DataFrame with 5 flexion-extension cycles
+    """
+    np.random.seed(44)
+
+    # Flexion-extension: 5 cycles over 10 seconds
+    num_samples = 10000  # 10 seconds at 1000 Hz
+    time_array = np.linspace(0, 10, num_samples)
+
+    # Knee angle: smooth oscillation between flexion (~90°) and extension (~10°)
+    # Cycles every 2 seconds, extension peaks at 1, 3, 5, 7, 9 seconds
+    cycle_freq = 0.5  # Hz (1 cycle per 2 seconds)
+    knee_angle = (
+        50
+        + 40 * np.sin(2 * np.pi * cycle_freq * time_array - np.pi / 2)
+        + np.random.randn(num_samples) * 3
+    )
+
+    # Acoustic activity during extension (peak extension = minimum knee angle)
+    acoustic_base = np.random.randn(num_samples) * 0.001
+    f_ch_base = np.random.randn(num_samples) * 0.01
+
+    # Add activity at extension peaks (1, 3, 5, 7, 9 seconds)
+    for peak_time in [1.0, 3.0, 5.0, 7.0, 9.0]:
+        idx = int(peak_time * 1000)
+        spike_width = 200  # 200ms activity window
+        acoustic_base[idx : idx + spike_width] += (
+            np.exp(-np.arange(spike_width) / 50) * 0.03
+        )
+        f_ch_base[idx : idx + spike_width] += np.exp(-np.arange(spike_width) / 50) * 0.3
+
+    syncd_df = pd.DataFrame(
+        {
+            "tt": time_array,
+            "ch1": acoustic_base + np.random.randn(num_samples) * 0.0005,
+            "ch2": acoustic_base + np.random.randn(num_samples) * 0.0005,
+            "ch3": acoustic_base + np.random.randn(num_samples) * 0.0005,
+            "ch4": acoustic_base + np.random.randn(num_samples) * 0.0005,
+            "f_ch1": f_ch_base + np.random.randn(num_samples) * 0.005,
+            "f_ch2": f_ch_base + np.random.randn(num_samples) * 0.005,
+            "f_ch3": f_ch_base + np.random.randn(num_samples) * 0.005,
+            "f_ch4": f_ch_base + np.random.randn(num_samples) * 0.005,
+            "TIME": pd.to_timedelta(time_array, unit="s"),
+            "Knee Angle Z": knee_angle,
+        }
+    )
+
+    return syncd_df
+
+
+@pytest.fixture
+def syncd_data(syncd_walk, tmp_path):
+    """Provide pickle path and DataFrame for visualization tests."""
+
+    syncd_copy = syncd_walk.copy(deep=True)
+    # Visualization tests expect only 'tt' to represent time in this fixture
+    if "TIME" in syncd_copy.columns:
+        syncd_copy = syncd_copy.drop(columns=["TIME"])
+    pkl_path = tmp_path / "syncd_fixture.pkl"
+    syncd_copy.to_pickle(pkl_path)
+
+    return pkl_path, syncd_copy
 
 
 @pytest.fixture

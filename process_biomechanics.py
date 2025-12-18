@@ -1,8 +1,10 @@
 """Collection of methods to process and update biomechanics files generated
 by QTM and Visual3D software."""
 
+from __future__ import annotations
+
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Optional
 
 import pandas as pd
 

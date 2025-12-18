@@ -189,8 +189,10 @@ def test_normalize_maneuver_column() -> None:
 
     # Check that "-" was replaced with space in "Flexion - Extension"
     assert "Flexion - Extension" not in result["Maneuvers"].values
-    assert "Flexion   Extension" in result["Maneuvers"].values or \
-           "Flexion Extension" in result["Maneuvers"].values
+    assert (
+        "Flexion   Extension" in result["Maneuvers"].values
+        or "Flexion Extension" in result["Maneuvers"].values
+    )
     # Check that ffill worked
     assert result["Maneuvers"].iloc[1] == result["Maneuvers"].iloc[0]
     assert result["Maneuvers"].iloc[2] == result["Maneuvers"].iloc[0]
