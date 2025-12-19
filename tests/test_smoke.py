@@ -38,12 +38,12 @@ def _make_synthetic_bin(path: Path) -> None:
     # Create a single packet of uint32 words with a simple pattern
     raw = np.arange(num_uint32_per_write, dtype=np.uint32)
     # ensure values fit in 32 bits and provide both upper/lower words
-    raw = (raw & 0xFFFFFFFF).astype('<u4')
+    raw = (raw & 0xFFFFFFFF).astype("<u4")
     raw_bytes = raw.tobytes()
 
     # For the sync region (last 128 uint32) we want first few entries to be sensible
     # We'll overwrite the last 128 uint32s with a sync vector where first 4 entries are non-zero
-    sync = np.zeros(tt_block_length, dtype='<u4')
+    sync = np.zeros(tt_block_length, dtype="<u4")
     sync[0] = 1000
     sync[1] = 2000
     sync[2] = 3000
@@ -90,7 +90,9 @@ def test_end_to_end_smoke(tmp_path: Path):
     # but if data exists it should contain channels ch1..ch4.
     if len(df) > 0:
         cols = [c.lower() for c in df.columns]
-        assert "ch1" in cols or "ch2" in cols, "Expected channel columns in DataFrame when data present"
+        assert (
+            "ch1" in cols or "ch2" in cols
+        ), "Expected channel columns in DataFrame when data present"
 
     # Load CSV exporter module and run its main() with adjusted argv
     csv_mod = _load_module_from_path(project_root / "dump_channels_to_csv.py")
@@ -105,4 +107,6 @@ def test_end_to_end_smoke(tmp_path: Path):
     assert csv.exists(), "Channels CSV not created"
     out_df = pd.read_csv(csv)
     # CSV should include the timestamp column and the 4 channel columns (may be NaN/empty)
-    assert set(["tt", "ch1", "ch2", "ch3", "ch4"]).issubset(set(out_df.columns)), "CSV missing expected columns"
+    assert set(["tt", "ch1", "ch2", "ch3", "ch4"]).issubset(
+        set(out_df.columns)
+    ), "CSV missing expected columns"

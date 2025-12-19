@@ -121,11 +121,7 @@ def test_create_composite_column_names() -> None:
 
     result = create_composite_column_names(first_row, second_row)
 
-    assert result == [
-        "LAnkleAngles_X",
-        "RAnkleAngles_Y",
-        "LHipAngles_Z"
-    ]
+    assert result == ["LAnkleAngles_X", "RAnkleAngles_Y", "LHipAngles_Z"]
 
 
 def test_normalize_recording_dataframe() -> None:
@@ -186,9 +182,9 @@ def test_get_walking_start_time(fake_participant_directory) -> None:
     """Test retrieving walking start time from event data."""
     events_df = pd.read_excel(
         fake_participant_directory["biomechanics"]["excel_path"],
-        sheet_name=fake_participant_directory["biomechanics"][
-            "events_sheets"
-        ]["walk_pass"],
+        sheet_name=fake_participant_directory["biomechanics"]["events_sheets"][
+            "walk_pass"
+        ],
     )
 
     # Get the start time for Slow Speed Pass 1
@@ -216,9 +212,9 @@ def test_get_walking_start_time_not_found(fake_participant_directory) -> None:
     """Test that requesting non-existent start time raises ValueError."""
     events_df = pd.read_excel(
         fake_participant_directory["biomechanics"]["excel_path"],
-        sheet_name=fake_participant_directory["biomechanics"][
-            "events_sheets"
-        ]["walk_pass"],
+        sheet_name=fake_participant_directory["biomechanics"]["events_sheets"][
+            "walk_pass"
+        ],
     )
 
     # Try to get a start time that doesn't exist
@@ -339,27 +335,21 @@ def test_construct_biomechanics_sheet_names_walk_missing_speed() -> None:
 
 def test_extract_walking_pass_info_slow() -> None:
     """Test extracting pass number and speed from UID."""
-    pass_number, speed = _extract_walking_pass_info(
-        "Study123_Walk0001_SSP1_Filt"
-    )
+    pass_number, speed = _extract_walking_pass_info("Study123_Walk0001_SSP1_Filt")
     assert pass_number == 1
     assert speed == "slow"
 
 
 def test_extract_walking_pass_info_normal() -> None:
     """Test extracting normal speed pass info."""
-    pass_number, speed = _extract_walking_pass_info(
-        "Study123_Walk0001_NSP2_Filt"
-    )
+    pass_number, speed = _extract_walking_pass_info("Study123_Walk0001_NSP2_Filt")
     assert pass_number == 2
     assert speed == "normal"
 
 
 def test_extract_walking_pass_info_fast() -> None:
     """Test extracting fast speed pass info."""
-    pass_number, speed = _extract_walking_pass_info(
-        "Study123_Walk0001_FSP3_Filt"
-    )
+    pass_number, speed = _extract_walking_pass_info("Study123_Walk0001_FSP3_Filt")
     assert pass_number == 3
     assert speed == "fast"
 
@@ -367,41 +357,31 @@ def test_extract_walking_pass_info_fast() -> None:
 def test_extract_walking_pass_info_invalid_speed() -> None:
     """Test that invalid speed code raises ValueError."""
     with pytest.raises(ValueError, match="Unknown speed code"):
-        _extract_walking_pass_info(
-            "Study123_Walk0001_XSP1_Filt"
-        )
+        _extract_walking_pass_info("Study123_Walk0001_XSP1_Filt")
 
 
 def test_extract_maneuver_from_uid_walk() -> None:
     """Test extracting walk maneuver from UID."""
-    maneuver = _extract_maneuver_from_uid(
-        "Study123_Walk0001_NSP1_Filt"
-    )
+    maneuver = _extract_maneuver_from_uid("Study123_Walk0001_NSP1_Filt")
     assert maneuver == "walk"
 
 
 def test_extract_maneuver_from_uid_sit_to_stand() -> None:
     """Test extracting sit-to-stand maneuver from UID."""
-    maneuver = _extract_maneuver_from_uid(
-        "Study123_SitToStand0001_Filt"
-    )
+    maneuver = _extract_maneuver_from_uid("Study123_SitToStand0001_Filt")
     assert maneuver == "sit_to_stand"
 
 
 def test_extract_maneuver_from_uid_flexion_extension() -> None:
     """Test extracting flexion-extension maneuver from UID."""
-    maneuver = _extract_maneuver_from_uid(
-        "Study123_FlexExt0001_Filt"
-    )
+    maneuver = _extract_maneuver_from_uid("Study123_FlexExt0001_Filt")
     assert maneuver == "flexion_extension"
 
 
 def test_extract_maneuver_from_uid_invalid() -> None:
     """Test that invalid maneuver raises ValueError."""
     with pytest.raises(ValueError, match="Unknown maneuver"):
-        _extract_maneuver_from_uid(
-            "Study123_Invalid0001_Filt"
-        )
+        _extract_maneuver_from_uid("Study123_Invalid0001_Filt")
 
 
 def test_get_non_walk_start_time_sit_to_stand(
@@ -410,9 +390,9 @@ def test_get_non_walk_start_time_sit_to_stand(
     """Test retrieving sit-to-stand start time from event data."""
     events_df = pd.read_excel(
         fake_participant_directory["biomechanics"]["excel_path"],
-        sheet_name=fake_participant_directory["biomechanics"][
-            "events_sheets"
-        ]["sit_to_stand"],
+        sheet_name=fake_participant_directory["biomechanics"]["events_sheets"][
+            "sit_to_stand"
+        ],
     )
 
     start_time = get_non_walk_start_time(
@@ -430,9 +410,9 @@ def test_get_non_walk_start_time_flexion_extension(
     """Test retrieving flexion-extension start time from event data."""
     events_df = pd.read_excel(
         fake_participant_directory["biomechanics"]["excel_path"],
-        sheet_name=fake_participant_directory["biomechanics"][
-            "events_sheets"
-        ]["flexion_extension"],
+        sheet_name=fake_participant_directory["biomechanics"]["events_sheets"][
+            "flexion_extension"
+        ],
     )
 
     start_time = get_non_walk_start_time(

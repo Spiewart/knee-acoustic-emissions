@@ -8,7 +8,7 @@ channels at the target frequency.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Literal, Tuple
+from typing import Literal, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -20,7 +20,7 @@ from process_participant_directory import get_audio_file_name
 
 def _load_walk_events_from_biomechanics(
     biomech_file: Path,
-) -> dict[str, list[tuple[str, float]]] | None:
+) -> Optional[dict[str, list[tuple[str, float]]]]:
     """Load Walk0001 sheet from biomechanics Excel.
 
     Returns dict mapping speed ("SS", "NS", "FS") to list of
@@ -713,7 +713,7 @@ def _evaluate_walk_interval(
     min_coverage_frac: float,
     min_step_hz: float,
     max_step_hz: float,
-) -> dict[str, float | bool | int] | None:
+) -> Optional[dict[str, Union[float, bool, int]]]:
     """Compute gait metrics and QC for a single pass."""
     start_s, end_s = interval
     if end_s <= start_s:

@@ -1,7 +1,7 @@
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Optional
 
 import pandas as pd
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, model_validator
 from pydantic_core import CoreSchema, PydanticCustomError, core_schema
 
 
@@ -19,15 +19,15 @@ class AcousticsMetadata(BaseModel):
     """
 
     scripted_maneuver: Literal["walk", "sit_to_stand", "flexion_extension"]
-    speed: Literal["slow", "medium", "fast"] | None = None
+    speed: Optional[Literal["slow", "medium", "fast"]] = None
     knee: Literal["left", "right"]
     file_name: str
     microphones: Annotated[
         dict[Literal[1, 2, 3, 4], MicrophonePosition],
         "Dictionary mapping microphone numbers (1, 2, 3, 4) to positions"
     ]
-    notes: str | None = None
-    microphone_notes: dict[Literal[1, 2, 3, 4], str] | None = None
+    notes: Optional[str] = None
+    microphone_notes: Optional[dict[Literal[1, 2, 3, 4], str]] = None
 
     @field_validator('microphones')
     @classmethod
@@ -43,7 +43,7 @@ class AcousticsMetadata(BaseModel):
 
     @field_validator('microphone_notes')
     @classmethod
-    def validate_microphone_notes_keys(cls, v: dict | None) -> dict | None:
+    def validate_microphone_notes_keys(cls, v: Optional[dict]) -> Optional[dict]:
         """Validate microphone_notes keys are subset of 1, 2, 3, 4."""
         if v is None:
             return v
@@ -93,12 +93,12 @@ class BiomechanicsMetadata(BaseModel):
     """
 
     maneuver: Literal["walk", "sit_to_stand", "flexion_extension"]
-    speed: Literal["slow", "normal", "fast"] | None = None
-    pass_number: int | None = None
+    speed: Optional[Literal["slow", "normal", "fast"]] = None
+    pass_number: Optional[int] = None
 
     @field_validator('speed')
     @classmethod
-    def validate_speed_for_maneuver(cls, v: str | None, info) -> str | None:
+    def validate_speed_for_maneuver(cls, v: Optional[str], info) -> Optional[str]:
         """Validate speed based on maneuver type."""
         if info.data.get('maneuver') == 'walk':
             if v is None:
@@ -110,7 +110,7 @@ class BiomechanicsMetadata(BaseModel):
 
     @field_validator('pass_number')
     @classmethod
-    def validate_pass_number_for_maneuver(cls, v: int | None, info) -> int | None:
+    def validate_pass_number_for_maneuver(cls, v: Optional[int], info) -> Optional[int]:
         """Validate pass_number based on maneuver type."""
         if info.data.get('maneuver') == 'walk':
             if v is None:
@@ -177,9 +177,9 @@ class BiomechanicsCycle(BiomechanicsMetadata):
     """
 
     data: BiomechanicsRecording
-    sync_left_time: float | None = None
-    sync_right_time: float | None = None
-    pass_metadata: PassMetadata | None = None
+    sync_left_time: Optional[float] = None
+    sync_right_time: Optional[float] = None
+    pass_metadata: Optional[PassMetadata] = None
 
 
 class SynchronizedRecording(pd.DataFrame):
@@ -208,3 +208,67 @@ class SynchronizedCycle(AcousticsMetadata, BiomechanicsMetadata):
     """Pydantic Model for synchronized acoustics and biomechanics data."""
 
     data: SynchronizedRecording
+
+
+class MovementCycleMetadata(BaseModel):
+    """Metadata for a single movement cycle extracted from a synchronized recording."""
+
+    maneuver: Literal["walk", "sit_to_stand", "flexion_extension"]
+    speed: Optional[Literal["slow", "medium", "fast"]] = None
+    pass_number: Optional[int] = None
+    cycle_index: int
+    knee: Literal["left", "right"]
+    participant_id: Optional[str] = None
+    acoustic_energy: float
+    is_outlier: bool = False
+    notes: Optional[str] = None
+
+    @model_validator(mode='after')
+    def validate_walk_parameters(self) -> "MovementCycleMetadata":
+        """Validate speed and pass_number based on maneuver type.
+
+        For walk maneuvers: both speed and pass_number must be provided.
+        For other maneuvers: both speed and pass_number must be None.
+
+        Raises:
+            ValueError: If parameters don't match maneuver type.
+        """
+        if self.maneuver == "walk":
+            # For walk, both speed and pass_number are required
+            if self.speed is None or self.pass_number is None:
+                missing = []
+                if self.speed is None:
+                    missing.append("speed")
+                if self.pass_number is None:
+                    missing.append("pass_number")
+                raise ValueError(
+                    f"Walk maneuvers require both speed and pass_number. "
+                    f"Missing: {', '.join(missing)}"
+                )
+            # Validate pass_number is non-negative integer
+            if not isinstance(self.pass_number, int) or self.pass_number < 0:
+                raise ValueError(
+                    f"pass_number must be a non-negative integer, got {self.pass_number}"
+                )
+        else:
+            # For non-walk maneuvers, both must be None
+            if self.speed is not None or self.pass_number is not None:
+                invalid = []
+                if self.speed is not None:
+                    invalid.append(f"speed={self.speed}")
+                if self.pass_number is not None:
+                    invalid.append(f"pass_number={self.pass_number}")
+                raise ValueError(
+                    f"{self.maneuver.replace('_', ' ').title()} maneuvers do not support "
+                    f"speed and pass_number parameters. Got: {', '.join(invalid)}"
+                )
+
+        return self
+
+
+
+class MovementCycle(BaseModel):
+    """Pydantic Model for a single movement cycle with audio and biomechanics."""
+
+    metadata: MovementCycleMetadata
+    data: SynchronizedRecording  # Cycle data with audio and biomechanics

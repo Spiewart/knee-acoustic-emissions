@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Literal, Optional
 
 import pandas as pd
 
@@ -119,7 +119,7 @@ def get_initial_deflection_index(
     max_index: int,
     deflection_threshold: int = 5,
     sampling_rate: int = 120,
-) -> int | None:
+) -> Optional[int]:
     """Helper function to find the index where the knee angle starts to
     deflect significantly within a given window of angle data. Does so by
     looking backwards from the maximum angle index to find where the angle
@@ -135,7 +135,7 @@ def get_initial_deflection_index(
         sampling_rate (int): Sampling rate of the biomechanics data.
 
     Returns:
-        int | None: Index of the start of the deflection within the window.
+        Optional[int]: Index of the start of the deflection within the window.
 
     Raises:
         RuntimeError: if no significant deflection is found in the window.

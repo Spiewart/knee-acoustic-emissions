@@ -2,6 +2,7 @@
 
 import argparse
 from pathlib import Path
+from typing import Optional
 
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -13,7 +14,7 @@ def plot_syncd_data(
     syncd_data_path: str,
     joint_angle_col: str = "Knee Angle Z",
     figsize: tuple[int, int] = (14, 8),
-    save_path: str | None = None,
+    save_path: Optional[str] = None,
 ) -> Figure:
     """Plot synchronized audio and biomechanics data as time series.
 

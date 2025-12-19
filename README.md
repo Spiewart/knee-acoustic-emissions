@@ -94,6 +94,61 @@ Dual-Knee Synchronization Notes
 - Non-walk maneuvers clip synchronized output to Movement Start/End ±0.5s.
 - Walking uses pass-specific start/end based on speed and pass number.
 
+Parsing Synchronized Data for Movement Cycles
+---------------------------------------------
+
+After synchronizing audio and biomechanics data, the `sync_qc.py` script can be used to parse the synchronized `.pkl` files, identify movement cycles, and perform quality control to separate clean cycles from outliers based on acoustic energy.
+
+The script saves the clean and outlier cycles as separate `.pkl` files in a `MovementCycles` subdirectory.
+
+### Command-Line Usage
+
+The script can be run on a single file, a `Synced` directory, or an entire participant directory.
+
+-   **Run QC on a single synced file:**
+
+    ```bash
+    python sync_qc.py /path/to/participant/Knee/Maneuver/Synced/data_synced.pkl
+    ```
+
+-   **Run QC on all synced files in a directory:**
+
+    ```bash
+    python sync_qc.py /path/to/participant/Knee/Maneuver/Synced/
+    ```
+
+-   **Run QC on an entire participant directory (finds all synced files):**
+
+    ```bash
+    python sync_qc.py /path/to/participant/
+    ```
+
+### Optional Arguments
+
+-   `--threshold`: Adjust the acoustic energy threshold for classifying cycles as clean or outliers. The default is `100.0`.
+
+    ```bash
+    python sync_qc.py /path/to/data_synced.pkl --threshold 50.0
+    ```
+
+-   `--no-plots`: Skip the creation of visualization plots for each cycle.
+
+    ```bash
+    python sync_qc.py /path/to/data_synced.pkl --no-plots
+    ```
+
+-   `--maneuver` and `--speed`: Manually specify the maneuver and speed to override the script's automatic inference from the file path.
+
+    ```bash
+    python sync_qc.py /path/to/data.pkl --maneuver walk --speed fast
+    ```
+
+-   `-v` or `--verbose`: Enable verbose logging for detailed output.
+
+    ```bash
+    python sync_qc.py /path/to/data_synced.pkl -v
+    ```
+
 Testing
 -------
 

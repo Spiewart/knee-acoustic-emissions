@@ -20,7 +20,7 @@ from __future__ import annotations
 import argparse
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal, cast
+from typing import TYPE_CHECKING, Literal, Optional, Union, cast
 
 import pandas as pd
 
@@ -342,8 +342,8 @@ def _sync_and_save_recording(
     biomechanics_file: Path,
     maneuver_key: str,
     knee_side: str,
-    pass_number: int | None,
-    speed: str | None,
+    pass_number: Optional[int],
+    speed: Optional[str],
 ) -> tuple[Path, pd.DataFrame, tuple]:
     """Synchronize a single biomechanics recording with audio.
 
@@ -397,11 +397,14 @@ def _sync_and_save_recording(
     )
 
     # Normalize speed for event metadata lookups (medium -> normal)
-    normalized_speed: Literal["slow", "normal", "fast"] | None = None
+    # Normalize speed for event metadata lookups
+    # Handle both API speeds (slow/medium/fast) and internal model speeds (slow/normal/fast)
+    normalized_speed: Optional[Literal["slow", "normal", "fast"]] = None
     if speed is not None:
         event_speed_map: dict[str, Literal["slow", "normal", "fast"]] = {
             "slow": "slow",
-            "medium": "normal",
+            "medium": "normal",  # API speed -> model speed
+            "normal": "normal",  # Model speed -> model speed (passthrough)
             "fast": "fast",
         }
         normalized_speed = event_speed_map[speed]
@@ -615,8 +618,8 @@ def _get_foot_from_knee_side(knee_side: str) -> str:
 def _generate_synced_filename(
     knee_side: str,
     maneuver_key: str,
-    pass_number: int | None,
-    speed: str | None,
+    pass_number: Optional[int],
+    speed: Optional[str],
 ) -> str:
     """Generate standardized filename for synchronized data.
 
@@ -624,7 +627,7 @@ def _generate_synced_filename(
         knee_side: "Left" or "Right"
         maneuver_key: "walk", "sit_to_stand", or "flexion_extension"
         pass_number: Pass number for walking, None otherwise
-        speed: Speed for walking, None otherwise
+        speed: Speed for walking ("slow", "normal", "fast"), None otherwise
 
     Returns:
         Standardized filename without extension
@@ -632,7 +635,15 @@ def _generate_synced_filename(
     base = f"{knee_side}_{maneuver_key}"
 
     if maneuver_key == "walk":
-        return f"{base}_Pass{pass_number:04d}_{speed}"
+        # Map "normal" to "medium" for filename consistency
+        # (model uses "normal" internally, but files use "medium")
+        filename_speed_map = {
+            "slow": "slow",
+            "normal": "medium",
+            "fast": "fast",
+        }
+        filename_speed = filename_speed_map.get(speed, speed) if speed else speed
+        return f"{base}_Pass{pass_number:04d}_{filename_speed}"
     else:
         return base
 
@@ -892,7 +903,7 @@ def find_participant_directories(path: Path) -> list[Path]:
     return sorted(participant_dirs)
 
 
-def setup_logging(log_file: Path | None = None) -> None:
+def setup_logging(log_file: Optional[Path] = None) -> None:
     """Configure logging to both console and optional file.
 
     Args:
@@ -1104,22 +1115,22 @@ def sync_single_audio_file(
             return False
 
         # Import biomechanics recordings
+        all_recordings = []
         if maneuver_key == "walk":
-            # Infer speed from the path or use all speeds
-            # For now, try to infer from parent directory naming
-            recordings = import_biomechanics_recordings(
-                biomechanics_file=biomechanics_file,
-                maneuver="walk",
-                speed="slow",  # type: ignore[arg-type]
-            )
-            if not recordings:
+            # Process all speeds for walking
+            for speed in ["slow", "medium", "fast"]:
+                recordings = import_biomechanics_recordings(
+                    biomechanics_file=biomechanics_file,
+                    maneuver="walk",
+                    speed=speed,  # type: ignore[arg-type]
+                )
+                all_recordings.extend(recordings)
+
+            if not all_recordings:
                 logging.error(
-                    "No biomechanics recordings found for walk/slow"
+                    "No biomechanics recordings found for walk (any speed)"
                 )
                 return False
-            recording = recordings[0]
-            pass_number = recording.pass_number
-            speed = "slow"
         else:
             recordings = import_biomechanics_recordings(
                 biomechanics_file=biomechanics_file,
@@ -1134,12 +1145,9 @@ def sync_single_audio_file(
                     "No biomechanics recordings found for %s", maneuver_key
                 )
                 return False
-            recording = recordings[0]
-            pass_number = None
-            speed = None
+            all_recordings = recordings
 
         # Determine output directory
-        maneuver_dir = None
         maneuver_folder_map_rev = {
             "walk": "Walking",
             "sit_to_stand": "Sit-Stand",
@@ -1150,27 +1158,50 @@ def sync_single_audio_file(
         maneuver_dir = knee_dir / maneuver_folder
         synced_dir = maneuver_dir / "Synced"
 
-        # Sync the recording
-        output_path, synced_df, stomp_times, bio_df = _sync_and_save_recording(
-            recording=recording,
-            audio_df=audio_df,
-            synced_dir=synced_dir,
-            biomechanics_file=biomechanics_file,
-            maneuver_key=maneuver_key,
-            knee_side=knee_side,
-            pass_number=pass_number,
-            speed=speed,
-        )
+        # Sync all recordings
+        success_count = 0
+        for recording in all_recordings:
+            try:
+                if maneuver_key == "walk":
+                    pass_number = recording.pass_number
+                    speed = recording.speed
+                else:
+                    pass_number = None
+                    speed = None
 
-        # Write the file
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        synced_df.to_pickle(output_path)
-        logging.info("Saved synchronized data to %s", output_path)
+                output_path, synced_df, stomp_times, bio_df = _sync_and_save_recording(
+                    recording=recording,
+                    audio_df=audio_df,
+                    synced_dir=synced_dir,
+                    biomechanics_file=biomechanics_file,
+                    maneuver_key=maneuver_key,
+                    knee_side=knee_side,
+                    pass_number=pass_number,
+                    speed=speed,
+                )
 
-        # Generate stomp visualization
-        audio_stomp, bio_left, bio_right = stomp_times
-        plot_stomp_detection(audio_df, bio_df, synced_df, audio_stomp, bio_left, bio_right, output_path)
-        logging.info("Saved stomp detection visualization")
+                # Write the file
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+                synced_df.to_pickle(output_path)
+                logging.info("Saved synchronized data to %s", output_path)
+
+                # Generate stomp visualization
+                audio_stomp, bio_left, bio_right = stomp_times
+                plot_stomp_detection(audio_df, bio_df, synced_df, audio_stomp, bio_left, bio_right, output_path)
+                logging.info("Saved stomp detection visualization")
+                success_count += 1
+            except Exception as e:  # pylint: disable=broad-except
+                logging.error(
+                    "Error syncing recording (pass=%s, speed=%s): %s",
+                    pass_number, speed, str(e)
+                )
+                continue
+
+        if success_count == 0:
+            logging.error("Failed to sync any recordings")
+            return False
+
+        logging.info("Successfully synced %d/%d recordings", success_count, len(all_recordings))
         return True
 
     except Exception as e:  # pylint: disable=broad-except
