@@ -87,19 +87,32 @@ class MovementCycleExtractor:
             0.8 * sample_rate
         )  # 0.8 seconds minimum between heel strikes
 
-        minima_indices, _ = find_peaks(-knee_angle_smooth, distance=min_peak_distance)
+        minima_indices, _ = find_peaks(
+            -knee_angle_smooth, distance=min_peak_distance, prominence=5
+        )
 
         if len(minima_indices) < 2:
             return []
 
+        # Validate that start/end heel strikes have similar extension angles
+        angle_tolerance = 7.5  # degrees
         cycles = []
         for i in range(len(minima_indices) - 1):
             start_idx = minima_indices[i]
             end_idx = minima_indices[i + 1]
-            cycle_df = synced_df.iloc[start_idx:end_idx].reset_index(drop=True)
-            if len(cycle_df) > 10:  # Minimum cycle length
-                cycles.append(cycle_df)
 
+            start_angle = knee_angle_smooth[start_idx]
+            end_angle = knee_angle_smooth[end_idx]
+
+            if abs(end_angle - start_angle) <= angle_tolerance:
+                # Include the endpoint only for the last cycle to avoid off-by-one
+                # under-coverage without duplicating shared boundaries across cycles.
+                end_slice = end_idx + 1 if i == (len(minima_indices) - 2) else end_idx
+                cycle_df = synced_df.iloc[start_idx:end_slice].reset_index(
+                    drop=True
+                )
+                if len(cycle_df) > 10:  # Minimum cycle length
+                    cycles.append(cycle_df)
         return cycles
 
     def _extract_sit_to_stand_cycles(

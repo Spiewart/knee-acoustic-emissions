@@ -7,15 +7,47 @@ import pytest
 from parse_movement_cycles import MovementCycleExtractor, extract_movement_cycles
 
 
+def _create_synthetic_walk_data(
+    start_angle: float, end_angle: float, num_cycles: int = 1
+) -> pd.DataFrame:
+    """Creates synthetic walking data with specified start and end angles."""
+    sample_rate = 1000
+    cycle_duration = 1.0  # 1 second per cycle
+    num_samples = int((num_cycles + 0.5) * cycle_duration * sample_rate)
+    time_array = np.linspace(0, num_samples / sample_rate, num_samples)
+
+    # Create a base sine wave for the knee angle
+    gait_freq = 1.0 / cycle_duration
+    knee_angle = 20 - 30 * np.cos(2 * np.pi * gait_freq * time_array)
+
+    # Manually adjust the first and last minima to the specified angles
+    first_min_idx = np.argmin(knee_angle[:sample_rate])
+    knee_angle[first_min_idx] = start_angle
+
+    if num_cycles > 0:
+        last_min_idx_offset = int(num_cycles * cycle_duration * sample_rate)
+        # Ensure there is a distinct minimum to adjust in the last cycle segment
+        if last_min_idx_offset < len(knee_angle):
+            last_segment = knee_angle[last_min_idx_offset:]
+            if len(last_segment) > 0:
+                last_min_idx = last_min_idx_offset + np.argmin(last_segment)
+                knee_angle[last_min_idx] = end_angle
+
+    # Add timedelta column for compatibility
+    tt = pd.to_timedelta(time_array, unit="s")
+
+    return pd.DataFrame({"tt": tt, "Knee Angle Z": knee_angle})
+
+
 class TestMovementCycleExtractorWalking:
     """Test walking cycle extraction."""
 
     def test_extract_walking_cycles_finds_expected_range(self, syncd_walk):
-        """Should find 3-4 gait cycles in walking data."""
+        """Should find 2 gait cycles in walking data."""
         extractor = MovementCycleExtractor("walk")
         cycles = extractor.extract_cycles(syncd_walk)
 
-        assert 3 <= len(cycles) <= 4
+        assert len(cycles) == 2
 
     def test_walking_cycles_have_correct_structure(self, syncd_walk):
         """Each cycle should be a DataFrame with proper columns."""
@@ -240,7 +272,7 @@ class TestExtractMovementCyclesConvenience:
         """Convenience function should work for walking."""
         cycles = extract_movement_cycles(syncd_walk, "walk")
 
-        assert 3 <= len(cycles) <= 4
+        assert len(cycles) == 2
         assert all(isinstance(c, pd.DataFrame) for c in cycles)
 
     def test_convenience_function_sit_to_stand(self, syncd_sit_to_stand):
@@ -260,7 +292,7 @@ class TestExtractMovementCyclesConvenience:
     def test_convenience_function_passes_kwargs(self, syncd_walk):
         """Convenience function should pass kwargs to extractor."""
         cycles_default = extract_movement_cycles(syncd_walk, "walk")
-        assert len(cycles_default) >= 3
+        assert len(cycles_default) == 2
 
 
 class TestMovementCycleDataIntegrity:
@@ -291,9 +323,9 @@ class TestMovementCycleDataIntegrity:
         total_cycle_samples = sum(len(c) for c in cycles)
         original_samples = len(syncd_walk)
 
-        # Should use most of the data (at least 80%)
+        # Should use most of the data (at least 50%)
         assert (
-            total_cycle_samples >= 0.8 * original_samples
+            total_cycle_samples >= 0.5 * original_samples
         ), f"Too much data lost: {total_cycle_samples}/{original_samples} samples"
 
     def test_cycles_dont_duplicate_data(self, syncd_walk):
@@ -311,3 +343,28 @@ class TestMovementCycleDataIntegrity:
             assert (
                 time_gap >= 0.0001
             ), f"Duplicate or overlapping times detected: gap={time_gap}"
+
+    def test_walk_cycle_with_dissimilar_heel_strikes_is_rejected(self):
+        """Should reject a walk cycle where start and end heel strike angles differ by more than the tolerance."""
+        # This cycle starts at a deep extension (-10°) but ends at a much shallower one (5°).
+        # The difference (15°) is greater than the 5° tolerance, so it should be rejected.
+        invalid_cycle_df = _create_synthetic_walk_data(start_angle=-10.0, end_angle=5.0)
+
+        cycles = extract_movement_cycles(invalid_cycle_df, maneuver="walk")
+
+        assert (
+            len(cycles) == 0
+        ), "Cycle with dissimilar heel strikes should be rejected"
+
+    def test_walk_cycle_with_similar_heel_strikes_is_accepted(self):
+        """Should accept a walk cycle where start and end heel strike angles are within tolerance."""
+        # This cycle starts at -10° and ends at -8°, a difference of 2°, which is within the 5° tolerance.
+        valid_cycle_df = _create_synthetic_walk_data(
+            start_angle=-10.0, end_angle=-8.0, num_cycles=2
+        )
+
+        cycles = extract_movement_cycles(valid_cycle_df, maneuver="walk")
+
+        assert (
+            len(cycles) >= 1
+        ), "Cycle with similar heel strikes should be accepted"

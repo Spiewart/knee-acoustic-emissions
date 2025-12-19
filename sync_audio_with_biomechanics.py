@@ -865,10 +865,25 @@ def plot_stomp_detection(
 
         # Find and plot knee angle from truncated bio_df
         knee_angle_col = None
-        for col in bio_df_trunc.columns:
-            if "knee angle" in col.lower() and "_x" not in col.lower() and "_y" not in col.lower():
-                knee_angle_col = col
-                break
+        # Prefer explicit Z-axis knee angle, fall back to any knee angle (exclude velocities)
+        preferred_cols = [
+            col
+            for col in bio_df_trunc.columns
+            if "knee angle z" in col.lower() and "velocity" not in col.lower()
+        ]
+        if preferred_cols:
+            knee_angle_col = preferred_cols[0]
+        else:
+            for col in bio_df_trunc.columns:
+                col_lower = col.lower()
+                if (
+                    "knee angle" in col_lower
+                    and "velocity" not in col_lower
+                    and "_x" not in col_lower
+                    and "_y" not in col_lower
+                ):
+                    knee_angle_col = col
+                    break
 
         if knee_angle_col:
             bio_downsample = max(1, len(bio_time_trunc) // max_plot_points)
@@ -922,10 +937,24 @@ def plot_stomp_detection(
 
         # Find and plot knee angle from synced data
         synced_knee_col = None
-        for col in synced_df.columns:
-            if "knee angle" in col.lower() and "_x" not in col.lower() and "_y" not in col.lower():
-                synced_knee_col = col
-                break
+        preferred_synced = [
+            col
+            for col in synced_df.columns
+            if "knee angle z" in col.lower() and "velocity" not in col.lower()
+        ]
+        if preferred_synced:
+            synced_knee_col = preferred_synced[0]
+        else:
+            for col in synced_df.columns:
+                col_lower = col.lower()
+                if (
+                    "knee angle" in col_lower
+                    and "velocity" not in col_lower
+                    and "_x" not in col_lower
+                    and "_y" not in col_lower
+                ):
+                    synced_knee_col = col
+                    break
 
         if synced_knee_col:
             knee_synced_plot = synced_df[synced_knee_col].values[::synced_downsample]

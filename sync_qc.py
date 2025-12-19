@@ -8,7 +8,7 @@ Performs two-stage QC on synchronized recordings:
 import logging
 from datetime import timedelta
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Optional
 
 import numpy as np
 import pandas as pd
@@ -30,7 +30,7 @@ class MovementCycleQC:
     def __init__(
         self,
         maneuver: Literal["walk", "sit_to_stand", "flexion_extension"],
-        speed: Literal["slow", "medium", "fast"] | None = None,
+        speed: Optional[Literal["slow", "medium", "fast"]] = None,
         acoustic_threshold: float = 100.0,
         acoustic_channel: Literal["raw", "filtered"] = "filtered",
     ):
@@ -154,9 +154,9 @@ class MovementCycleQC:
 
 def perform_sync_qc(
     synced_pkl_path: Path,
-    output_dir: Path | None = None,
-    maneuver: Literal["walk", "sit_to_stand", "flexion_extension"] | None = None,
-    speed: Literal["slow", "medium", "fast"] | None = None,
+    output_dir: Optional[Path] = None,
+    maneuver: Optional[Literal["walk", "sit_to_stand", "flexion_extension"]] = None,
+    speed: Optional[Literal["slow", "medium", "fast"]] = None,
     acoustic_threshold: float = 100.0,
     create_plots: bool = True,
 ) -> tuple[list[pd.DataFrame], list[pd.DataFrame], Path]:
@@ -210,9 +210,8 @@ def perform_sync_qc(
     clean_cycles, outlier_cycles = qc.analyze_cycles(cycles)
 
     # Set output directory
-    if output_dir is None:
-        output_dir = synced_pkl_path.parent / "MovementCycles"
-    output_dir = Path(output_dir)
+    base_dir = Path(output_dir) if output_dir is not None else synced_pkl_path.parent
+    output_dir = base_dir / "MovementCycles"
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Save results
@@ -247,13 +246,13 @@ def _infer_maneuver_from_path(path: Path) -> str:
         return "walk"
     elif "sit" in path_str and "stand" in path_str:
         return "sit_to_stand"
-    elif "flexion" in path_str or "extension" in path_str:
+    elif "flexion" in path_str or "extension" in path_str or "flexext" in path_str:
         return "flexion_extension"
     else:
         raise ValueError(f"Cannot infer maneuver from path: {path}")
 
 
-def _infer_speed_from_path(path: Path) -> str | None:
+def _infer_speed_from_path(path: Path) -> Optional[str]:
     """Infer walking speed from file path.
 
     Args:
@@ -393,7 +392,7 @@ def setup_logging(verbose: bool = False) -> None:
 
 
 def find_synced_files(path: Path) -> list[Path]:
-    """Find all synced pickle files in a directory structure.
+    """Find all pickle files located in any directory named 'Synced'.
 
     Args:
         path: Root path to search.
@@ -404,18 +403,14 @@ def find_synced_files(path: Path) -> list[Path]:
     synced_files = []
 
     if path.is_file():
-        # Single file
-        if path.suffix == ".pkl" and "synced" in path.name.lower():
+        # If a single file is provided, check if its parent is 'Synced'
+        if path.suffix == ".pkl" and path.parent.name == "Synced":
             synced_files.append(path)
     elif path.is_dir():
-        # Check if this is a Synced directory
-        if path.name == "Synced":
-            synced_files.extend(path.glob("**/*.pkl"))
-        else:
-            # Recursively search for Synced directories
-            for synced_dir in path.rglob("Synced"):
-                if synced_dir.is_dir():
-                    synced_files.extend(synced_dir.glob("*.pkl"))
+        # Recursively find all .pkl files and check if their parent is 'Synced'
+        for pkl_file in path.rglob("*.pkl"):
+            if pkl_file.parent.name == "Synced":
+                synced_files.append(pkl_file)
 
     return sorted(synced_files)
 

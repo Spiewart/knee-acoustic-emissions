@@ -409,11 +409,11 @@ def syncd_walk(tmp_path):
     # Heel strikes at 0, 1.0, 2.0, 3.0, 4.0 seconds
     gait_freq = 1.0  # Hz (1 cycle per second)
     # Use -cos to get minima at integer seconds
-    # Reduce noise to 0.5° to avoid spurious minima
+    # Reduce noise to 0.1° to avoid spurious minima
     knee_angle = (
         20
         - 30 * np.cos(2 * np.pi * gait_freq * time_array)
-        + np.random.randn(num_samples) * 0.5
+        + np.random.randn(num_samples) * 0.1
     )
 
     # Acoustic events at heel strikes (impacts)
@@ -427,7 +427,9 @@ def syncd_walk(tmp_path):
         acoustic_base[idx : idx + spike_width] += (
             np.exp(-np.arange(spike_width) / 10) * 0.1
         )
-        f_ch_base[idx : idx + spike_width] += np.exp(-np.arange(spike_width) / 10) * 1.0
+        f_ch_base[idx : idx + spike_width] += (
+            np.exp(-np.arange(spike_width) / 10) * 2.0
+        )
 
     syncd_df = pd.DataFrame(
         {

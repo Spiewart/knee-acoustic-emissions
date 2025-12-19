@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Literal, Optional
 
 import pandas as pd
 
@@ -136,7 +136,7 @@ def extract_microphone_positions(
 
 def extract_file_name_and_notes(
     maneuver_df: pd.DataFrame,
-) -> tuple[str, str | None]:
+) -> tuple[str, Optional[str]]:
     """Extract file name and notes from maneuver metadata.
 
     Args:
