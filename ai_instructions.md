@@ -17,7 +17,9 @@ This project processes acoustic emissions data from knee joint recordings during
 
 ### Requirements
 
-The project uses Python 3.12+ with the following dependencies:
+**Python 3.12+** is required.
+
+The project uses the following dependencies:
 
 **Runtime Dependencies** (`requirements.txt`):
 - `numpy==2.3.4` - Numerical computing
@@ -96,7 +98,7 @@ Pydantic models for data validation:
 
 - **`compute_spectrogram.py`**: Computes STFT spectrograms
 
-- **`add_instantaneous_frequency.py`**: Computes Hilbert transform instantaneous frequency
+- **`cli/add_instantaneous_frequency.py`**: Computes Hilbert transform instantaneous frequency
 
 ### Testing
 
@@ -105,10 +107,34 @@ Tests located in `tests/` directory:
 - `test_parse_acoustic_file_legend.py` - Audio metadata parsing tests
 - `test_process_participant_directory.py` - Directory processing tests
 - `test_sync_audio_with_biomechanics.py` - Synchronization tests
+- `test_cli.py` - CLI entry point tests
 - `test_smoke.py` - End-to-end smoke tests
 - `conftest.py` - Shared pytest fixtures
 
-Run tests with: `PYTHONPATH=. pytest -v`
+**Running Tests**: Use the Pylance MCP server to run tests, as it's much faster and more reliable than running pytest in the terminal:
+
+```python
+# Using Pylance server to run tests
+mcp_pylance_mcp_s_pylanceRunCodeSnippet(
+    workspaceRoot="file:///path/to/workspace",
+    workingDirectory="/path/to/workspace",
+    codeSnippet="""
+import subprocess
+import sys
+
+result = subprocess.run(
+    [sys.executable, "-m", "pytest", "tests/", "-v"],
+    capture_output=True,
+    text=True,
+    cwd="/path/to/workspace"
+)
+print(result.stdout)
+print(f"Exit code: {result.returncode}")
+"""
+)
+```
+
+Avoid running `pytest` directly in the terminal as it often hangs.
 
 ---
 

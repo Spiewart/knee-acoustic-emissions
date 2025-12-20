@@ -1,8 +1,7 @@
 import pandas as pd
 import pytest
 
-from models import MicrophonePosition
-from parse_acoustic_file_legend import (
+from src.audio.parsers import (
     extract_file_name_and_notes,
     extract_knee_metadata_table,
     extract_microphone_positions,
@@ -11,6 +10,7 @@ from parse_acoustic_file_legend import (
     get_acoustics_metadata,
     normalize_maneuver_column,
 )
+from src.models import MicrophonePosition
 
 
 def test_get_acoustics_metadata(fake_participant_directory) -> None:

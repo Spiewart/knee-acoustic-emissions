@@ -7,8 +7,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from models import BiomechanicsCycle, BiomechanicsMetadata
-from process_participant_directory import sync_single_audio_file
+from src.models import BiomechanicsCycle, BiomechanicsMetadata
+from src.orchestration.participant import sync_single_audio_file
 
 
 @pytest.fixture
@@ -73,13 +73,13 @@ class TestSyncSingleAudioFile:
 
         # Mock the imports and sync functions
         with patch(
-            "process_participant_directory.import_biomechanics_recordings"
+            "src.orchestration.participant.import_biomechanics_recordings"
         ) as mock_import, patch(
-            "process_participant_directory.load_audio_data"
+            "src.orchestration.participant.load_audio_data"
         ) as mock_load_audio, patch(
-            "process_participant_directory._sync_and_save_recording"
+            "src.orchestration.participant._sync_and_save_recording"
         ) as mock_sync, patch(
-            "process_participant_directory.plot_stomp_detection"
+            "src.orchestration.participant.plot_stomp_detection"
         ) as mock_plot:
 
             # Configure mocks
@@ -144,13 +144,13 @@ class TestSyncSingleAudioFile:
         biomech_file.touch()
 
         with patch(
-            "process_participant_directory.import_biomechanics_recordings"
+            "src.orchestration.participant.import_biomechanics_recordings"
         ) as mock_import, patch(
-            "process_participant_directory.load_audio_data"
+            "src.orchestration.participant.load_audio_data"
         ) as mock_load_audio, patch(
-            "process_participant_directory._sync_and_save_recording"
+            "src.orchestration.participant._sync_and_save_recording"
         ) as mock_sync, patch(
-            "process_participant_directory.plot_stomp_detection"
+            "src.orchestration.participant.plot_stomp_detection"
         ) as mock_plot:
 
             mock_load_audio.return_value = mock_audio_df
@@ -209,13 +209,13 @@ class TestSyncSingleAudioFile:
         biomech_file.touch()
 
         with patch(
-            "process_participant_directory.import_biomechanics_recordings"
+            "src.orchestration.participant.import_biomechanics_recordings"
         ) as mock_import, patch(
-            "process_participant_directory.load_audio_data"
+            "src.orchestration.participant.load_audio_data"
         ) as mock_load_audio, patch(
-            "process_participant_directory._sync_and_save_recording"
+            "src.orchestration.participant._sync_and_save_recording"
         ) as mock_sync, patch(
-            "process_participant_directory.plot_stomp_detection"
+            "src.orchestration.participant.plot_stomp_detection"
         ) as mock_plot:
 
             mock_load_audio.return_value = mock_audio_df
@@ -289,13 +289,13 @@ class TestSyncSingleAudioFile:
         )
 
         with patch(
-            "process_participant_directory.import_biomechanics_recordings"
+            "src.orchestration.participant.import_biomechanics_recordings"
         ) as mock_import, patch(
-            "process_participant_directory.load_audio_data"
+            "src.orchestration.participant.load_audio_data"
         ) as mock_load_audio, patch(
-            "process_participant_directory._sync_and_save_recording"
+            "src.orchestration.participant._sync_and_save_recording"
         ) as mock_sync, patch(
-            "process_participant_directory.plot_stomp_detection"
+            "src.orchestration.participant.plot_stomp_detection"
         ) as mock_plot:
 
             mock_load_audio.return_value = mock_audio_df
@@ -363,7 +363,7 @@ class TestSyncSingleAudioFile:
         biomech_file = motion_capture_dir / "AOA1011_Biomechanics_Full_Set.xlsx"
         biomech_file.touch()
 
-        with patch("process_participant_directory.load_audio_data") as mock_load:
+        with patch("src.orchestration.participant.load_audio_data") as mock_load:
             mock_load.return_value = bad_audio_df
 
             result = sync_single_audio_file(audio_file)

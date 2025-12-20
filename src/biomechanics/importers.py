@@ -8,7 +8,7 @@ from typing import Literal, Optional
 
 import pandas as pd
 
-from models import BiomechanicsCycle, BiomechanicsMetadata
+from src.models import BiomechanicsCycle, BiomechanicsMetadata
 
 
 def extract_unique_ids_from_columns(bio_df: pd.DataFrame) -> list[str]:

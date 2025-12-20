@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from sync_qc import (
+from src.synchronization.quality_control import (
     MovementCycleQC,
     _infer_maneuver_from_path,
     _infer_speed_from_path,
@@ -222,8 +222,8 @@ class TestCliHelpers:
 class TestSyncQCCLI:
     """Test suite for the sync_qc CLI entry point."""
 
-    @patch("sync_qc.find_synced_files")
-    @patch("sync_qc.perform_sync_qc")
+    @patch("cli.sync_qc.find_synced_files")
+    @patch("cli.sync_qc.perform_sync_qc")
     def test_cli_with_valid_file(
         self, mock_perform_qc, mock_find_files, tmp_path
     ):
@@ -236,7 +236,7 @@ class TestSyncQCCLI:
         with patch.object(
             sys, "argv", ["sync_qc.py", str(synced_file)]
         ):
-            from sync_qc import main
+            from cli.sync_qc import main
 
             assert main() == 0
             mock_perform_qc.assert_called_once()
@@ -245,8 +245,8 @@ class TestSyncQCCLI:
             assert call_kwargs["acoustic_threshold"] == 100.0
             assert call_kwargs["create_plots"] is True
 
-    @patch("sync_qc.find_synced_files")
-    @patch("sync_qc.perform_sync_qc")
+    @patch("cli.sync_qc.find_synced_files")
+    @patch("cli.sync_qc.perform_sync_qc")
     def test_cli_with_flags(self, mock_perform_qc, mock_find_files, tmp_path):
         """Should correctly parse --no-plots and --threshold flags."""
         synced_file = tmp_path / "synced.pkl"
@@ -259,7 +259,7 @@ class TestSyncQCCLI:
             "argv",
             ["sync_qc.py", str(synced_file), "--no-plots", "--threshold", "50.0"],
         ):
-            from sync_qc import main
+            from cli.sync_qc import main
 
             assert main() == 0
             mock_perform_qc.assert_called_once()
@@ -272,12 +272,12 @@ class TestSyncQCCLI:
         """Should return exit code 1 if path does not exist."""
         invalid_path = "/path/to/nonexistent/file.pkl"
         with patch.object(sys, "argv", ["sync_qc.py", invalid_path]):
-            from sync_qc import main
+            from cli.sync_qc import main
 
             assert main() == 1
             assert "Path does not exist" in caplog.text
 
-    @patch("sync_qc.find_synced_files")
+    @patch("cli.sync_qc.find_synced_files")
     def test_cli_no_synced_files_found(self, mock_find_files, tmp_path, caplog):
         """Should return exit code 1 if no synced files are found."""
         empty_dir = tmp_path / "empty_dir"
@@ -285,7 +285,7 @@ class TestSyncQCCLI:
         mock_find_files.return_value = []
 
         with patch.object(sys, "argv", ["sync_qc.py", str(empty_dir)]):
-            from sync_qc import main
+            from cli.sync_qc import main
 
             assert main() == 1
             assert "No synced files found" in caplog.text

@@ -24,8 +24,8 @@ from typing import TYPE_CHECKING, Literal, Optional, Union, cast
 
 import pandas as pd
 
-from process_biomechanics import import_biomechanics_recordings
-from sync_audio_with_biomechanics import (
+from src.biomechanics.importers import import_biomechanics_recordings
+from src.synchronization.sync import (
     get_audio_stomp_time,
     get_bio_end_time,
     get_bio_start_time,
@@ -38,7 +38,7 @@ from sync_audio_with_biomechanics import (
 )
 
 if TYPE_CHECKING:
-    from models import BiomechanicsCycle
+    from src.models import BiomechanicsCycle
 
 
 def parse_participant_directory(participant_dir: Path) -> None:

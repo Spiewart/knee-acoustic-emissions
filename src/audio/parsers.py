@@ -2,7 +2,7 @@ from typing import Literal, Optional
 
 import pandas as pd
 
-from models import AcousticsMetadata, MicrophonePosition
+from src.models import AcousticsMetadata, MicrophonePosition
 
 
 def find_knee_table_start(

@@ -15,7 +15,7 @@ import pandas as pd
 from scipy.integrate import trapezoid
 from scipy.signal import find_peaks, welch
 
-from process_participant_directory import get_audio_file_name
+from src.orchestration.participant import get_audio_file_name
 
 
 def _load_walk_events_from_biomechanics(

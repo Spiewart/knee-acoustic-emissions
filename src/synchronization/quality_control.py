@@ -19,7 +19,7 @@ try:
 except ImportError:
     MATPLOTLIB_AVAILABLE = False
 
-from parse_movement_cycles import extract_movement_cycles
+from src.biomechanics.cycle_parsing import extract_movement_cycles
 
 logger = logging.getLogger(__name__)
 

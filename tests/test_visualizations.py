@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import pytest
 
-from visualizations import plot_syncd_data
+from src.visualization.plots import plot_syncd_data
 
 
 def test_plot_syncd_data_basic(syncd_data):

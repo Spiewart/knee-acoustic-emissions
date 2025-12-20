@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from process_participant_directory import (
+from src.orchestration.participant import (
     _generate_synced_filename,
     _load_event_data,
     _trim_and_rename_biomechanics_columns,
@@ -440,15 +440,15 @@ def test_main_filters_requested_participants(monkeypatch, tmp_path, caplog):
         return True
 
     monkeypatch.setattr(
-        "process_participant_directory.setup_logging",
+        "src.orchestration.participant.setup_logging",
         lambda log_file=None: None,
     )
     monkeypatch.setattr(
-        "process_participant_directory.find_participant_directories",
+        "src.orchestration.participant.find_participant_directories",
         fake_find,
     )
     monkeypatch.setattr(
-        "process_participant_directory.process_participant",
+        "src.orchestration.participant.process_participant",
         fake_process,
     )
 
@@ -457,7 +457,7 @@ def test_main_filters_requested_participants(monkeypatch, tmp_path, caplog):
         sys,
         "argv",
         [
-            "process_participant_directory.py",
+            "src.orchestration.participant.py",
             str(tmp_path),
             "--participant",
             "2024",
@@ -486,15 +486,15 @@ def test_main_warns_when_no_participant_matches(monkeypatch, tmp_path, caplog):
         return True
 
     monkeypatch.setattr(
-        "process_participant_directory.setup_logging",
+        "src.orchestration.participant.setup_logging",
         lambda log_file=None: None,
     )
     monkeypatch.setattr(
-        "process_participant_directory.find_participant_directories",
+        "src.orchestration.participant.find_participant_directories",
         fake_find,
     )
     monkeypatch.setattr(
-        "process_participant_directory.process_participant",
+        "src.orchestration.participant.process_participant",
         fake_process,
     )
 
@@ -503,7 +503,7 @@ def test_main_warns_when_no_participant_matches(monkeypatch, tmp_path, caplog):
         sys,
         "argv",
         [
-            "process_participant_directory.py",
+            "src.orchestration.participant.py",
             str(tmp_path),
             "--participant",
             "9999",
@@ -542,7 +542,7 @@ def test_process_participant_success(fake_participant_directory, caplog, monkeyp
         pass
 
     monkeypatch.setattr(
-        "process_participant_directory.parse_participant_directory",
+        "src.orchestration.participant.parse_participant_directory",
         mock_parse,
     )
 
@@ -576,7 +576,7 @@ def test_process_participant_returns_false_on_error(tmp_path, caplog, monkeypatc
         raise RuntimeError("Unexpected error")
 
     monkeypatch.setattr(
-        "process_participant_directory.parse_participant_directory",
+        "src.orchestration.participant.parse_participant_directory",
         mock_parse,
     )
 
@@ -585,7 +585,7 @@ def test_process_participant_returns_false_on_error(tmp_path, caplog, monkeypatc
         pass
 
     monkeypatch.setattr(
-        ("process_participant_directory." "check_participant_dir_for_required_files"),
+        ("src.orchestration.participant." "check_participant_dir_for_required_files"),
         mock_check,
     )
 
@@ -618,7 +618,7 @@ def test_process_participant_validation_passed_message(
         pass
 
     monkeypatch.setattr(
-        "process_participant_directory.parse_participant_directory",
+        "src.orchestration.participant.parse_participant_directory",
         mock_parse,
     )
 
@@ -845,7 +845,7 @@ def mock_biomechanics_recordings():
     """Create mock biomechanics recordings for all speeds."""
     import numpy as np
 
-    from models import BiomechanicsCycle
+    from src.models import BiomechanicsCycle
 
     recordings = []
     for speed in ["slow", "normal", "fast"]:
@@ -873,7 +873,7 @@ class TestSyncSingleAudioFile:
         self, tmp_path, mock_audio_df, mock_biomechanics_recordings
     ):
         """sync_single_audio_file should process all speeds for walking."""
-        from process_participant_directory import sync_single_audio_file
+        from src.orchestration.participant import sync_single_audio_file
 
         # Setup directory structure
         participant_dir = tmp_path / "#1011"
@@ -893,13 +893,13 @@ class TestSyncSingleAudioFile:
 
         # Mock the imports and sync functions
         with patch(
-            "process_participant_directory.import_biomechanics_recordings"
+            "src.orchestration.participant.import_biomechanics_recordings"
         ) as mock_import, patch(
-            "process_participant_directory.load_audio_data"
+            "src.orchestration.participant.load_audio_data"
         ) as mock_load_audio, patch(
-            "process_participant_directory._sync_and_save_recording"
+            "src.orchestration.participant._sync_and_save_recording"
         ) as mock_sync, patch(
-            "process_participant_directory.plot_stomp_detection"
+            "src.orchestration.participant.plot_stomp_detection"
         ) as mock_plot:
 
             # Configure mocks
@@ -921,7 +921,7 @@ class TestSyncSingleAudioFile:
             synced_df = mock_audio_df.copy()
             synced_df["Knee Angle Z"] = 15.0
             mock_sync.return_value = (
-                Path("output.pkl"),
+                tmp_path / "output.pkl",
                 synced_df,
                 (10.0, 5.0, 5.0),  # stomp times
                 pd.DataFrame(),
@@ -947,7 +947,7 @@ class TestSyncSingleAudioFile:
         self, tmp_path, mock_audio_df, mock_biomechanics_recordings
     ):
         """Each speed should have all passes synced."""
-        from process_participant_directory import sync_single_audio_file
+        from src.orchestration.participant import sync_single_audio_file
 
         # Setup
         participant_dir = tmp_path / "#1011"
@@ -966,13 +966,13 @@ class TestSyncSingleAudioFile:
         biomech_file.touch()
 
         with patch(
-            "process_participant_directory.import_biomechanics_recordings"
+            "src.orchestration.participant.import_biomechanics_recordings"
         ) as mock_import, patch(
-            "process_participant_directory.load_audio_data"
+            "src.orchestration.participant.load_audio_data"
         ) as mock_load_audio, patch(
-            "process_participant_directory._sync_and_save_recording"
+            "src.orchestration.participant._sync_and_save_recording"
         ) as mock_sync, patch(
-            "process_participant_directory.plot_stomp_detection"
+            "src.orchestration.participant.plot_stomp_detection"
         ) as mock_plot:
 
             mock_load_audio.return_value = mock_audio_df
@@ -990,7 +990,7 @@ class TestSyncSingleAudioFile:
             synced_df = mock_audio_df.copy()
             synced_df["Knee Angle Z"] = 15.0
             mock_sync.return_value = (
-                Path("output.pkl"),
+                tmp_path / "output.pkl",
                 synced_df,
                 (10.0, 5.0, 5.0),
                 pd.DataFrame(),
@@ -1014,7 +1014,7 @@ class TestSyncSingleAudioFile:
         self, tmp_path, mock_audio_df, mock_biomechanics_recordings
     ):
         """Should continue syncing other recordings if one fails."""
-        from process_participant_directory import sync_single_audio_file
+        from src.orchestration.participant import sync_single_audio_file
 
         # Setup
         participant_dir = tmp_path / "#1011"
@@ -1033,13 +1033,13 @@ class TestSyncSingleAudioFile:
         biomech_file.touch()
 
         with patch(
-            "process_participant_directory.import_biomechanics_recordings"
+            "src.orchestration.participant.import_biomechanics_recordings"
         ) as mock_import, patch(
-            "process_participant_directory.load_audio_data"
+            "src.orchestration.participant.load_audio_data"
         ) as mock_load_audio, patch(
-            "process_participant_directory._sync_and_save_recording"
+            "src.orchestration.participant._sync_and_save_recording"
         ) as mock_sync, patch(
-            "process_participant_directory.plot_stomp_detection"
+            "src.orchestration.participant.plot_stomp_detection"
         ) as mock_plot:
 
             mock_load_audio.return_value = mock_audio_df
@@ -1064,7 +1064,7 @@ class TestSyncSingleAudioFile:
                 synced_df = mock_audio_df.copy()
                 synced_df["Knee Angle Z"] = 15.0
                 return (
-                    Path("output.pkl"),
+                    tmp_path / "output.pkl",
                     synced_df,
                     (10.0, 5.0, 5.0),
                     pd.DataFrame(),
@@ -1082,8 +1082,8 @@ class TestSyncSingleAudioFile:
         self, tmp_path, mock_audio_df
     ):
         """Non-walking maneuvers should sync all recordings without speed."""
-        from models import BiomechanicsCycle
-        from process_participant_directory import sync_single_audio_file
+        from src.models import BiomechanicsCycle
+        from src.orchestration.participant import sync_single_audio_file
 
         # Setup for sit-to-stand
         participant_dir = tmp_path / "#1011"
@@ -1116,13 +1116,13 @@ class TestSyncSingleAudioFile:
         )
 
         with patch(
-            "process_participant_directory.import_biomechanics_recordings"
+            "src.orchestration.participant.import_biomechanics_recordings"
         ) as mock_import, patch(
-            "process_participant_directory.load_audio_data"
+            "src.orchestration.participant.load_audio_data"
         ) as mock_load_audio, patch(
-            "process_participant_directory._sync_and_save_recording"
+            "src.orchestration.participant._sync_and_save_recording"
         ) as mock_sync, patch(
-            "process_participant_directory.plot_stomp_detection"
+            "src.orchestration.participant.plot_stomp_detection"
         ) as mock_plot:
 
             mock_load_audio.return_value = mock_audio_df
@@ -1131,7 +1131,7 @@ class TestSyncSingleAudioFile:
             synced_df = mock_audio_df.copy()
             synced_df["Knee Angle Z"] = 45.0
             mock_sync.return_value = (
-                Path("output.pkl"),
+                tmp_path / "output.pkl",
                 synced_df,
                 (10.0, 5.0, 5.0),
                 pd.DataFrame(),
@@ -1149,7 +1149,7 @@ class TestSyncSingleAudioFile:
 
     def test_sync_rejects_already_synced_files(self, tmp_path, mock_audio_df):
         """Should reject files in Synced/ directory."""
-        from process_participant_directory import sync_single_audio_file
+        from src.orchestration.participant import sync_single_audio_file
 
         # Setup with file in Synced directory
         participant_dir = tmp_path / "#1011"
@@ -1168,7 +1168,7 @@ class TestSyncSingleAudioFile:
 
     def test_sync_requires_audio_columns(self, tmp_path):
         """Should validate audio DataFrame has required columns."""
-        from process_participant_directory import sync_single_audio_file
+        from src.orchestration.participant import sync_single_audio_file
 
         participant_dir = tmp_path / "#1011"
         motion_capture_dir = participant_dir / "Motion Capture"
@@ -1195,7 +1195,7 @@ class TestSyncSingleAudioFile:
         biomech_file = motion_capture_dir / "AOA1011_Biomechanics_Full_Set.xlsx"
         biomech_file.touch()
 
-        with patch("process_participant_directory.load_audio_data") as mock_load:
+        with patch("src.orchestration.participant.load_audio_data") as mock_load:
             mock_load.return_value = bad_audio_df
 
             result = sync_single_audio_file(audio_file)
