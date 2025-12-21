@@ -4,7 +4,7 @@ by QTM and Visual3D software."""
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Literal
 
 import pandas as pd
 
@@ -14,14 +14,14 @@ from src.models import BiomechanicsCycle, BiomechanicsMetadata
 def extract_unique_ids_from_columns(bio_df: pd.DataFrame) -> list[str]:
     """Extract unique column identifiers from biomechanics DataFrame.
 
-    Takes column names and removes duplicate suffixes (e.g., ".1", ".2")
-    added by Pandas for duplicate names.
+    Removes numeric suffixes (e.g., ".1", ".2") added by Pandas when reading
+    duplicate column names, leaving clean identifiers.
 
     Args:
-        bio_df: DataFrame with column names containing duplicate identifiers
+        bio_df: DataFrame with column names potentially containing duplicate suffixes.
 
     Returns:
-        List of unique column identifier strings
+        List of unique column identifier strings (cleaned of Pandas suffixes).
     """
     all_cols = bio_df.columns
     # Drop the terminal ".#" from each column name
@@ -35,14 +35,14 @@ def clean_uid(uid: str) -> str:
     """Clean unique identifier by removing V3D path and file extension.
 
     Extracts just the study ID, maneuver, and pass info from a full
-    V3D path. E.g., "V3D\\Study123_Walk0001_NSP1_Filt.c3d" ->
-    "Study123_Walk0001_NSP1_Filt"
+    Visual3D (V3D) file path. For example:
+    "V3D\\Study123_Walk0001_NSP1_Filt.c3d" -> "Study123_Walk0001_NSP1_Filt"
 
     Args:
-        uid: The unique identifier string to clean
+        uid: The unique identifier string to clean (may include V3D path and .c3d extension).
 
     Returns:
-        Cleaned unique identifier without V3D path and .c3d extension
+        Cleaned unique identifier with path and extension removed.
     """
     # Get everything after the final folder in the path "V3D"
     uid = uid.split("V3D\\")[-1]
@@ -503,7 +503,6 @@ def import_biomechanics_recordings(
             biomechanics_file=biomechanics_file,
             maneuver=maneuver,
         )
-
 
 
 def _extract_maneuver_from_uid(

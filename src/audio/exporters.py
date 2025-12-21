@@ -78,8 +78,17 @@ def export_channels_to_csv(pkl_path: str | Path) -> Path:
     return csv_out
 
 
-def dump_channels_to_csv(df: pd.DataFrame, csv_out: Path, meta_json: Optional[Path] = None):
-    """Export time and channel columns from a DataFrame to CSV."""
+def dump_channels_to_csv(df: pd.DataFrame, csv_out: Path, meta_json: Optional[Path] = None) -> None:
+    """Export time and channel columns from a DataFrame to CSV.
+
+    Args:
+        df: DataFrame with optional `tt` and any of `ch1..ch4` columns.
+        csv_out: Destination CSV path.
+        meta_json: Optional meta file providing `startTime`/`stopTime` if `tt` is missing.
+
+    Returns:
+        None. Writes `csv_out` with columns `tt, ch1..ch4` (missing channels filled with NaN).
+    """
     df.columns = [c.lower() for c in df.columns]
 
     # Determine timestamps

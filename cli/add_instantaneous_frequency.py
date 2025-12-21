@@ -13,6 +13,24 @@ from src.audio.instantaneous_frequency import add_instantaneous_frequency
 
 
 def determine_fs_and_dt(df: pd.DataFrame, meta_json: Path) -> Tuple[float, float]:
+    """Determine sampling frequency and time step from DataFrame or metadata.
+
+    Attempts to derive sampling rate and time delta in this order:
+    1. From `df['tt']` column (timestamp array) if present and contains valid data.
+    2. From `meta_json` 'fs' field if the JSON file exists and contains an 'fs' key.
+
+    Raises `RuntimeError` if neither source provides valid sampling frequency.
+
+    Args:
+        df: DataFrame containing audio data, optionally with 'tt' time column.
+        meta_json: Path to metadata JSON file that may contain 'fs' field.
+
+    Returns:
+        Tuple of (sampling_frequency_Hz, time_delta_seconds).
+
+    Raises:
+        RuntimeError: If sampling frequency cannot be determined.
+    """
     if "tt" in df.columns and df["tt"].notna().any():
         tt = df["tt"].astype(float).to_numpy()
         dt = float(np.median(np.diff(tt)))
@@ -29,8 +47,19 @@ def determine_fs_and_dt(df: pd.DataFrame, meta_json: Path) -> Tuple[float, float
     raise RuntimeError("Cannot determine sampling frequency: missing tt and meta.fs")
 
 
-def main():
-    """CLI for adding instantaneous frequency to a pickle file."""
+def main() -> None:
+    """Add instantaneous frequency columns to a pickled audio DataFrame.
+
+    Processes each audio channel (ch1-ch4) using Hilbert transform to compute
+    instantaneous frequency. Applies bandpass filtering before transform to improve
+    signal quality. Outputs new columns f_ch1, f_ch2, f_ch3, f_ch4 containing
+    frequency estimates in Hz.
+
+    Exit codes:
+    - 0: Success
+    - 1: Input pickle not found or failed to read
+    - 2: Cannot determine sampling frequency (missing tt and meta.fs)
+    """
     p = argparse.ArgumentParser(
         description="Add instantaneous frequency to a pickle file."
     )

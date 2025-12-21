@@ -9,7 +9,7 @@ import pandas as pd
 from src.visualization.plots import plot_per_channel
 
 
-def main():
+def main() -> None:
     """CLI for plotting per-channel waveforms from a pickle file."""
     parser = argparse.ArgumentParser(
         description="Plot per-channel waveforms from a pickle file."

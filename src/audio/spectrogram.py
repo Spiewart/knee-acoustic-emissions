@@ -84,12 +84,16 @@ def _save_spectrogram_png(
     plt.close()
 
 
+# Type alias for spectrogram array mapping
+SpecsMap = Dict[str, np.ndarray]
+
+
 def compute_spectrogram_arrays(
     df: pd.DataFrame,
     fs: float,
     nperseg: int,
     noverlap: int,
-) -> Tuple[np.ndarray, np.ndarray, Dict[str, np.ndarray]]:
+) -> Tuple[np.ndarray, np.ndarray, SpecsMap]:
     """Compute STFT spectrogram arrays for available channels.
 
     Args:
@@ -102,6 +106,8 @@ def compute_spectrogram_arrays(
         A tuple `(f, t, specs)` where `f` and `t` are 1D arrays of frequencies and
         times, and `specs` is a mapping with keys `spec_ch1..spec_ch4` present for
         channels that exist, each an array of shape `[len(f), len(t)]` in dB.
+        If no channels are available, returns empty arrays for `f` and `t` and an
+        empty mapping for `specs`.
     """
     channels = ["ch1", "ch2", "ch3", "ch4"]
     specs: Dict[str, np.ndarray] = {}

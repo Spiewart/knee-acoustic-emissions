@@ -21,10 +21,19 @@ from src.orchestration.participant import get_audio_file_name
 def _load_walk_events_from_biomechanics(
     biomech_file: Path,
 ) -> Optional[dict[str, list[tuple[str, float]]]]:
-    """Load Walk0001 sheet from biomechanics Excel.
+    """Load walking events from biomechanics Excel file.
+    Reads the "Walk0001" sheet from the biomechanics Excel file and extracts
+    events associated with each walking speed (Slow, Normal/Medium, Fast).
 
-    Returns dict mapping speed ("SS", "NS", "FS") to list of
-    (event_info, time_sec) tuples, or None if sheet not found.
+    The sheet must contain columns "Event Info" and "Time (sec)" for parsing.
+
+    Args:
+        biomech_file: Path to the biomechanics Excel file.
+
+    Returns:
+        Dictionary mapping speed code ("SS"=Slow, "NS"=Normal, "FS"=Fast)
+        to list of (event_info, time_sec) tuples, or None if sheet not found
+        or required columns missing.
     """
     try:
         df = pd.read_excel(biomech_file, sheet_name="Walk0001")
@@ -61,9 +70,21 @@ def _load_walk_events_from_biomechanics(
 def _parse_pass_intervals_from_events(
     events_by_speed: dict[str, list[tuple[str, float]]],
 ) -> dict[str, list[dict[str, float | int]]]:
-    """Parse pass start/end times from event list.
+    """Parse pass start/end times from walking event list.
 
-    Returns dict mapping speed -> list of {"pass_num", "start_s", "end_s"}.
+    Scans events for "Pass X Start" and "Pass X End" patterns, extracting
+    pass numbers and time intervals. Matches end events with corresponding
+    start events by pass number to build complete intervals.
+
+    Args:
+        events_by_speed: Dictionary mapping speed code to event list
+                        (from _load_walk_events_from_biomechanics).
+
+    Returns:
+        Dictionary mapping speed code to list of pass dictionaries with keys:
+        - "pass_num" (int): Pass number
+        - "start_s" (float): Start time in seconds
+        - "end_s" (float): End time in seconds (or None if unpaired)
     """
     passes_by_speed: dict[str, list[dict[str, float | int]]] = {
         "SS": [],
@@ -926,121 +947,6 @@ def _run_qc_on_file(
         "passed": bool(passed),
         "coverage": float(coverage),
     }
-
-
-def qc_audio_walk_biomech(
-    df: pd.DataFrame,
-    time_col: str,
-    audio_channels: list[str],
-    *,
-    resample_hz: float = 100.0,
-    min_peak_height: float = 0.02,
-    peak_prominence: float = 0.02,
-    min_step_hz: float = 0.5,
-    max_step_hz: float = 3.0,
-    period_tolerance_frac: float = 0.5,
-    min_coverage_frac: float = 0.2,
-    bandpower_min_ratio: float | None = None,
-    bandpower_rel_width: float = 0.35,
-    biomech_file: Path | None = None,
-) -> list[dict[str, float | bool | int | str]]:
-    """Walking QC using biomechanics Walk0001 speed/pass intervals.
-
-    Groups results by speed code (SS/NS/FS) and pass number, evaluating
-    coverage and spectral support within each biomechanics-defined pass.
-
-    Returns list of dicts with keys: speed, pass_num, start_s, end_s,
-    duration_s, heel_strike_count, gait_cycle_hz, coverage_frac,
-    bandpower_ratio, passed.
-    """
-    if df.empty or time_col not in df or biomech_file is None or not biomech_file.exists():
-        return []
-
-    events_by_speed = _load_walk_events_from_biomechanics(biomech_file)
-    if not events_by_speed:
-        return []
-
-    passes_by_speed = _parse_pass_intervals_from_events(events_by_speed)
-    if not any(passes_by_speed.values()):
-        return []
-
-    available_channels = [ch for ch in audio_channels if ch in df.columns]
-    if not available_channels:
-        return []
-
-    time_s = pd.to_numeric(
-        pd.to_timedelta(df[time_col], unit="s").dt.total_seconds(),
-        errors="coerce",
-    ).to_numpy()
-    audio_data = df[available_channels].mean(axis=1).to_numpy()
-
-    valid = np.isfinite(time_s) & np.isfinite(audio_data)
-    time_s = time_s[valid]
-    audio_data = audio_data[valid]
-    if len(time_s) < 3:
-        return []
-
-    t_uni, aud_uni = _resample_uniform(time_s, audio_data, resample_hz)
-    if len(t_uni) < 3:
-        return []
-
-    heel_times = _detect_heel_strikes(
-        t_uni,
-        aud_uni,
-        resample_hz=resample_hz,
-        min_peak_height=min_peak_height,
-        peak_prominence=peak_prominence,
-        min_step_hz=min_step_hz,
-        max_step_hz=max_step_hz,
-    )
-    if len(heel_times) < 2:
-        return []
-
-    results: list[dict[str, float | bool | int | str]] = []
-
-    for speed, passes in passes_by_speed.items():
-        for p in passes:
-            start_s, end_s = float(p["start_s"]), float(p["end_s"])
-            interval = (start_s, end_s)
-            pass_result = _evaluate_walk_interval(
-                heel_times=heel_times,
-                interval=interval,
-                period_tolerance_frac=period_tolerance_frac,
-                min_coverage_frac=min_coverage_frac,
-                min_step_hz=min_step_hz,
-                max_step_hz=max_step_hz,
-            )
-            if pass_result is None:
-                continue
-
-            mask = (t_uni >= start_s) & (t_uni <= end_s)
-            bandpower_ratio = _bandpower_ratio(
-                signal=aud_uni[mask],
-                fs=resample_hz,
-                target_freq_hz=pass_result["gait_cycle_hz"],
-                bandpower_rel_width=bandpower_rel_width,
-            )
-            meets_bandpower = (
-                True if bandpower_min_ratio is None else bandpower_ratio >= bandpower_min_ratio
-            )
-            passed = bool(pass_result["passed"] and meets_bandpower)
-
-            results.append(
-                {
-                    "speed": speed,
-                    "pass_num": int(p["pass_num"]),
-                    "start_s": start_s,
-                    "end_s": end_s,
-                    "duration_s": end_s - start_s,
-                    "heel_strike_count": pass_result["heel_strike_count"],
-                    "gait_cycle_hz": pass_result["gait_cycle_hz"],
-                    "coverage_frac": pass_result["coverage_frac"],
-                    "bandpower_ratio": bandpower_ratio,
-                    "passed": passed,
-                }
-            )
-
-    return results
 
 
 def qc_audio_directory(

@@ -11,7 +11,12 @@ from src.visualization.plots import plot_syncd_data
 
 
 def main() -> None:
-    """Main entry point for visualization CLI."""
+    """Plot synchronized audio + biomechanics data from a pickle.
+
+    Accepts a path to a pickled DataFrame that includes audio channels
+    and a joint-angle column (default: `Knee Angle Z`). Saves to
+    `--save-path` when provided; otherwise displays.
+    """
     parser = argparse.ArgumentParser(
         description="Plot synchronized audio and biomechanics data"
     )

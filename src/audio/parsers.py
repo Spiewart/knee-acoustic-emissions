@@ -1,4 +1,4 @@
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 import pandas as pd
 
@@ -21,8 +21,8 @@ def find_knee_table_start(
     Raises:
         ValueError: If the knee data is not found in the metadata file
     """
-    knee_label = f"{knee[0].capitalize()} Knee"
-    table_header_index = metadata_df.index[
+    knee_label: str = f"{knee[0].capitalize()} Knee"
+    table_header_index: list[Any] = metadata_df.index[
         metadata_df.iloc[:, 0].str.contains(knee_label, na=False)
     ].tolist()
     if not table_header_index:
@@ -45,12 +45,12 @@ def extract_knee_metadata_table(
         Cleaned DataFrame with proper column names and data rows
     """
     # Get the sub-DataFrame for the desired knee (13 rows of data)
-    knee_metadata_df = metadata_df.iloc[
+    knee_metadata_df: pd.DataFrame = metadata_df.iloc[
         table_start_row: table_start_row + 13, :
     ].reset_index(drop=True)
     # Rename the columns based on the values in the first row
     knee_metadata_df.columns = knee_metadata_df.iloc[0]
-    knee_metadata_df = knee_metadata_df.drop(
+    knee_metadata_df: pd.DataFrame = knee_metadata_df.drop(
         knee_metadata_df.index[0]
     ).reset_index(drop=True)
     return knee_metadata_df
@@ -62,15 +62,19 @@ def normalize_maneuver_column(
     """Normalize the Maneuvers column by cleaning and forward-filling data.
 
     This function:
-    1. Removes "-" characters and normalizes whitespace
+    1. Removes "-" characters and normalizes whitespace in maneuver names.
     2. Forward-fills the Maneuvers column to associate each maneuver
-       with its 3 microphone rows
+       with its corresponding 3 microphone rows (mics 2-4 inherit mic 1's maneuver).
+
+    This is necessary because metadata files only label the first microphone
+    for each maneuver, leaving mics 2-4 blank. Forward-fill associates
+    those rows with their parent maneuver.
 
     Args:
-        df: DataFrame with a "Maneuvers" column to normalize
+        df: DataFrame with a "Maneuvers" column to normalize.
 
     Returns:
-        DataFrame with normalized Maneuvers column
+        DataFrame with normalized and forward-filled Maneuvers column.
     """
     # Strip any "-" characters from the "Maneuvers" column
     df["Maneuvers"] = df["Maneuvers"].str.replace(
@@ -92,14 +96,18 @@ def filter_by_maneuver(
 ) -> pd.DataFrame:
     """Filter metadata DataFrame to rows matching the scripted maneuver.
 
+    Searches the "Maneuvers" column for text matching the requested maneuver,
+    with underscores replaced by spaces (e.g., "sit_to_stand" -> "sit to stand").
+
     Args:
-        df: Metadata DataFrame with normalized Maneuvers column
-        scripted_maneuver: The maneuver to filter by
+        df: Metadata DataFrame with normalized Maneuvers column.
+        scripted_maneuver: The maneuver to filter by: "walk", "sit_to_stand", or "flexion_extension".
 
     Returns:
-        DataFrame containing only rows for the specified maneuver
+        DataFrame containing only rows for the specified maneuver.
+        Empty if no rows match.
     """
-    maneuver_search_str = scripted_maneuver.replace("_", " ")
+    maneuver_search_str: str = scripted_maneuver.replace("_", " ")
     return df.loc[
         df["Maneuvers"].str.contains(
             maneuver_search_str, case=False, na=False
@@ -112,12 +120,18 @@ def extract_microphone_positions(
 ) -> tuple[dict, dict]:
     """Extract microphone positions and notes from maneuver metadata.
 
+    Parses rows in the maneuver DataFrame to build dictionaries mapping
+    microphone numbers (1-4) to their anatomical positions (patellar/laterality)
+    and any associated notes.
+
     Args:
-        maneuver_df: DataFrame containing microphone data for a maneuver
+        maneuver_df: DataFrame containing microphone data for a maneuver.
+                    Expected to have columns: "Microphone", "Patellar Position", "Laterality", "Notes".
 
     Returns:
-        Tuple of (microphones dict, microphone_notes dict)
-        where microphones maps mic_number to MicrophonePosition
+        Tuple of (microphones dict, microphone_notes dict):
+        - microphones: Maps mic_number (int) -> MicrophonePosition object.
+        - microphone_notes: Maps mic_number (int) -> note string for mics with notes.
     """
     microphones = {}
     microphone_notes = {}
@@ -186,23 +200,23 @@ def get_acoustics_metadata(
         AcousticsMetadata: A Pydantic model instance containing the
                           validated acoustics metadata.
     """
-    metadata_df = pd.read_excel(
+    metadata_df: pd.DataFrame = pd.read_excel(
         metadata_file_path, sheet_name="Acoustic Notes", header=None
     )
 
     # Find the starting row for the desired knee's data
-    table_start_row = find_knee_table_start(metadata_df, knee)
+    table_start_row: int = find_knee_table_start(metadata_df, knee)
 
     # Extract and prepare the knee metadata table
-    knee_metadata_df = extract_knee_metadata_table(
+    knee_metadata_df: pd.DataFrame = extract_knee_metadata_table(
         metadata_df, table_start_row
     )
 
     # Normalize the Maneuvers column
-    knee_metadata_df = normalize_maneuver_column(knee_metadata_df)
+    knee_metadata_df: pd.DataFrame = normalize_maneuver_column(knee_metadata_df)
 
     # Filter to the specified maneuver
-    maneuver_metadata_df = filter_by_maneuver(
+    maneuver_metadata_df: pd.DataFrame = filter_by_maneuver(
         knee_metadata_df, scripted_maneuver
     )
 

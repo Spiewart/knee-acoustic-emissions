@@ -159,8 +159,6 @@ def _build_cli_parser() -> argparse.ArgumentParser:
 
 def _print_file_result(result: dict[str, object]) -> None:
     """Print QC results for a single file."""
-    import numpy as np
-
     from src.audio.quality_control import _group_passes_by_speed
 
     maneuver = result["maneuver"]

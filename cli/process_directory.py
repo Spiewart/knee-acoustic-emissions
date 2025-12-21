@@ -19,7 +19,17 @@ from src.orchestration.participant import (
 
 
 def main() -> None:
-    """Main entry point for command-line script."""
+    """Process participant folders or sync a single audio file.
+
+    Behavior:
+    - With `--sync-single`, treats `path` as an audio pickle and runs sync.
+    - Otherwise, `path` must be a directory containing participant folders
+        named like `#<study_id>`. Filters via `--participant`, limits with
+        `--limit`, and selects stage via `--entrypoint`.
+
+    Logs progress and summaries; exits by returning from `main()` without
+    raising to keep CLI-friendly behavior.
+    """
     parser = argparse.ArgumentParser(
         description=(
             "Process all participant directories in a folder. "
@@ -68,6 +78,16 @@ def main() -> None:
         type=str,
         default=None,
         help="Optional path to write detailed log file",
+    )
+    parser.add_argument(
+        "--entrypoint",
+        type=str,
+        choices=["bin", "sync", "cycles"],
+        default="sync",
+        help=(
+            "Stage to start processing from: 'bin' to (re)process raw audio & QC, "
+            "'sync' to synchronize audio with biomechanics & QC, 'cycles' to run movement cycle QC only."
+        ),
     )
 
     args = parser.parse_args()
@@ -136,7 +156,7 @@ def main() -> None:
     failure_count = 0
 
     for participant_dir in participants:
-        if process_participant(participant_dir):
+        if process_participant(participant_dir, entrypoint=args.entrypoint):
             success_count += 1
         else:
             failure_count += 1

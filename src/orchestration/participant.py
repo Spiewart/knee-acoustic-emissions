@@ -18,13 +18,16 @@ Usage from command line:
 from __future__ import annotations
 
 import argparse
+import json
 import logging
+import re
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal, Optional, Union, cast
+from typing import TYPE_CHECKING, Literal, Optional, cast
 
 import pandas as pd
 
 from src.biomechanics.importers import import_biomechanics_recordings
+from src.synchronization.quality_control import find_synced_files, perform_sync_qc
 from src.synchronization.sync import (
     get_audio_stomp_time,
     get_bio_end_time,
@@ -42,11 +45,25 @@ if TYPE_CHECKING:
 
 
 def parse_participant_directory(participant_dir: Path) -> None:
-    """Parses a single participant directory to validate its structure
-    and contents.
+    """Parse and process a complete participant study directory.
 
-    This function processes all maneuvers for both knees in a transactional
-    manner. If ANY maneuver fails to process, NO files will be written.
+    Orchestrates the full processing pipeline for a single participant:
+    1. Validates directory structure and required files.
+    2. Processes all maneuvers (walk, sit-to-stand, flexion-extension) for both knees.
+    3. Synchronizes audio with biomechanics using stomp detection.
+    4. Applies quality control filtering to identify clean vs. outlier cycles.
+    5. Writes synchronized data and visualization plots (transactional: all or nothing).
+
+    **Transactional behavior**: If ANY maneuver fails to process, NO output files
+    are written. This ensures datasets are either fully processed or fully skipped.
+
+    Args:
+        participant_dir: Path to the participant directory (e.g., "studies/#1011").
+                        Expected to contain "Motion Capture" and "Left Knee"/"Right Knee" subdirectories.
+
+    Raises:
+        FileNotFoundError: If required files or directory structure is missing.
+        ValueError: If file contents are invalid or synchronization fails.
     """
 
     study_id = get_study_id_from_directory(participant_dir)
@@ -107,41 +124,42 @@ def _process_knee_maneuvers(
 ) -> tuple[list[tuple[Path, pd.DataFrame]], list[tuple[Path, pd.DataFrame, tuple]]]:
     """Process all maneuvers for a specific knee (Left or Right).
 
-    Synchronizes audio and biomechanics data for all maneuvers but does NOT
-    write any files. Returns lists of data tuples for later writing and visualization.
+    Iterates through all maneuver types (walk, sit-to-stand, flexion-extension),
+    synchronizes audio and biomechanics data for each, but does NOT write files.
+    Data is collected for later transactional write.
 
     Args:
-        knee_dir: Path to the knee directory (Left Knee or Right Knee)
-        biomechanics_file: Path to the biomechanics Excel file
-        knee_side: "Left" or "Right"
+        knee_dir: Path to the knee directory (Left Knee or Right Knee).
+        biomechanics_file: Path to the biomechanics Excel file.
+        knee_side: "Left" or "Right" (used for logging and lookups).
 
     Returns:
         Tuple of:
-        - List of (output_path, synchronized_dataframe) tuples
-        - List of (output_path, audio_df, (audio_stomp, bio_left, bio_right)) tuples for visualization
+        - List of (output_path, synchronized_dataframe) tuples for file writing.
+        - List of (output_path, audio_df, bio_df, synced_df, stomp_times) tuples for visualization.
 
     Raises:
-        Exception: If any maneuver fails to process
+        Exception: If any maneuver fails to process (transactional semantics).
     """
-    maneuver_mapping: dict[str, Literal[
+    maneuver_keys: tuple[Literal[
         "walk",
         "sit_to_stand",
         "flexion_extension",
-    ]] = {
-        "Walking": "walk",
-        "Sit-Stand": "sit_to_stand",
-        "Flexion-Extension": "flexion_extension",
-    }
+    ], ...] = (
+        "walk",
+        "sit_to_stand",
+        "flexion_extension",
+    )
 
     all_synced_data: list[tuple[Path, pd.DataFrame]] = []
     all_viz_data: list[tuple[Path, pd.DataFrame, tuple]] = []
 
-    for maneuver_folder, maneuver_key in maneuver_mapping.items():
-        maneuver_dir = knee_dir / maneuver_folder
-        if not maneuver_dir.exists():
+    for maneuver_key in maneuver_keys:
+        maneuver_dir = _find_maneuver_dir(knee_dir, maneuver_key)
+        if maneuver_dir is None:
             logging.warning(
-                "Maneuver folder %s not found in %s",
-                maneuver_folder,
+                "Maneuver folder for %s not found in %s",
+                maneuver_key,
                 knee_dir,
             )
             continue
@@ -592,7 +610,7 @@ def _load_event_data(
             biomechanics_file,
             sheet_name=event_sheet_name,
         )
-        return event_meta_data
+        return _normalize_event_metadata_columns(event_meta_data)
     except ValueError as e:
         logging.error(
             "Event sheet '%s' not found in %s: %s",
@@ -601,6 +619,43 @@ def _load_event_data(
             str(e),
         )
         raise
+
+
+def _normalize_event_metadata_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Normalize biomechanics event metadata columns.
+
+    Ensures required columns are named "Event Info" and "Time (sec)" even when
+    the sheet uses slight variants such as "Event", "EventInfo", "Time(sec)", or
+    "Time". Does not drop any columns; only renames when a clear match exists.
+    """
+
+    def _norm(col: str) -> str:
+        return re.sub(r"[^a-z0-9]", "", col.lower())
+
+    norm_map = {_norm(col): col for col in df.columns}
+
+    event_col = None
+    for key in ("eventinfo", "event", "eventname"):
+        if key in norm_map:
+            event_col = norm_map[key]
+            break
+
+    time_col = None
+    for key in ("timesec", "time", "timesecs", "timesecond", "timeseconds"):
+        if key in norm_map:
+            time_col = norm_map[key]
+            break
+
+    rename_map: dict[str, str] = {}
+    if event_col and event_col != "Event Info":
+        rename_map[event_col] = "Event Info"
+    if time_col and time_col != "Time (sec)":
+        rename_map[time_col] = "Time (sec)"
+
+    if rename_map:
+        df = df.rename(columns=rename_map)
+
+    return df
 
 
 def _get_foot_from_knee_side(knee_side: str) -> str:
@@ -668,9 +723,18 @@ def check_participant_dir_for_required_files(
     motion_capture_folder_has_required_data(participant_dir/"Motion Capture")
 
 
-def dir_has_acoustic_file_legend(participant_dir: Path):
+def check_participant_dir_for_bin_stage(participant_dir: Path) -> None:
+    """Bin-stage validation: ensure raw .bin exists but do not require processed outputs."""
 
-    # Check that the directory contains and Excel file that
+    dir_has_acoustic_file_legend(participant_dir)
+    participant_dir_has_top_level_folders(participant_dir)
+    knee_folder_has_subfolder_each_maneuver(participant_dir/"Left Knee", require_processed=False)
+    knee_folder_has_subfolder_each_maneuver(participant_dir/"Right Knee", require_processed=False)
+
+
+def dir_has_acoustic_file_legend(participant_dir: Path) -> None:
+    """Verify that participant directory contains acoustic_file_legend.xlsx."""
+    # Check that the directory contains an Excel file that
     # contains "acoustic_file_legend" in the filename
     try:
         excel_files = list(
@@ -710,29 +774,28 @@ def participant_dir_has_top_level_folders(
             )
 
 
-def knee_folder_has_subfolder_each_maneuver(knee_dir: Path) -> None:
+def knee_folder_has_subfolder_each_maneuver(knee_dir: Path, require_processed: bool = True) -> None:
     """Checks that the knee directory contains subfolders for each maneuver."""
-
-    required_maneuvers = [
-        "Flexion-Extension",
-        "Sit-Stand",
-        "Walking",
-    ]
-
-    for maneuver in required_maneuvers:
-        maneuver_path = knee_dir / maneuver
-        if not maneuver_path.exists() or not maneuver_path.is_dir():
+    for maneuver_key in ("walk", "sit_to_stand", "flexion_extension"):
+        maneuver_path = _find_maneuver_dir(knee_dir, maneuver_key)
+        if maneuver_path is None:
             raise FileNotFoundError(
-                f"Required maneuver folder '{maneuver}' "
+                f"Required maneuver folder for '{maneuver_key}' "
                 f"not found in {knee_dir}"
             )
-        knee_subfolder_has_acoustic_files(maneuver_path)
+        knee_subfolder_has_acoustic_files(maneuver_path, require_processed=require_processed)
 
 
 def knee_subfolder_has_acoustic_files(
     maneuver_dir: Path,
+    *,
+    require_processed: bool = True,
 ) -> None:
-    """Checks that the maneuver directory contains acoustic files."""
+    """Checks that the maneuver directory contains acoustic files.
+
+    When require_processed=False, only requires the raw .bin file; this is used by
+    the bin-stage to allow generation of processed outputs.
+    """
 
     try:
         # Validate that a .bin file exists (raises FileNotFoundError if not)
@@ -744,6 +807,9 @@ def knee_subfolder_has_acoustic_files(
             str(e),
         )
         raise e
+
+    if not require_processed:
+        return
 
     # Get the pickle file name with "with_freq" appended
     pickle_file_name = get_audio_file_name(maneuver_dir, with_freq=True)
@@ -765,6 +831,78 @@ def knee_subfolder_has_acoustic_files(
             f"Processed audio .pkl file '{pkl_file}' "
             f"not found in {processed_audio_outputs}"
         )
+
+
+def _normalize_folder_name(name: str) -> str:
+    """Normalize maneuver folder names to compare variants."""
+    name = name.lower()
+    name = name.replace("_", "-").replace(" ", "-")
+    name = re.sub(r"-+", "-", name)
+    return name
+
+
+_MANEUVER_ALIAS_MAP: dict[str, set[str]] = {
+    "walk": {"walking", "walk"},
+    "sit_to_stand": {
+        "sit-stand",
+        "sit-to-stand",
+        "sit_to_stand",
+        "sitstand",
+        "sit to stand",
+        "sittostand",
+    },
+    "flexion_extension": {
+        "flexion-extension",
+        "flexion_extension",
+        "flexion extension",
+        "flexionextension",
+    },
+}
+
+
+def _find_maneuver_dir(knee_dir: Path, maneuver_key: str) -> Optional[Path]:
+    """Find a maneuver directory using alias matching."""
+    aliases = _MANEUVER_ALIAS_MAP.get(maneuver_key, set())
+    for child in knee_dir.iterdir():
+        if not child.is_dir():
+            continue
+        norm = _normalize_folder_name(child.name)
+        if norm in aliases:
+            return child
+    return None
+
+
+def _load_acoustics_file_names(participant_dir: Path) -> dict[tuple[str, str], str]:
+    """Load acoustics file names from the legend for each knee/maneuver.
+
+    Returns mapping: (knee, maneuver_key) -> file base name (without .bin extension).
+    Best-effort; missing entries are skipped.
+    """
+    legend_files = list(participant_dir.glob("*acoustic_file_legend*.xlsx"))
+    if not legend_files:
+        return {}
+
+    legend_path = legend_files[0]
+    mapping: dict[tuple[str, str], str] = {}
+    from src.audio.parsers import get_acoustics_metadata  # Local import to avoid cycle
+
+    for knee in ("left", "right"):
+        for maneuver_key in ("walk", "sit_to_stand", "flexion_extension"):
+            try:
+                meta = get_acoustics_metadata(
+                    metadata_file_path=str(legend_path),
+                    scripted_maneuver=maneuver_key,
+                    knee=knee,
+                )
+                # The legend stores base name without extension
+                mapping[(knee, maneuver_key)] = meta.file_name
+            except Exception as exc:  # pylint: disable=broad-except
+                logging.debug(
+                    "Legend lookup failed for %s/%s: %s", knee, maneuver_key, exc
+                )
+                continue
+
+    return mapping
 
 
 def get_audio_file_name(maneuver_dir: Path, with_freq: bool = False) -> str:
@@ -928,11 +1066,184 @@ def setup_logging(log_file: Optional[Path] = None) -> None:
         logging.getLogger().addHandler(fh)
 
 
-def process_participant(participant_dir: Path) -> bool:
+def _determine_fs_from_df_or_meta(df: pd.DataFrame, meta_json_path: Path) -> float:
+    """Determine sampling frequency from tt or meta file.
+
+    Prefers computing from `tt`; falls back to meta JSON `fs` if present.
+    """
+    try:
+        if "tt" in df.columns and df["tt"].notna().any():
+            tt = pd.to_numeric(df["tt"], errors="coerce").to_numpy()
+            diffs = pd.Series(tt).diff().dropna()
+            if not diffs.empty and float(diffs.median()) > 0:
+                return 1.0 / float(diffs.median())
+        if meta_json_path.exists():
+            with open(meta_json_path, "r", encoding="utf-8") as f:
+                meta = json.load(f)
+            fs_val = float(meta.get("fs", float("nan")))
+            if fs_val and fs_val > 0:
+                return fs_val
+    except Exception as e:  # pylint: disable=broad-except
+        logging.warning("Failed to determine fs from df/meta: %s", e)
+    raise RuntimeError("Cannot determine sampling frequency for audio")
+
+
+def _process_bin_stage(participant_dir: Path) -> list[Path]:
+    """Process all .bin files to frequency-augmented pickles.
+
+    For each knee and maneuver, reads the .bin, writes base pickle + meta
+    into `<audio_base>_outputs`, then adds instantaneous frequency and saves
+    `<audio_base>_with_freq.pkl`. Removes base `.pkl` after frequency save
+    to keep only the resultant dataframe, as requested.
+
+    Returns:
+        List of paths to `_with_freq.pkl` files produced.
+    """
+    file_name_map = _load_acoustics_file_names(participant_dir)
+    if file_name_map:
+        logging.info("Legend-derived audio base names: %s", {k: v for k, v in file_name_map.items()})
+    produced: list[Path] = []
+    for knee_side in ["Left", "Right"]:
+        knee_dir = participant_dir / f"{knee_side} Knee"
+        if not knee_dir.exists():
+            continue
+        for maneuver_key in ["walk", "sit_to_stand", "flexion_extension"]:
+            maneuver_dir = _find_maneuver_dir(knee_dir, maneuver_key)
+            if maneuver_dir is None:
+                continue
+
+            # Prefer legend-derived filename; fall back to filesystem glob if missing
+            legend_key = (knee_side.lower(), maneuver_key)
+            legend_base = file_name_map.get(legend_key)
+            audio_base_path: Path
+            if legend_base:
+                audio_base_path = maneuver_dir / legend_base
+            else:
+                try:
+                    audio_base_path = Path(get_audio_file_name(maneuver_dir, with_freq=False))
+                except Exception as e:  # pylint: disable=broad-except
+                    logging.warning("Skipping %s/%s: %s", knee_side, maneuver_key, e)
+                    continue
+
+            bin_path = audio_base_path.with_suffix(".bin")
+            if not bin_path.exists():
+                # Fallback: glob any .bin in the maneuver directory
+                alt_bin_files = list(maneuver_dir.glob("*.bin"))
+                if len(alt_bin_files) == 1:
+                    bin_path = alt_bin_files[0]
+                    audio_base_path = bin_path.with_suffix("")
+                    logging.info(
+                        "Using fallback .bin %s for %s/%s (legend expected %s)",
+                        bin_path,
+                        knee_side,
+                        maneuver_key,
+                        legend_base or "<glob>",
+                    )
+                elif len(alt_bin_files) > 1:
+                    logging.error(
+                        "Multiple .bin files found in %s; please keep only one: %s",
+                        maneuver_dir,
+                        [f.name for f in alt_bin_files],
+                    )
+                    continue
+                else:
+                    logging.error(
+                        "No .bin found in %s (expected %s.bin)",
+                        maneuver_dir,
+                        audio_base_path.name,
+                    )
+                    continue
+
+            outputs_dir = maneuver_dir / f"{audio_base_path.name}_outputs"
+            outputs_dir.mkdir(parents=True, exist_ok=True)
+
+            # Read raw .bin -> base pkl + meta (import locally to avoid circular imports)
+            try:
+                from src.audio.readers import read_audio_board_file
+                read_audio_board_file(str(bin_path), str(outputs_dir))
+            except Exception as e:  # pylint: disable=broad-except
+                logging.error("Failed reading audio board file %s: %s", bin_path, e)
+                continue
+
+            base_pkl = outputs_dir / f"{audio_base_path.name}.pkl"
+            meta_json = outputs_dir / f"{audio_base_path.name}_meta.json"
+            if not base_pkl.exists():
+                logging.error("Base pickle not found after read: %s", base_pkl)
+                continue
+
+            try:
+                df = pd.read_pickle(base_pkl)
+                fs = _determine_fs_from_df_or_meta(df, meta_json)
+                from src.audio.instantaneous_frequency import (
+                    add_instantaneous_frequency,
+                )
+                df_with_freq = add_instantaneous_frequency(df, fs)
+                out_with_freq = outputs_dir / f"{audio_base_path.name}_with_freq.pkl"
+                df_with_freq.to_pickle(out_with_freq)
+                produced.append(out_with_freq)
+                # Remove base pkl to keep only resultant dataframe
+                try:
+                    base_pkl.unlink(missing_ok=True)
+                except Exception:
+                    pass
+            except Exception as e:  # pylint: disable=broad-except
+                logging.error("Failed frequency augmentation for %s: %s", base_pkl, e)
+                continue
+    return produced
+
+
+def _run_audio_qc_for_maneuver(df: pd.DataFrame, maneuver_key: str, biomech_file: Optional[Path]) -> None:
+    """Run maneuver-specific audio QC with lenient defaults and log outcome."""
+    time_col = "tt"
+    channels = [ch for ch in ["ch1", "ch2", "ch3", "ch4"] if ch in df.columns]
+    if not channels or time_col not in df.columns:
+        logging.info("Audio QC skipped: missing time or channels")
+        return
+
+    try:
+        # Local imports to avoid circular dependency at module import time
+        from src.audio.quality_control import (
+            qc_audio_flexion_extension,
+            qc_audio_sit_to_stand,
+            qc_audio_walk,
+        )
+        if maneuver_key == "walk":
+            results = qc_audio_walk(
+                df=df,
+                time_col=time_col,
+                audio_channels=channels,
+                biomech_file=biomech_file,
+            )
+            passed_count = sum(1 for r in results if bool(r.get("passed", False)))
+            logging.info("Walk audio QC: %d pass(es) valid", passed_count)
+        elif maneuver_key == "flexion_extension":
+            passed, coverage = qc_audio_flexion_extension(
+                df=df,
+                time_col=time_col,
+                audio_channels=channels,
+                target_freq_hz=0.25,
+                tail_length_s=5.0,
+            )
+            logging.info("Flexion-Extension audio QC: passed=%s coverage=%.2f", passed, coverage)
+        elif maneuver_key == "sit_to_stand":
+            passed, coverage = qc_audio_sit_to_stand(
+                df=df,
+                time_col=time_col,
+                audio_channels=channels,
+                target_freq_hz=0.25,
+                tail_length_s=5.0,
+            )
+            logging.info("Sit-to-Stand audio QC: passed=%s coverage=%.2f", passed, coverage)
+    except Exception as e:  # pylint: disable=broad-except
+        logging.warning("Audio QC failed (%s): %s", maneuver_key, e)
+
+
+def process_participant(participant_dir: Path, entrypoint: Literal["bin", "sync", "cycles"] = "sync") -> bool:
     """Process a single participant directory.
 
     Args:
         participant_dir: Path to the participant directory
+        entrypoint: Stage to start from: 'bin' | 'sync' | 'cycles'
 
     Returns:
         True if processing succeeded, False otherwise
@@ -942,13 +1253,81 @@ def process_participant(participant_dir: Path) -> bool:
         logging.info("Processing participant #%s", study_id)
 
         # Validate directory structure
-        check_participant_dir_for_required_files(participant_dir)
+        if entrypoint == "bin":
+            check_participant_dir_for_bin_stage(participant_dir)
+        else:
+            check_participant_dir_for_required_files(participant_dir)
         logging.info(
             "Directory validation passed for participant #%s", study_id
         )
 
-        # Parse and process all maneuvers
-        parse_participant_directory(participant_dir)
+        # Biomechanics validation (best-effort) — skip for bin-only stage
+        motion_capture_dir = participant_dir / "Motion Capture"
+        bio_valid = False
+        biomechanics_file = motion_capture_dir / f"AOA{study_id}_Biomechanics_Full_Set.xlsx"
+        if entrypoint != "bin":
+            try:
+                motion_capture_folder_has_required_data(motion_capture_dir)
+                bio_valid = True
+            except Exception as e:
+                logging.error("Biomechanics validation failed: %s", e)
+
+        # BIN stage: process raw audio to frequency DF + audio QC
+        if entrypoint == "bin":
+            produced = _process_bin_stage(participant_dir)
+            logging.info("Bin stage produced %d frequency pickle(s)", len(produced))
+            # Run audio QC per maneuver using produced files
+            for pkl in produced:
+                try:
+                    df = pd.read_pickle(pkl)
+                except Exception:
+                    continue
+                # Infer maneuver from path components
+                parts = set(Path(pkl).parts)
+                if "Walking" in parts:
+                    _run_audio_qc_for_maneuver(
+                        df,
+                        "walk",
+                        biomechanics_file if (bio_valid and biomechanics_file.exists()) else None,
+                    )
+                elif "Flexion-Extension" in parts:
+                    _run_audio_qc_for_maneuver(
+                        df,
+                        "flexion_extension",
+                        biomechanics_file if (bio_valid and biomechanics_file.exists()) else None,
+                    )
+                elif "Sit-Stand" in parts:
+                    _run_audio_qc_for_maneuver(
+                        df,
+                        "sit_to_stand",
+                        biomechanics_file if (bio_valid and biomechanics_file.exists()) else None,
+                    )
+
+            # If nothing was produced, stop early so validation doesn't fail with a
+            # missing processed-file error that hides the missing .bin root cause.
+            if not produced:
+                logging.error(
+                    "Bin stage produced no outputs; verify raw .bin files exist in each maneuver folder."
+                )
+                return False
+
+        # SYNC stage: synchronize audio with biomechanics and save Synced files
+        if entrypoint in ("bin", "sync"):
+            parse_participant_directory(participant_dir)
+            logging.info(
+                "Synchronization completed for participant #%s", study_id
+            )
+
+        # CYCLES stage: run movement cycle QC on all Synced files and save outputs
+        synced_files = find_synced_files(participant_dir)
+        if entrypoint == "cycles" and not synced_files:
+            logging.warning("No synced files found to run cycle QC")
+        for synced_file in synced_files:
+            try:
+                perform_sync_qc(synced_file, create_plots=True)
+            except Exception as e:  # pylint: disable=broad-except
+                logging.warning("Cycle QC failed for %s: %s", synced_file, e)
+
         logging.info(
             "Successfully completed processing participant #%s", study_id
         )

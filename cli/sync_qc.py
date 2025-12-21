@@ -13,7 +13,16 @@ from src.synchronization.quality_control import (
 
 
 def main() -> int:
-    """Main CLI entry point."""
+    """Run QC over synced files at `path` and summarize.
+
+        - Accepts a single synced pickle, a `Synced` directory, or a participant
+            directory; finds all synced `.pkl` files under `Synced` folders.
+        - Controls acoustic energy threshold with `--threshold` and plotting
+            via `--no-plots`.
+        - Optional `--maneuver`/`--speed` override inference.
+
+        Returns 0 on success, non-zero if path missing or no synced files found.
+    """
     import argparse
 
     parser = argparse.ArgumentParser(

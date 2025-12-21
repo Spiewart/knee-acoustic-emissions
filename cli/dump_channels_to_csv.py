@@ -2,6 +2,7 @@
 
 import argparse
 import logging
+import pickle
 from pathlib import Path
 
 import pandas as pd
@@ -9,8 +10,19 @@ import pandas as pd
 from src.audio.exporters import dump_channels_to_csv
 
 
-def main():
-    """CLI for exporting channel data from a pickle file to CSV."""
+def main() -> None:
+    """Export time and audio channel data from a pickled DataFrame to CSV.
+
+    Reads a pickled pandas DataFrame containing audio data and writes a CSV file
+    with columns: tt (time), ch1, ch2, ch3, ch4. Missing channels are filled with NaN.
+    If a sibling _meta.json file exists, attempts to derive timestamps from it if
+    the 'tt' column is missing.
+
+    Exit codes:
+    - 0: Success
+    - 2: Pickle file not found
+    - 3: Unreadable pickle (corrupted or invalid format)
+    """
     p = argparse.ArgumentParser()
     p.add_argument("pkl", help="Path to pickled DataFrame")
     args = p.parse_args()
@@ -30,7 +42,7 @@ def main():
 
     try:
         df = pd.read_pickle(pkl_path)
-    except (OSError, EOFError, ValueError) as exc:
+    except (OSError, EOFError, ValueError, pickle.UnpicklingError) as exc:
         logging.exception("Failed to read pickle: %s", exc)
         raise SystemExit(3)
 

@@ -80,12 +80,36 @@ Common Commands
 - Add instantaneous frequency: `ae-add-inst-freq ./outputs/file.pkl`
 - Compute spectrograms: `ae-compute-spectrogram ./outputs/file.pkl`
 
+Edge-Case Behavior
+------------------
+
+These CLIs include explicit handling for common error cases:
+
+- **Missing pickle**:
+  - `ae-dump-channels` exits with code 2 and logs an error.
+  - `ae-plot-per-channel` exits with code 1 and logs an error.
+  - `ae-add-inst-freq` exits with code 1 and logs an error.
+- **Unreadable pickle** (corrupted or non-pickle):
+  - `ae-dump-channels` exits with code 3.
+- **Missing sampling frequency**:
+  - `ae-compute-spectrogram` returns non-zero and logs “Cannot determine sampling frequency” when `tt` and meta `fs` are absent.
+- **Meta `fs` fallback**:
+  - `ae-add-inst-freq` falls back to `*_meta.json` `fs` when `tt` is absent.
+- **No channels present**:
+  - `ae-compute-spectrogram` still writes the NPZ with `f`/`t` arrays and returns success, without creating per-channel PNGs.
+
+Firmware Warning
+----------------
+
+When reading `.bin` files with unknown firmware (`devFirmwareVersion`), `ae-read-audio` issues a warning and defaults to 16-bit, 46.875 kHz. This mirrors the original MATLAB logic and ensures consistent downstream processing.
+
 **Synchronize audio with biomechanics:**
 - Process all participants under a root path: `ae-process-directory /path/to/studies`
 - Process specific participants: `ae-process-directory /path/to/studies --participant 1011 #2024`
 - Limit the number of participants: `ae-process-directory /path/to/studies --limit 5`
 - Sync a single unsynced audio pickle: `ae-process-directory --sync-single /path/to/audio.pkl`
 - Write logs to file: `ae-process-directory /path/to/studies --log run.log`
+- Choose pipeline entrypoint (bin → sync → cycles): `ae-process-directory /path/to/studies --entrypoint bin|sync|cycles` (default: sync)
 
 **Audio QC (maneuver-specific):**
 - Single file QC: `ae-audio-qc file /path/to/audio.pkl --maneuver flexion_extension`
@@ -109,6 +133,7 @@ Common Commands
 - Process participants: `python -m cli.process_directory /path/to/studies`
 - Process specific: `python -m cli.process_directory /path/to/studies --participant 1011`
 - Single file sync: `python -m cli.process_directory --sync-single /path/to/audio.pkl`
+- Start at a specific stage: `python -m cli.process_directory /path/to/studies --entrypoint bin|sync|cycles` (default: sync)
 
 **Audio QC:**
 - Single file: `python -m cli.audio_qc file /path/to/audio.pkl --maneuver walk`

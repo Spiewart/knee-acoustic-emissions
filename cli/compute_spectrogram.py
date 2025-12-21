@@ -13,6 +13,15 @@ from src.audio.spectrogram import compute_spectrogram_from_pickle
 
 
 def main() -> int:
+    """Compute STFT spectrograms from a pickled audio DataFrame.
+
+    Loads a pickled DataFrame containing audio data and computes Short-Time
+    Fourier Transform (STFT) spectrograms for each channel (ch1-ch4).
+    Saves per-channel PNG images and compressed NPZ archive of arrays.
+
+    Returns:
+        0 on success, 1 if processing fails (missing file, sampling frequency error, etc.).
+    """
     p = argparse.ArgumentParser(description="Compute STFT spectrograms for acoustic channels")
     p.add_argument("pkl", help="Path to pickled DataFrame")
     p.add_argument("--nperseg", type=int, default=2048, help="STFT window length")
