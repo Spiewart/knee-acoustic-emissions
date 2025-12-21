@@ -43,13 +43,17 @@ def get_event_metadata(
     bio_meta: pd.DataFrame,
     event_name: str,
 ) -> pd.DataFrame:
-    """Extract event metadata for a specific event from biomechanics metadata."""
+    """Extract event metadata for a specific event from biomechanics metadata.
 
+    Strips leading and trailing whitespace from event names to handle
+    erroneous keystrokes in the data.
+    """
+    event_name_stripped = event_name.strip()
     event_metadata = bio_meta.loc[
-        bio_meta["Event Info"] == event_name
+        bio_meta["Event Info"].str.strip() == event_name_stripped
     ]
     if event_metadata.empty:
-        raise ValueError(f"No events found for: {event_name}")
+        raise ValueError(f"No events found for: {event_name_stripped}")
 
     return event_metadata
 

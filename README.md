@@ -105,7 +105,7 @@ When reading `.bin` files with unknown firmware (`devFirmwareVersion`), `ae-read
 
 **Synchronize audio with biomechanics:**
 - Process all participants under a root path: `ae-process-directory /path/to/studies`
-- Process specific participants: `ae-process-directory /path/to/studies --participant 1011 #2024`
+- Process specific participants: `ae-process-directory /path/to/studies --participant 1011 '#'2024`
 - Limit the number of participants: `ae-process-directory /path/to/studies --limit 5`
 - Sync a single unsynced audio pickle: `ae-process-directory --sync-single /path/to/audio.pkl`
 - Write logs to file: `ae-process-directory /path/to/studies --log run.log`

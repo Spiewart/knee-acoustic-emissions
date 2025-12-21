@@ -75,8 +75,10 @@ def parse_participant_directory(participant_dir: Path) -> None:
     )
 
     # Get the biomechanics file path
-    biomechanics_file = participant_dir / "Motion Capture" / (
-        f"AOA{study_id}_Biomechanics_Full_Set.xlsx"
+    motion_capture_dir = participant_dir / "Motion Capture"
+    biomechanics_file = _find_excel_file(
+        motion_capture_dir,
+        f"AOA{study_id}_Biomechanics_Full_Set",
     )
 
     # Collect all synchronized data before writing anything (transactional)
@@ -703,6 +705,27 @@ def _generate_synced_filename(
         return base
 
 
+def _find_excel_file(
+    directory: Path,
+    filename_pattern: str,
+) -> Optional[Path]:
+    """Find an Excel file (.xlsx or .xlsm) matching the given pattern.
+
+    Args:
+        directory: Directory to search in.
+        filename_pattern: Glob pattern for the filename (e.g., "*acoustic_file_legend*").
+
+    Returns:
+        Path to the Excel file, or None if not found.
+    """
+    # Try .xlsx first, then .xlsm
+    for extension in [".xlsx", ".xlsm"]:
+        files = list(directory.glob(f"{filename_pattern}{extension}"))
+        if files:
+            return files[0]
+    return None
+
+
 def get_study_id_from_directory(path: Path) -> str:
     """Extract the study ID from participant directory path.
 
@@ -733,14 +756,12 @@ def check_participant_dir_for_bin_stage(participant_dir: Path) -> None:
 
 
 def dir_has_acoustic_file_legend(participant_dir: Path) -> None:
-    """Verify that participant directory contains acoustic_file_legend.xlsx."""
+    """Verify that participant directory contains acoustic_file_legend (.xlsx or .xlsm)."""
     # Check that the directory contains an Excel file that
     # contains "acoustic_file_legend" in the filename
     try:
-        excel_files = list(
-            participant_dir.glob("*acoustic_file_legend*.xlsx")
-        )
-        if not excel_files:
+        excel_file = _find_excel_file(participant_dir, "*acoustic_file_legend*")
+        if excel_file is None:
             raise FileNotFoundError(
                 f"No Excel file with 'acoustic_file_legend' "
                 f"found in {participant_dir}"
@@ -878,11 +899,9 @@ def _load_acoustics_file_names(participant_dir: Path) -> dict[tuple[str, str], s
     Returns mapping: (knee, maneuver_key) -> file base name (without .bin extension).
     Best-effort; missing entries are skipped.
     """
-    legend_files = list(participant_dir.glob("*acoustic_file_legend*.xlsx"))
-    if not legend_files:
+    legend_path = _find_excel_file(participant_dir, "*acoustic_file_legend*")
+    if legend_path is None:
         return {}
-
-    legend_path = legend_files[0]
     mapping: dict[tuple[str, str], str] = {}
     from src.audio.parsers import get_acoustics_metadata  # Local import to avoid cycle
 
@@ -945,11 +964,14 @@ def motion_capture_folder_has_required_data(
 
     study_id = get_study_id_from_directory(motion_capture_dir.parent)
 
-    expected_filename = f"AOA{study_id}_Biomechanics_Full_Set.xlsx"
-    excel_file_path = motion_capture_dir / expected_filename
-    if not excel_file_path.exists():
+    excel_file_path = _find_excel_file(
+        motion_capture_dir,
+        f"AOA{study_id}_Biomechanics_Full_Set",
+    )
+    if excel_file_path is None:
         raise FileNotFoundError(
-            f"Required motion capture Excel file '{expected_filename}' "
+            f"Required motion capture Excel file 'AOA{study_id}_Biomechanics_Full_Set.xlsx' "
+            f"or 'AOA{study_id}_Biomechanics_Full_Set.xlsm' "
             f"not found in {motion_capture_dir}"
         )
 
@@ -982,7 +1004,7 @@ def motion_capture_folder_has_required_data(
             if pass_metadata_sheet_name not in sheet_names:
                 raise ValueError(
                     f"Required sheet '{pass_metadata_sheet_name}' not found "
-                    f"in motion capture Excel file '{expected_filename}'"
+                    f"in motion capture Excel file '{excel_file_path.name}'"
                 )
             # Check for speed data sheets
             for speed_key in maneuver_config["speeds"]:
@@ -992,7 +1014,7 @@ def motion_capture_folder_has_required_data(
                 if speed_sheet_name not in sheet_names:
                     raise ValueError(
                         f"Required sheet '{speed_sheet_name}' not found "
-                        f"in motion capture Excel file '{expected_filename}'"
+                        f"in motion capture Excel file '{excel_file_path.name}'"
                     )
         else:
             maneuver_sheet_name = (
@@ -1002,13 +1024,13 @@ def motion_capture_folder_has_required_data(
             if maneuver_sheet_name not in sheet_names:
                 raise ValueError(
                     f"Required sheet '{maneuver_sheet_name}' not found "
-                    f"in motion capture Excel file '{expected_filename}'"
+                    f"in motion capture Excel file '{excel_file_path.name}'"
                 )
             events_sheet_name = f"AOA{study_id}_{maneuver_config['events']}"
             if events_sheet_name not in sheet_names:
                 raise ValueError(
                     f"Required sheet '{events_sheet_name}' not found "
-                    f"in motion capture Excel file '{expected_filename}'"
+                    f"in motion capture Excel file '{excel_file_path.name}'"
                 )
 
 
@@ -1132,13 +1154,21 @@ def _process_bin_stage(participant_dir: Path) -> list[Path]:
                 if len(alt_bin_files) == 1:
                     bin_path = alt_bin_files[0]
                     audio_base_path = bin_path.with_suffix("")
-                    logging.info(
-                        "Using fallback .bin %s for %s/%s (legend expected %s)",
-                        bin_path,
-                        knee_side,
-                        maneuver_key,
-                        legend_base or "<glob>",
-                    )
+                    if legend_base:
+                        logging.info(
+                            "Using fallback .bin %s for %s/%s (legend expected %s.bin)",
+                            bin_path.name,
+                            knee_side,
+                            maneuver_key,
+                            legend_base,
+                        )
+                    else:
+                        logging.info(
+                            "Using .bin file %s for %s/%s (no legend entry found)",
+                            bin_path.name,
+                            knee_side,
+                            maneuver_key,
+                        )
                 elif len(alt_bin_files) > 1:
                     logging.error(
                         "Multiple .bin files found in %s; please keep only one: %s",
@@ -1264,7 +1294,10 @@ def process_participant(participant_dir: Path, entrypoint: Literal["bin", "sync"
         # Biomechanics validation (best-effort) — skip for bin-only stage
         motion_capture_dir = participant_dir / "Motion Capture"
         bio_valid = False
-        biomechanics_file = motion_capture_dir / f"AOA{study_id}_Biomechanics_Full_Set.xlsx"
+        biomechanics_file = _find_excel_file(
+            motion_capture_dir,
+            f"AOA{study_id}_Biomechanics_Full_Set",
+        )
         if entrypoint != "bin":
             try:
                 motion_capture_folder_has_required_data(motion_capture_dir)
@@ -1469,13 +1502,15 @@ def sync_single_audio_file(
 
         # Get biomechanics file
         study_id = participant_dir.name.lstrip("#")
-        biomechanics_file = participant_dir / "Motion Capture" / (
-            f"AOA{study_id}_Biomechanics_Full_Set.xlsx"
+        motion_capture_dir = participant_dir / "Motion Capture"
+        biomechanics_file = _find_excel_file(
+            motion_capture_dir,
+            f"AOA{study_id}_Biomechanics_Full_Set",
         )
 
-        if not biomechanics_file.exists():
+        if biomechanics_file is None:
             logging.error(
-                "Biomechanics file not found: %s", biomechanics_file
+                "Biomechanics file not found: %s", motion_capture_dir
             )
             return False
 
