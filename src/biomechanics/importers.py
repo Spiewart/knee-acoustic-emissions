@@ -235,6 +235,9 @@ def _extract_stomp_time(
 ) -> float:
     """Extract stomp time for a specific sync event.
 
+    Trims leading and trailing whitespace from event names to handle
+    erroneous keystrokes in the data.
+
     Args:
         event_df: DataFrame with "Event Info" and "Time (sec)" columns
         event_name: Name of the sync event (e.g., "Sync Left", "Sync Right")
@@ -245,9 +248,11 @@ def _extract_stomp_time(
     Raises:
         ValueError: If event not found in DataFrame
     """
-    event_row = event_df[event_df["Event Info"] == event_name]
+    # Strip whitespace from event_name and Event Info column for comparison
+    event_name_stripped = event_name.strip()
+    event_row = event_df[event_df["Event Info"].str.strip() == event_name_stripped]
     if event_row.empty:
-        raise ValueError(f"Event '{event_name}' not found in event data")
+        raise ValueError(f"Event '{event_name_stripped}' not found in event data")
 
     return float(event_row["Time (sec)"].iloc[0])
 
@@ -634,7 +639,7 @@ def get_non_walk_start_time(
     start_event_name = maneuver_map[maneuver]
 
     start_time_entries = event_data_df.loc[
-        event_data_df["Event Info"] == start_event_name,
+        event_data_df["Event Info"].str.strip() == start_event_name,
         "Time (sec)",
     ].dropna().tolist()
     if not start_time_entries:
@@ -677,7 +682,7 @@ def get_walking_start_time(
     start_event_name = f"Pass {pass_number} Start"
 
     start_time_entries = sub_event_data_df.loc[
-        sub_event_data_df["Event Info"] == start_event_name,
+        sub_event_data_df["Event Info"].str.strip() == start_event_name,
         "Time (sec)",
     ].dropna().tolist()
     if not start_time_entries:
