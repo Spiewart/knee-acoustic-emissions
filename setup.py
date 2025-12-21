@@ -55,6 +55,7 @@ setup(
             "ae-add-inst-freq=cli.add_instantaneous_frequency:main",
             "ae-plot-per-channel=cli.plot_per_channel:main",
             "ae-dump-channels=cli.dump_channels_to_csv:main",
+            "ae-cleanup-outputs=cli.cleanup_outputs:main",
         ],
     },
     classifiers=[

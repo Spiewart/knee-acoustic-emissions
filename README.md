@@ -123,6 +123,12 @@ When reading `.bin` files with unknown firmware (`devFirmwareVersion`), `ae-read
 **Visualization:**
 - Plot synced data: `ae-visualize synced_data.pkl --save-path output.png`
 
+**Cleanup outputs (for testing):**
+- Clean single participant: `ae-cleanup-outputs /path/to/#1011`
+- Clean entire study: `ae-cleanup-outputs /path/to/studies`
+- Dry run (preview): `ae-cleanup-outputs /path/to/studies --dry-run`
+- Limit participants: `ae-cleanup-outputs /path/to/studies --limit 5`
+
 ### Using Python Modules Directly (No installation)
 
 **Bin processing:**
