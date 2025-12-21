@@ -6,11 +6,10 @@ a threshold defined by the overall signal statistics."""
 import logging
 from datetime import timedelta
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal, Optional
+from typing import Literal, Optional
 
 import numpy as np
 import pandas as pd
-from scipy.signal import find_peaks
 
 try:
     import matplotlib.pyplot as plt
@@ -18,16 +17,12 @@ try:
 except ImportError:
     MATPLOTLIB_AVAILABLE = False
 
-if TYPE_CHECKING:
-
-    from pathlib import Path
-
 
 # Modules for getting biomechanics metadata and stomp times
 def get_biomechanics_metadata(
-    directory: "Path",
+    directory: Path,
     sheet_name: str,
-) -> "pd.DataFrame":
+) -> pd.DataFrame:
     """Load biomechanics metadata from a pickled DataFrame in the given directory."""
 
     # Find the file that contains the term 'biomechanics' in its name
@@ -45,9 +40,9 @@ def get_biomechanics_metadata(
 
 
 def get_event_metadata(
-    bio_meta: "pd.DataFrame",
+    bio_meta: pd.DataFrame,
     event_name: str,
-) -> "pd.DataFrame":
+) -> pd.DataFrame:
     """Extract event metadata for a specific event from biomechanics metadata."""
 
     event_metadata = bio_meta.loc[
@@ -60,7 +55,7 @@ def get_event_metadata(
 
 
 def get_stomp_time(
-    bio_meta: "pd.DataFrame",
+    bio_meta: pd.DataFrame,
     foot: str,
 ) -> timedelta:
     """Extract the timestamp of the foot stomp event from biomechanics metadata.
@@ -79,7 +74,7 @@ def get_stomp_time(
 
 
 def get_right_stomp_time(
-    bio_meta: "pd.DataFrame",
+    bio_meta: pd.DataFrame,
 ) -> timedelta:
     """Extract the timestamp of the right foot stomp event from biomechanics metadata.
     Sync Right is a item in the first row Event Info. The second column Time (sec)
@@ -89,7 +84,7 @@ def get_right_stomp_time(
 
 
 def get_left_stomp_time(
-    bio_meta: "pd.DataFrame",
+    bio_meta: pd.DataFrame,
 ) -> timedelta:
     """Extract the timestamp of the left foot stomp event from biomechanics metadata."""
 
@@ -99,14 +94,14 @@ def get_left_stomp_time(
 # Modules for loading pickled audio data and labeling as right or left
 # via audio metadata
 def load_audio_data(
-    audio_file: "Path",
-) -> "pd.DataFrame":
+    audio_file: Path,
+) -> pd.DataFrame:
     """Load the pickled audio data from the specified file."""
 
     return pd.read_pickle(audio_file)
 
 
-def _tt_series_to_seconds(tt_series: "pd.Series") -> np.ndarray:
+def _tt_series_to_seconds(tt_series: pd.Series) -> np.ndarray:
     """Convert a `tt` time series to seconds.
 
     Args:
@@ -123,14 +118,17 @@ def _tt_series_to_seconds(tt_series: "pd.Series") -> np.ndarray:
 def _estimate_sampling_rate(tt_seconds: np.ndarray) -> float:
     """Estimate sampling rate (Hz) from `tt` seconds array.
 
+    Computes the median time delta between consecutive timestamps and inverts
+    to get frequency. Validates that timestamps are strictly monotonic increasing.
+
     Args:
         tt_seconds: Monotonic increasing array of timestamps in seconds.
 
     Returns:
-        Sampling rate in Hz.
+        Sampling rate in Hz (1 / median_dt).
 
     Raises:
-        ValueError: If timestamps are not strictly increasing.
+        ValueError: If timestamps are not strictly increasing or median dt is non-positive.
     """
     diffs = np.diff(tt_seconds)
     dt = float(np.median(diffs))
@@ -139,66 +137,8 @@ def _estimate_sampling_rate(tt_seconds: np.ndarray) -> float:
     return 1.0 / dt
 
 
-def _find_peaks_in_window(
-    max_signal: np.ndarray,
-    tt_seconds: np.ndarray,
-    target_time_s: float,
-    sr: float,
-    window_s: float,
-    base_threshold: float,
-) -> list[int]:
-    """Find the most prominent peak within a time window around target.
-
-    Searches within `[target_time_s - window_s, target_time_s + window_s]`
-    for the most prominent peak above a dynamic threshold, preferring peaks
-    closest to the target time.
-
-    Args:
-        max_signal: Max across channels per sample.
-        tt_seconds: Timestamps in seconds.
-        target_time_s: Target time in seconds.
-        sr: Sampling rate in Hz.
-        window_s: Half-window size in seconds.
-        base_threshold: Baseline amplitude threshold.
-
-    Returns:
-        List containing the index of the strongest peak closest to target, or empty if no peak found.
-    """
-    mask = (
-        (tt_seconds >= (target_time_s - window_s)) &
-        (tt_seconds <= (target_time_s + window_s))
-    )
-    if not np.any(mask):
-        return []
-
-    sub_sig = max_signal[mask]
-    sub_tt = tt_seconds[mask]
-
-    # Use a slightly relaxed threshold inside the window
-    local_thresh = max(base_threshold * 0.9, np.mean(sub_sig) + 2.0 * np.std(sub_sig))
-
-    # Find peaks without strict distance constraint (allow peaks closer than global minimum)
-    # Use a small minimum distance to avoid noise peaks but allow legitimate stomps
-    min_distance = int(max(1, 0.05 * sr))  # 50ms minimum spacing
-    peaks, _ = find_peaks(sub_sig, height=local_thresh, distance=min_distance)
-
-    if len(peaks) == 0:
-        # As a last resort, return the max point in the window
-        peak_idx_sub = int(np.argmax(sub_sig))
-        peaks = np.array([peak_idx_sub])
-
-    # Return the peak closest in time to the target
-    peak_times = sub_tt[peaks]
-    closest_idx_in_peaks = int(np.argmin(np.abs(peak_times - target_time_s)))
-    closest_peak_sub = int(peaks[closest_idx_in_peaks])
-
-    # Map back to full array
-    full_indices = np.where(mask)[0]
-    return [int(full_indices[closest_peak_sub])]
-
-
 def get_audio_stomp_time(
-    audio_df: "pd.DataFrame",
+    audio_df: pd.DataFrame,
     recorded_knee: Optional[Literal["left", "right"]] = None,
     right_stomp_time: Optional[timedelta] = None,
     left_stomp_time: Optional[timedelta] = None,
@@ -895,9 +835,18 @@ def plot_stomp_detection(
             ax_left.tick_params(axis="y", labelcolor="black")
 
         # Add stomp markers
-        ax_left.axvline(audio_stomp_s, color="red", linestyle="--", linewidth=2, label=f"Audio Stomp ({audio_stomp_s:.1f}s)")
-        ax_left.axvline(bio_left_s, color="green", linestyle=":", linewidth=2, label=f"Bio Left ({bio_left_s:.1f}s)")
-        ax_left.axvline(bio_right_s, color="orange", linestyle=":", linewidth=2, label=f"Bio Right ({bio_right_s:.1f}s)")
+        ax_left.axvline(
+            audio_stomp_s, color="red", linestyle="--", linewidth=2,
+            label=f"Audio Stomp ({audio_stomp_s:.1f}s)"
+        )
+        ax_left.axvline(
+            bio_left_s, color="green", linestyle=":", linewidth=2,
+            label=f"Bio Left ({bio_left_s:.1f}s)"
+        )
+        ax_left.axvline(
+            bio_right_s, color="orange", linestyle=":", linewidth=2,
+            label=f"Bio Right ({bio_right_s:.1f}s)"
+        )
 
         ax_left.set_xlabel("Time (seconds)", fontsize=11)
         ax_left.set_title(f"Stomp Detection: Start to {truncate_end:.1f}s", fontsize=12, fontweight="bold")

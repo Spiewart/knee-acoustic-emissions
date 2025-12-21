@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from sync_audio_with_biomechanics import sync_audio_with_biomechanics
+from src.synchronization.sync import sync_audio_with_biomechanics
 
 
 @pytest.fixture

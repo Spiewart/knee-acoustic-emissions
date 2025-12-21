@@ -8,7 +8,10 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from parse_movement_cycles import MovementCycleExtractor, extract_movement_cycles
+from src.biomechanics.cycle_parsing import (
+    MovementCycleExtractor,
+    extract_movement_cycles,
+)
 
 
 def _make_walk_df(duration_s: float, fs: int) -> pd.DataFrame:

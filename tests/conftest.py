@@ -1,5 +1,7 @@
 """Global pytest fixtures for the test suite."""
 
+import json
+import pickle
 import sys
 from pathlib import Path
 
@@ -9,6 +11,28 @@ import pytest
 
 # Add parent directory to path for module imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
+
+
+@pytest.fixture
+def dummy_pkl_file(tmp_path):
+    """Create a dummy pickle file with a DataFrame."""
+    df = pd.DataFrame(
+        {
+            "tt": np.arange(4096) / 1000.0,
+            "ch1": np.random.randn(4096),
+            "ch2": np.random.randn(4096),
+            "ch3": np.random.randn(4096),
+            "ch4": np.random.randn(4096),
+        }
+    )
+    pkl_path = tmp_path / "test.pkl"
+    df.to_pickle(pkl_path)
+    # Create a dummy meta file
+    meta_path = tmp_path / "test_meta.json"
+    with open(meta_path, "w") as f:
+        json.dump({"fs": 1000.0}, f)
+
+    return pkl_path
 
 
 def _create_acoustic_legend(participant_dir: Path) -> Path:

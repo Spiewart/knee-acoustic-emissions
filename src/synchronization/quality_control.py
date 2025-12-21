@@ -6,7 +6,6 @@ Performs two-stage QC on synchronized recordings:
 """
 
 import logging
-from datetime import timedelta
 from pathlib import Path
 from typing import Literal, Optional
 
@@ -19,7 +18,7 @@ try:
 except ImportError:
     MATPLOTLIB_AVAILABLE = False
 
-from parse_movement_cycles import extract_movement_cycles
+from src.biomechanics.cycle_parsing import extract_movement_cycles
 
 logger = logging.getLogger(__name__)
 
@@ -51,13 +50,20 @@ class MovementCycleQC:
         self,
         cycles: list[pd.DataFrame],
     ) -> tuple[list[pd.DataFrame], list[pd.DataFrame]]:
-        """Perform two-stage QC on movement cycles.
+        """Perform two-stage QC analysis on movement cycles.
+
+        **Stage 1**: Filters cycles by acoustic signal strength using area-under-curve (AUC).
+        Cycles with acoustic energy below the threshold are flagged as outliers.
+
+        **Stage 2**: (Future) Compares clean cycles to expected acoustic-biomechanics relationships.
 
         Args:
-            cycles: List of movement cycle DataFrames from parse_movement_cycles.
+            cycles: List of movement cycle DataFrames from cycle parser.
 
         Returns:
-            Tuple of (clean_cycles, outlier_cycles)
+            Tuple of (clean_cycles, outlier_cycles):
+            - clean_cycles: Cycles passing all QC checks.
+            - outlier_cycles: Cycles flagged as problematic (low signal, etc.).
         """
         if not cycles:
             logger.warning("No cycles provided for QC analysis")
@@ -110,13 +116,17 @@ class MovementCycleQC:
         return clean_cycles, outlier_cycles
 
     def _compute_cycle_acoustic_energy(self, cycle_df: pd.DataFrame) -> float:
-        """Compute total acoustic energy for a cycle using AUC.
+        """Compute total acoustic energy for a cycle using area-under-curve (AUC).
+
+        Integrates the absolute value of acoustic signals across all available
+        channels over the cycle duration. Selects filtered channels (f_ch*) if
+        available, falling back to raw channels (ch*) if not.
 
         Args:
-            cycle_df: Single movement cycle DataFrame.
+            cycle_df: Single movement cycle DataFrame with audio data and time column 'tt'.
 
         Returns:
-            Total acoustic energy (AUC across all channels).
+            Total acoustic energy (AUC) as a float. Sums AUC across all channels.
         """
         # Select channels based on acoustic_channel preference
         if self.acoustic_channel == "filtered":
@@ -353,7 +363,7 @@ def _create_cycle_plot(
             ax1.set_title(f"Movement Cycle - Biomechanics {title_suffix}", fontsize=12)
 
         # Plot 2: Acoustic energy
-        ax2_twin = ax2.twinx()
+        ax2.twinx()
 
         # Plot acoustic channels
         acoustic_channels = ["f_ch1", "f_ch2", "f_ch3", "f_ch4"]

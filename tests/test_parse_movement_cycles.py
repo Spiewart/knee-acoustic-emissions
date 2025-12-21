@@ -4,7 +4,10 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from parse_movement_cycles import MovementCycleExtractor, extract_movement_cycles
+from src.biomechanics.cycle_parsing import (
+    MovementCycleExtractor,
+    extract_movement_cycles,
+)
 
 
 def _create_synthetic_walk_data(

@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from audio_qc import (
+from src.audio.quality_control import (
     qc_audio_directory,
     qc_audio_flexion_extension,
     qc_audio_sit_to_stand,
@@ -249,7 +249,7 @@ def test_cli_file_command_nonexistent_file(monkeypatch, capsys):
     """Test that file command prints error when file does not exist."""
     import sys
 
-    from audio_qc import _cli_main
+    from cli.audio_qc import _cli_main
 
     monkeypatch.setattr(
         sys,
@@ -268,7 +268,7 @@ def test_cli_dir_command_nonexistent_directory(monkeypatch, capsys):
     """Test that dir command prints error when directory does not exist."""
     import sys
 
-    from audio_qc import _cli_main
+    from cli.audio_qc import _cli_main
 
     monkeypatch.setattr(
         sys, "argv", ["audio_qc.py", "dir", "/nonexistent/participant/directory"]

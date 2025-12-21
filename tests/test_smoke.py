@@ -5,6 +5,9 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from cli.dump_channels import main as dump_channels_main
+from src.audio.readers import read_audio_board_file
+
 
 def _load_module_from_path(path: Path):
     spec = importlib.util.spec_from_file_location(path.stem, str(path))
@@ -68,15 +71,8 @@ def test_end_to_end_smoke(tmp_path: Path):
 
     out_dir = tmp_path
 
-    # Dynamically load and run the core reader module (from project root)
-    project_root = Path.cwd()
-
-    # Check if the project_root is acoustic_emissions_processing
-    if (project_root / "read_audio_board_file.py").exists() is False:
-        # Move down one level to the project root
-        project_root = Path(f"{project_root}/acoustic_emissions_processing")
-    reader_mod = _load_module_from_path(project_root / "read_audio_board_file.py")
-    reader_mod.read_audio_board_file(str(bin_path), str(out_dir))
+    # Use packaged reader
+    read_audio_board_file(str(bin_path), str(out_dir))
 
     base = bin_path.stem
     pkl = out_dir / (base + ".pkl")
@@ -95,11 +91,10 @@ def test_end_to_end_smoke(tmp_path: Path):
         ), "Expected channel columns in DataFrame when data present"
 
     # Load CSV exporter module and run its main() with adjusted argv
-    csv_mod = _load_module_from_path(project_root / "dump_channels_to_csv.py")
     old_argv = sys.argv[:]
     try:
-        sys.argv = ["dump_channels_to_csv.py", str(pkl)]
-        csv_mod.main()
+        sys.argv = ["dump_channels.py", str(pkl)]
+        assert dump_channels_main() == 0
     finally:
         sys.argv = old_argv
 

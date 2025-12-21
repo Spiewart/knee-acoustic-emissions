@@ -6,7 +6,6 @@ that differ by maneuver type (walking, sit-to-stand, flexion-extension).
 
 from __future__ import annotations
 
-from datetime import timedelta
 from typing import Literal, Optional
 
 import numpy as np
@@ -33,15 +32,24 @@ class MovementCycleExtractor:
     def extract_cycles(self, synced_df: pd.DataFrame) -> list[pd.DataFrame]:
         """Extract movement cycles from synchronized data.
 
+        Identifies cycle boundaries (heel strikes, standing phases, or extension extrema)
+        based on maneuver type, then segments the DataFrame into individual cycles.
+
+        Cycles are defined by:
+        - **Walk**: Successive heel strikes (local minima in knee angle).
+        - **Sit-to-stand**: Transitions between sitting and standing (standing minima).
+        - **Flexion-extension**: Cycles between flexion/extension extrema.
+
         Args:
             synced_df: DataFrame with synchronized audio and biomechanics data.
-                      Must have 'Knee Angle Z' column for joint angle.
+                      Must have 'Knee Angle Z' column for joint angle data.
 
         Returns:
-            List of DataFrames, each containing one movement cycle.
+            List of DataFrames, each containing one complete movement cycle.
+            Empty list if fewer than 2 cycle boundaries detected.
 
         Raises:
-            ValueError: If required columns missing or maneuver type unsupported.
+            ValueError: If required 'Knee Angle Z' column is missing or maneuver type is invalid.
         """
         if synced_df.empty or len(synced_df) < 2:
             return []
@@ -61,11 +69,19 @@ class MovementCycleExtractor:
     def _extract_walking_cycles(self, synced_df: pd.DataFrame) -> list[pd.DataFrame]:
         """Extract gait cycles from walking data.
 
-        A gait cycle is typically defined from one heel strike to the next heel strike
-        of the same foot. We use local minima in knee angle (Z) as a proxy for heel strike.
+        A gait cycle is defined from one heel strike to the next heel strike
+        of the same foot. Uses local minima in knee angle (Z-component) as
+        a proxy for heel strike events. Requires that start and end heel
+        strikes have similar knee extension angles to be considered valid.
+
+        Applies Savitzky-Golay smoothing to reduce noise and improve peak detection.
+
+        Args:
+            synced_df: Synchronized walking data with 'Knee Angle Z' column.
 
         Returns:
-            List of cycle DataFrames.
+            List of cycle DataFrames. Empty if fewer than 2 heel strikes detected
+            or if cycles fail angle tolerance checks.
         """
         from scipy.signal import find_peaks, savgol_filter
 
@@ -120,10 +136,16 @@ class MovementCycleExtractor:
     ) -> list[pd.DataFrame]:
         """Extract sit-to-stand cycles.
 
-        For sit-to-stand, cycles are segmented by standing peaks (extension maxima).
+        For sit-to-stand maneuvers, cycles are segmented by standing phases
+        (low knee angle minima). Each standing phase marks a transition point.
+        If no clear standing phases are found, returns the entire recording
+        as a single cycle.
+
+        Args:
+            synced_df: Synchronized sit-to-stand data with 'Knee Angle Z' column.
 
         Returns:
-            List containing one or more cycle DataFrames.
+            List of cycle DataFrames. At minimum returns entire recording as one cycle.
         """
         from scipy.signal import find_peaks
 

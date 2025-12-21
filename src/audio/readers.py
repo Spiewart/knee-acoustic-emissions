@@ -216,9 +216,7 @@ def read_audio_board_file(fname: str, output_folder: Optional[str] = None) -> No
         logging.exception("Unable to write metadata JSON file: %s", e)
         warnings.warn("Unable to write metadata JSON file")
 
-    # Aggregate 4-channel waveform plot removed (not useful). Per-channel
-    # plotting is available via `plot_per_channel.py` and spectrograms via
-    # `compute_spectrogram.py`.
+    print(f"Data saved to {fname_out} and {meta_fname}")
 
 
 def get_audio_board_file_helper(fname: str, fs: float, numBits: int) -> Optional[Dict]:

@@ -5,7 +5,7 @@ import pandas as pd
 import pytest
 from pydantic import ValidationError
 
-from models import MovementCycle, MovementCycleMetadata, SynchronizedRecording
+from src.models import MovementCycle, MovementCycleMetadata, SynchronizedRecording
 
 
 class TestMovementCycleMetadata:

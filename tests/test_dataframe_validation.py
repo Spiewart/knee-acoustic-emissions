@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from sync_audio_with_biomechanics import _validate_synchronized_dataframe
+from src.synchronization.sync import _validate_synchronized_dataframe
 
 
 def test_empty_dataframe_raises_error():

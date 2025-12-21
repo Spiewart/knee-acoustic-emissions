@@ -1,8 +1,7 @@
 import pandas as pd
 import pytest
 
-from models import BiomechanicsCycle
-from process_biomechanics import (
+from src.biomechanics.importers import (
     _construct_biomechanics_sheet_names,
     _extract_maneuver_from_uid,
     _extract_walking_pass_info,
@@ -17,6 +16,7 @@ from process_biomechanics import (
     import_biomechanics_recordings,
     normalize_recording_dataframe,
 )
+from src.models import BiomechanicsCycle
 
 
 def test_import_biomechanics(fake_participant_directory) -> None:
