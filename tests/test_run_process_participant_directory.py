@@ -100,8 +100,9 @@ class TestSyncSingleAudioFile:
             # Mock sync function
             synced_df = mock_audio_df.copy()
             synced_df["Knee Angle Z"] = 15.0
+            output_path = tmp_path / "output.pkl"
             mock_sync.return_value = (
-                Path("output.pkl"),
+                output_path,
                 synced_df,
                 (10.0, 5.0, 5.0),  # stomp times
                 pd.DataFrame(),
@@ -167,8 +168,9 @@ class TestSyncSingleAudioFile:
 
             synced_df = mock_audio_df.copy()
             synced_df["Knee Angle Z"] = 15.0
+            output_path = tmp_path / "output.pkl"
             mock_sync.return_value = (
-                Path("output.pkl"),
+                output_path,
                 synced_df,
                 (10.0, 5.0, 5.0),
                 pd.DataFrame(),
@@ -233,6 +235,8 @@ class TestSyncSingleAudioFile:
             # Make first call fail, rest succeed
             call_count = [0]
 
+            output_path = tmp_path / "output.pkl"
+
             def sync_side_effect(*args, **kwargs):
                 call_count[0] += 1
                 if call_count[0] == 1:
@@ -240,7 +244,7 @@ class TestSyncSingleAudioFile:
                 synced_df = mock_audio_df.copy()
                 synced_df["Knee Angle Z"] = 15.0
                 return (
-                    Path("output.pkl"),
+                    output_path,
                     synced_df,
                     (10.0, 5.0, 5.0),
                     pd.DataFrame(),
@@ -303,8 +307,9 @@ class TestSyncSingleAudioFile:
 
             synced_df = mock_audio_df.copy()
             synced_df["Knee Angle Z"] = 45.0
+            output_path = tmp_path / "output.pkl"
             mock_sync.return_value = (
-                Path("output.pkl"),
+                output_path,
                 synced_df,
                 (10.0, 5.0, 5.0),
                 pd.DataFrame(),
