@@ -19,6 +19,10 @@ def participant_with_outputs(tmp_path):
         knee_dir = participant_dir / f"{knee_side} Knee"
         knee_dir.mkdir()
 
+        # Create knee-level master log file
+        knee_log = knee_dir / f"knee_processing_log_1011_{knee_side}.xlsx"
+        knee_log.write_text("fake knee-level log data")
+
         # Create maneuver directories with outputs
         for maneuver in ["Walking", "Sit-Stand", "Flexion-Extension"]:
             maneuver_dir = knee_dir / maneuver
@@ -48,6 +52,9 @@ def participant_with_outputs(tmp_path):
 
             # Create stomp detection plot
             (maneuver_dir / "stomp_detection.png").write_text("fake stomp plot")
+
+            # Create processing log Excel to be removed by cleanup
+            (maneuver_dir / "processing_log_test.xlsx").write_text("fake log file")
 
             # Create .bin file that should NOT be deleted
             (maneuver_dir / "raw_audio.bin").write_text("raw binary data")
@@ -102,6 +109,69 @@ def test_cleanup_participant_outputs_removes_png_files(participant_with_outputs)
         for maneuver in ["Walking", "Sit-Stand", "Flexion-Extension"]:
             png_file = knee_dir / maneuver / "stomp_detection.png"
             assert not png_file.exists()
+
+
+def test_cleanup_participant_outputs_removes_processing_logs(participant_with_outputs):
+    """Test that cleanup removes processing log Excel files."""
+    stats = cleanup_participant_outputs(participant_with_outputs, dry_run=False)
+
+    # Should have removed maneuver-level log files (2 knees × 3 maneuvers)
+    # plus knee-level master logs (2 knees)
+    assert stats["log_files"] == 8  # 6 maneuver logs + 2 knee logs
+
+    # Verify maneuver-level logs are gone
+    for knee_side in ["Left", "Right"]:
+        knee_dir = participant_with_outputs / f"{knee_side} Knee"
+        for maneuver in ["Walking", "Sit-Stand", "Flexion-Extension"]:
+            log_file = knee_dir / maneuver / "processing_log_test.xlsx"
+            assert not log_file.exists()
+
+    # Verify knee-level master logs are gone
+    for knee_side in ["Left", "Right"]:
+        knee_dir = participant_with_outputs / f"{knee_side} Knee"
+        knee_log = knee_dir / f"knee_processing_log_1011_{knee_side}.xlsx"
+        assert not knee_log.exists()
+
+
+def test_cleanup_removes_knee_level_master_logs(participant_with_outputs):
+    """Test that cleanup specifically removes knee-level master log files."""
+    # Verify knee logs exist before cleanup
+    for knee_side in ["Left", "Right"]:
+        knee_dir = participant_with_outputs / f"{knee_side} Knee"
+        knee_log = knee_dir / f"knee_processing_log_1011_{knee_side}.xlsx"
+        assert knee_log.exists()
+
+    stats = cleanup_participant_outputs(participant_with_outputs, dry_run=False)
+
+    # Verify knee-level master logs are removed
+    for knee_side in ["Left", "Right"]:
+        knee_dir = participant_with_outputs / f"{knee_side} Knee"
+        knee_log = knee_dir / f"knee_processing_log_1011_{knee_side}.xlsx"
+        assert not knee_log.exists()
+
+    # Should be counted in log_files stat
+    assert stats["log_files"] >= 2
+
+
+def test_cleanup_dry_run_counts_logs(participant_with_outputs):
+    """Test that dry_run mode counts log files but does not delete them."""
+    stats = cleanup_participant_outputs(participant_with_outputs, dry_run=True)
+
+    # Stats should include logs to be removed (6 maneuver + 2 knee)
+    assert stats["log_files"] == 8
+
+    # But maneuver-level log files should still exist
+    for knee_side in ["Left", "Right"]:
+        knee_dir = participant_with_outputs / f"{knee_side} Knee"
+        for maneuver in ["Walking", "Sit-Stand", "Flexion-Extension"]:
+            log_file = knee_dir / maneuver / "processing_log_test.xlsx"
+            assert log_file.exists()
+
+    # And knee-level logs should still exist
+    for knee_side in ["Left", "Right"]:
+        knee_dir = participant_with_outputs / f"{knee_side} Knee"
+        knee_log = knee_dir / f"knee_processing_log_1011_{knee_side}.xlsx"
+        assert knee_log.exists()
 
 
 def test_cleanup_preserves_source_files(participant_with_outputs):

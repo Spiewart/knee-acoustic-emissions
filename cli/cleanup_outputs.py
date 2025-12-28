@@ -40,6 +40,7 @@ def cleanup_participant_outputs(
             "outputs_dirs": count,
             "synced_dirs": count,
             "png_files": count,
+            "log_files": count,
             "total_bytes": bytes_freed,
         }
     """
@@ -56,6 +57,7 @@ def cleanup_participant_outputs(
         "outputs_dirs": 0,
         "synced_dirs": 0,
         "png_files": 0,
+        "log_files": 0,
         "total_bytes": 0,
     }
 
@@ -86,6 +88,21 @@ def _cleanup_knee_directory(
     """
     if not knee_dir.is_dir():
         return
+
+    # Delete knee-level master log file (knee_processing_log_*.xlsx)
+    for knee_log_file in knee_dir.glob("knee_processing_log_*.xlsx"):
+        size = knee_log_file.stat().st_size
+        if dry_run:
+            logging.info(f"[DRY RUN] Would delete knee log: {knee_log_file} ({_format_bytes(size)})")
+        else:
+            logging.info(f"Deleting knee log file: {knee_log_file} ({_format_bytes(size)})")
+            try:
+                knee_log_file.unlink()
+            except Exception as e:
+                logging.warning(f"Failed to delete knee log {knee_log_file}: {e}")
+                continue
+        stats["log_files"] += 1
+        stats["total_bytes"] += size
 
     # Iterate through all subdirectories (maneuver folders)
     for maneuver_dir in knee_dir.iterdir():
@@ -125,6 +142,21 @@ def _cleanup_knee_directory(
                 logging.info(f"Deleting plot file: {png_file} ({_format_bytes(size)})")
                 png_file.unlink()
             stats["png_files"] += 1
+            stats["total_bytes"] += size
+
+        # Delete processing logs (Excel files)
+        for log_file in maneuver_dir.glob("processing_log_*.xlsx"):
+            size = log_file.stat().st_size
+            if dry_run:
+                logging.info(f"[DRY RUN] Would delete log: {log_file} ({_format_bytes(size)})")
+            else:
+                logging.info(f"Deleting log file: {log_file} ({_format_bytes(size)})")
+                try:
+                    log_file.unlink()
+                except Exception as e:
+                    logging.warning(f"Failed to delete log {log_file}: {e}")
+                    continue
+            stats["log_files"] += 1
             stats["total_bytes"] += size
 
 
@@ -197,6 +229,7 @@ def cleanup_study_directory(
         "outputs_dirs": 0,
         "synced_dirs": 0,
         "png_files": 0,
+        "log_files": 0,
         "total_bytes": 0,
         "participants": 0,
     }
@@ -208,6 +241,7 @@ def cleanup_study_directory(
             total_stats["outputs_dirs"] += stats["outputs_dirs"]
             total_stats["synced_dirs"] += stats["synced_dirs"]
             total_stats["png_files"] += stats["png_files"]
+            total_stats["log_files"] += stats["log_files"]
             total_stats["total_bytes"] += stats["total_bytes"]
             total_stats["participants"] += 1
         except Exception as e:  # pylint: disable=broad-except
@@ -220,6 +254,7 @@ def cleanup_study_directory(
     logging.info(f"  Outputs directories removed: {total_stats['outputs_dirs']}")
     logging.info(f"  Synced directories removed: {total_stats['synced_dirs']}")
     logging.info(f"  PNG files removed: {total_stats['png_files']}")
+    logging.info(f"  Log files removed: {total_stats['log_files']}")
     logging.info(f"  Total space freed: {_format_bytes(total_stats['total_bytes'])}")
 
 
@@ -270,6 +305,7 @@ def main() -> None:
         logging.info(f"  Outputs directories removed: {stats['outputs_dirs']}")
         logging.info(f"  Synced directories removed: {stats['synced_dirs']}")
         logging.info(f"  PNG files removed: {stats['png_files']}")
+        logging.info(f"  Log files removed: {stats['log_files']}")
         logging.info(f"  Total space freed: {_format_bytes(stats['total_bytes'])}")
     else:
         # Study directory with multiple participants
