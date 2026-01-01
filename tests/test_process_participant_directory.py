@@ -845,7 +845,7 @@ def mock_biomechanics_recordings():
     """Create mock biomechanics recordings for all speeds."""
     import numpy as np
 
-    from src.models import BiomechanicsCycle
+    from src.models import BiomechanicsRecording
 
     recordings = []
     for speed in ["slow", "normal", "fast"]:
@@ -856,10 +856,13 @@ def mock_biomechanics_recordings():
                     "Knee Angle Z": [10, 20, 30, 20, 10],
                 }
             )
-            recording = BiomechanicsCycle(
+            recording = BiomechanicsRecording(
+                study="AOA",
+                study_id=1011,
                 maneuver="walk",
                 speed=speed,
                 pass_number=pass_num,
+                biomech_file_name=f"bio_{speed}_{pass_num}.c3d",
                 data=bio_df,
             )
             recordings.append(recording)
@@ -1082,7 +1085,7 @@ class TestSyncSingleAudioFile:
         self, tmp_path, mock_audio_df
     ):
         """Non-walking maneuvers should sync all recordings without speed."""
-        from src.models import BiomechanicsCycle
+        from src.models import BiomechanicsRecording
         from src.orchestration.participant import sync_single_audio_file
 
         # Setup for sit-to-stand
@@ -1108,10 +1111,13 @@ class TestSyncSingleAudioFile:
                 "Knee Angle Z": [90, 10, 90],
             }
         )
-        recording = BiomechanicsCycle(
+        recording = BiomechanicsRecording(
+            study="AOA",
+            study_id=1011,
             maneuver="sit_to_stand",
             speed=None,
             pass_number=None,
+            biomech_file_name="sit_to_stand.c3d",
             data=bio_df,
         )
 

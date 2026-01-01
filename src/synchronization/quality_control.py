@@ -5,9 +5,12 @@ Performs two-stage QC on synchronized recordings:
 2. Compares clean cycles to expected acoustic-biomechanics relationships
 """
 
+import json
 import logging
+import re
+from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Any, Literal, NamedTuple, Optional
 
 import numpy as np
 import pandas as pd
@@ -19,8 +22,292 @@ except ImportError:
     MATPLOTLIB_AVAILABLE = False
 
 from src.biomechanics.cycle_parsing import extract_movement_cycles
+from src.models import MicrophonePosition, MovementCycleMetadata
 
 logger = logging.getLogger(__name__)
+
+
+class _CycleResult(NamedTuple):
+    cycle: pd.DataFrame
+    index: int
+    energy: float
+    qc_pass: bool
+
+
+def _find_participant_dir(path: Path) -> Optional[Path]:
+    for candidate in (path, *path.parents):
+        if candidate.name.startswith("#"):
+            return candidate
+    return None
+
+
+def _extract_study_id_from_path(path: Path) -> int:
+    participant_dir = _find_participant_dir(path)
+    if participant_dir is None:
+        return 0
+    try:
+        return int(participant_dir.name.lstrip("#"))
+    except ValueError:
+        return 0
+
+
+def _infer_knee_from_path(path: Path) -> Optional[str]:
+    for part in path.parts:
+        normalized = part.lower().replace(" ", "")
+        if normalized == "leftknee":
+            return "left"
+        if normalized == "rightknee":
+            return "right"
+    return None
+
+
+def _parse_pass_number(file_stem: str) -> Optional[int]:
+    match = re.search(r"pass(\d+)", file_stem, re.IGNORECASE)
+    if match:
+        try:
+            return int(match.group(1))
+        except ValueError:
+            return None
+    return None
+
+
+def _find_acoustics_bin(maneuver_dir: Path) -> Optional[Path]:
+    bin_files = sorted(maneuver_dir.glob("*.bin"))
+    if bin_files:
+        return bin_files[0]
+    return None
+
+
+def _parse_acoustics_filename(file_name: str) -> tuple[str, int, datetime]:
+    stem = Path(file_name).stem
+    serial = "unknown"
+    firmware_version = 0
+    recording_date = datetime.min
+
+    serial_match = re.search(r"(?:sn|serial)[-_]?([0-9]+)", stem, re.IGNORECASE)
+    if serial_match:
+        serial = serial_match.group(1)
+
+    firmware_match = re.search(r"(?:fw|firmware)[-_]?([0-9]+)", stem, re.IGNORECASE)
+    if firmware_match:
+        try:
+            firmware_version = int(firmware_match.group(1))
+        except ValueError:
+            firmware_version = 0
+
+    date_match = re.search(r"(20\d{2})[-_]?([01]\d)[-_]?([0-3]\d)", stem)
+    if date_match:
+        try:
+            recording_date = datetime(
+                int(date_match.group(1)),
+                int(date_match.group(2)),
+                int(date_match.group(3)),
+            )
+        except ValueError:
+            recording_date = datetime.min
+
+    return serial, firmware_version, recording_date
+
+
+def _default_microphones() -> dict[int, MicrophonePosition]:
+    return {
+        1: MicrophonePosition(patellar_position="Infrapatellar", laterality="Lateral"),
+        2: MicrophonePosition(patellar_position="Infrapatellar", laterality="Medial"),
+        3: MicrophonePosition(patellar_position="Suprapatellar", laterality="Medial"),
+        4: MicrophonePosition(patellar_position="Suprapatellar", laterality="Lateral"),
+    }
+
+
+def _load_microphone_metadata(
+    participant_dir: Optional[Path],
+    maneuver: str,
+    knee: str,
+) -> tuple[dict[int, MicrophonePosition], Optional[dict[int, str]]]:
+    legend_candidates: list[Path] = []
+    if participant_dir:
+        legend_candidates.extend(sorted(participant_dir.glob("*acoustic_file_legend*.xlsx")))
+        legend_candidates.extend(sorted(participant_dir.glob("*acoustic_file_legend*.xlsm")))
+
+    if legend_candidates:
+        legend_path = legend_candidates[0]
+        try:
+            # Local import to avoid circular dependency
+            from src.audio.parsers import get_acoustics_metadata
+
+            meta = get_acoustics_metadata(
+                metadata_file_path=str(legend_path),
+                scripted_maneuver=maneuver,
+                knee=knee,
+            )
+            return meta.microphones, meta.microphone_notes
+        except Exception as exc:  # pragma: no cover - best-effort fallback
+            logger.debug("Failed to read acoustic legend %s: %s", legend_path, exc)
+
+    return _default_microphones(), None
+
+
+def _find_biomech_file_name(
+    participant_dir: Optional[Path],
+    study_id: int,
+) -> str:
+    default_name = f"AOA{study_id}_Biomechanics_Full_Set.xlsx"
+    if participant_dir:
+        biomechanics_dir = participant_dir / "Biomechanics"
+        for ext in (".xlsx", ".xlsm"):
+            candidate = biomechanics_dir / f"AOA{study_id}_Biomechanics_Full_Set{ext}"
+            if candidate.exists():
+                return candidate.name
+    return default_name
+
+
+def _build_cycle_metadata_context(
+    synced_pkl_path: Path,
+    maneuver: str,
+    speed: Optional[str],
+) -> dict[str, Any]:
+    participant_dir = _find_participant_dir(synced_pkl_path)
+    study_id = _extract_study_id_from_path(synced_pkl_path)
+    knee = _infer_knee_from_path(synced_pkl_path) or "left"
+    maneuver_dir = synced_pkl_path.parent.parent
+    bin_file = _find_acoustics_bin(maneuver_dir)
+    audio_file_name = bin_file.name if bin_file else f"{synced_pkl_path.stem}.bin"
+    serial, firmware_version, recording_date = _parse_acoustics_filename(audio_file_name)
+    microphones, microphone_notes = _load_microphone_metadata(participant_dir, maneuver, knee)
+    biomech_file_name = _find_biomech_file_name(participant_dir, study_id)
+    pass_number = _parse_pass_number(synced_pkl_path.stem) if maneuver == "walk" else None
+    effective_speed = speed or ("medium" if maneuver == "walk" else None)
+    if maneuver == "walk" and pass_number is None:
+        pass_number = 0
+
+    # Load sync times from processing log
+    audio_sync_time = timedelta(0)
+    biomech_sync_left_time = timedelta(0)
+    biomech_sync_right_time = timedelta(0)
+
+    if participant_dir:
+        try:
+            from src.orchestration.processing_log import ManeuverProcessingLog
+
+            knee_label = "Left" if knee == "left" else "Right"
+            maneuver_map = {
+                "walk": "walk",
+                "sit_to_stand": "sit_to_stand",
+                "flexion_extension": "flexion_extension",
+            }
+            maneuver_key = maneuver_map.get(maneuver, maneuver)
+
+            # Construct the log filepath
+            log_path = maneuver_dir / f"processing_log_{study_id}_{knee_label}_{maneuver_key}.xlsx"
+
+            log = ManeuverProcessingLog.load_from_excel(log_path)
+
+            if log:
+                sync_file_stem = synced_pkl_path.stem
+                for rec in log.synchronization_records:
+                    if rec.sync_file_name == sync_file_stem:
+                        # audio_stomp_time is time from start of audio to sync event
+                        if rec.audio_stomp_time is not None:
+                            audio_sync_time = timedelta(seconds=rec.audio_stomp_time)
+                        # bio stomp times are times from start of biomechanics to sync event
+                        if rec.bio_left_stomp_time is not None:
+                            biomech_sync_left_time = timedelta(seconds=rec.bio_left_stomp_time)
+                        if rec.bio_right_stomp_time is not None:
+                            biomech_sync_right_time = timedelta(seconds=rec.bio_right_stomp_time)
+                        break
+        except Exception as exc:  # pragma: no cover - best-effort fallback
+            logger.debug("Failed to load sync times from processing log: %s", exc)
+
+    return {
+        "study": "AOA",
+        "study_id": study_id,
+        "knee": knee,
+        "maneuver": maneuver,
+        "speed": effective_speed,
+        "pass_number": pass_number,
+        "audio_file_name": audio_file_name,
+        "audio_serial_number": serial,
+        "audio_firmware_version": firmware_version,
+        "date_of_recording": recording_date,
+        "microphones": microphones,
+        "microphone_notes": microphone_notes,
+        "biomech_file_name": biomech_file_name,
+        "audio_sync_time": audio_sync_time,
+        "biomech_sync_left_time": biomech_sync_left_time,
+        "biomech_sync_right_time": biomech_sync_right_time,
+    }
+
+
+def _build_cycle_metadata_for_cycle(
+    result: _CycleResult,
+    context: dict[str, Any],
+) -> MovementCycleMetadata:
+    return MovementCycleMetadata(
+        id=result.index,
+        cycle_index=result.index,
+        cycle_acoustic_energy=float(result.energy),
+        cycle_qc_pass=result.qc_pass,
+        scripted_maneuver=context["maneuver"],
+        speed=context["speed"],
+        pass_number=context["pass_number"],
+        study=context["study"],
+        study_id=context["study_id"],
+        knee=context["knee"],
+        audio_file_name=context["audio_file_name"],
+        audio_serial_number=context["audio_serial_number"],
+        audio_firmware_version=context["audio_firmware_version"],
+        date_of_recording=context["date_of_recording"],
+        microphones=context["microphones"],
+        microphone_notes=context["microphone_notes"],
+        audio_sync_time=context["audio_sync_time"],
+        biomech_file_name=context["biomech_file_name"],
+        biomech_sync_left_time=context["biomech_sync_left_time"],
+        biomech_sync_right_time=context["biomech_sync_right_time"],
+    )
+
+
+def _format_timedelta_readable(td: timedelta) -> str:
+    """Format a timedelta as a human-readable string.
+
+    Args:
+        td: timedelta to format
+
+    Returns:
+        String like "16.64 s" or "0.00 s"
+    """
+    total_seconds = td.total_seconds()
+    return f"{total_seconds:.3f} s"
+
+
+def _write_cycle_metadata_json(path: Path, metadata: MovementCycleMetadata) -> None:
+    """Write cycle metadata to JSON file with readable timedelta formatting.
+
+    Args:
+        path: Path to write JSON to
+        metadata: MovementCycleMetadata to serialize
+    """
+    try:
+        payload = metadata.model_dump(mode="json")
+
+        # Format timedeltas as readable strings
+        for key in ("audio_sync_time", "biomech_sync_left_time", "biomech_sync_right_time"):
+            if key in payload and payload[key] is not None:
+                # payload[key] is ISO 8601 duration string from model_dump
+                # Parse it back to timedelta to get the value
+                iso_str = payload[key]
+                if isinstance(iso_str, str):
+                    # ISO 8601 duration format like "PT16.636824S"
+                    # Simple parsing for seconds format
+                    if iso_str.startswith("PT") and iso_str.endswith("S"):
+                        seconds_str = iso_str[2:-1]
+                        try:
+                            seconds = float(seconds_str)
+                            payload[key] = _format_timedelta_readable(timedelta(seconds=seconds))
+                        except (ValueError, AttributeError):
+                            pass
+
+        path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    except Exception as exc:  # pragma: no cover - metadata best effort
+        logger.warning("Failed to write metadata JSON %s: %s", path, exc)
 
 
 class MovementCycleQC:
@@ -219,18 +506,40 @@ def perform_sync_qc(
     )
     clean_cycles, outlier_cycles = qc.analyze_cycles(cycles)
 
+    # Compute per-cycle metadata (retain original ordering)
+    clean_ids = {id(cycle) for cycle in clean_cycles}
+    cycle_results: list[_CycleResult] = []
+    for idx, cycle_df in enumerate(cycles):
+        energy = qc._compute_cycle_acoustic_energy(cycle_df)
+        cycle_results.append(
+            _CycleResult(
+                cycle=cycle_df,
+                index=idx,
+                energy=energy,
+                qc_pass=id(cycle_df) in clean_ids,
+            )
+        )
+
+    metadata_context = _build_cycle_metadata_context(
+        synced_pkl_path=synced_pkl_path,
+        maneuver=maneuver,
+        speed=speed,
+    )
+
     # Set output directory
     base_dir = Path(output_dir) if output_dir is not None else synced_pkl_path.parent
     output_dir = base_dir / "MovementCycles"
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Save results
+    # Save results and metadata
     _save_qc_results(
         clean_cycles,
         outlier_cycles,
         output_dir,
         synced_pkl_path.stem,
         create_plots=create_plots,
+        cycle_results=cycle_results,
+        metadata_context=metadata_context,
     )
 
     logger.info(f"QC results saved to {output_dir}")
@@ -289,6 +598,9 @@ def _save_qc_results(
     output_dir: Path,
     file_stem: str,
     create_plots: bool = True,
+    *,
+    cycle_results: Optional[list[_CycleResult]] = None,
+    metadata_context: Optional[dict[str, Any]] = None,
 ) -> None:
     """Save QC results to disk.
 
@@ -298,6 +610,8 @@ def _save_qc_results(
         output_dir: Directory to save results.
         file_stem: Stem of original file (for naming).
         create_plots: Whether to create visualization plots.
+        cycle_results: Optional detailed cycle results including metadata.
+        metadata_context: Optional context for building metadata JSON files.
     """
     # Create subdirectories
     clean_dir = output_dir / "clean"
@@ -305,27 +619,62 @@ def _save_qc_results(
     clean_dir.mkdir(parents=True, exist_ok=True)
     outlier_dir.mkdir(parents=True, exist_ok=True)
 
-    # Save clean cycles
-    for i, cycle_df in enumerate(clean_cycles):
-        filename = clean_dir / f"{file_stem}_cycle_{i:03d}.pkl"
-        cycle_df.to_pickle(filename)
+    # Fallback to legacy behavior when no metadata provided
+    if cycle_results is None:
+        for i, cycle_df in enumerate(clean_cycles):
+            filename = clean_dir / f"{file_stem}_cycle_{i:03d}.pkl"
+            cycle_df.to_pickle(filename)
 
-        if create_plots and MATPLOTLIB_AVAILABLE:
-            _create_cycle_plot(cycle_df, clean_dir / f"{file_stem}_cycle_{i:03d}.png")
+            if create_plots and MATPLOTLIB_AVAILABLE:
+                _create_cycle_plot(cycle_df, clean_dir / f"{file_stem}_cycle_{i:03d}.png")
 
-    # Save outlier cycles
-    for i, cycle_df in enumerate(outlier_cycles):
-        filename = outlier_dir / f"{file_stem}_outlier_{i:03d}.pkl"
-        cycle_df.to_pickle(filename)
+        for i, cycle_df in enumerate(outlier_cycles):
+            filename = outlier_dir / f"{file_stem}_outlier_{i:03d}.pkl"
+            cycle_df.to_pickle(filename)
+
+            if create_plots and MATPLOTLIB_AVAILABLE:
+                _create_cycle_plot(
+                    cycle_df,
+                    outlier_dir / f"{file_stem}_outlier_{i:03d}.png",
+                    title_suffix="(OUTLIER)",
+                )
+
+        logger.info(f"Saved {len(clean_cycles)} clean cycles and {len(outlier_cycles)} outliers")
+        return
+
+    clean_counter = 0
+    outlier_counter = 0
+
+    for result in cycle_results:
+        is_clean = result.qc_pass
+        suffix = "cycle" if is_clean else "outlier"
+        group_index = clean_counter if is_clean else outlier_counter
+
+        if is_clean:
+            clean_counter += 1
+            target_dir = clean_dir
+        else:
+            outlier_counter += 1
+            target_dir = outlier_dir
+
+        filename = target_dir / f"{file_stem}_{suffix}_{group_index:03d}.pkl"
+        result.cycle.to_pickle(filename)
 
         if create_plots and MATPLOTLIB_AVAILABLE:
             _create_cycle_plot(
-                cycle_df,
-                outlier_dir / f"{file_stem}_outlier_{i:03d}.png",
-                title_suffix="(OUTLIER)",
+                result.cycle,
+                target_dir / f"{file_stem}_{suffix}_{group_index:03d}.png",
+                title_suffix="(OUTLIER)" if not is_clean else "",
             )
 
-    logger.info(f"Saved {len(clean_cycles)} clean cycles and {len(outlier_cycles)} outliers")
+        if metadata_context is not None:
+            try:
+                metadata = _build_cycle_metadata_for_cycle(result, metadata_context)
+                _write_cycle_metadata_json(filename.with_suffix(".json"), metadata)
+            except Exception as exc:  # pragma: no cover - metadata best effort
+                logger.warning("Failed to create metadata for %s: %s", filename, exc)
+
+    logger.info(f"Saved {clean_counter} clean cycles and {outlier_counter} outliers")
 
 
 def _create_cycle_plot(

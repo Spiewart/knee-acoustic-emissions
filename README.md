@@ -23,6 +23,16 @@ acoustic_emissions_processing/
 └── tests/                         # Test suite (230+ tests)
 ```
 
+Data Models
+-----------
+
+- **StudyMetadata**: Optional study identifiers (`id`, `study`, `study_id`) carried through all recordings.
+- **ScriptedManeuverMetadata**: Canonical `scripted_maneuver` (alias `maneuver`) plus `speed`, `pass_number`, and optional `pass_data` (walk event sheet); walk fields are enforced for models that set `require_walk_details=True`.
+- **AcousticsFileMetadata / AcousticsRecording**: Audio-specific fields (`audio_file_name`, microphones 1-4, optional QC/timestamps/notes) layered on top of scripted maneuver + knee metadata.
+- **BiomechanicsFileMetadata / BiomechanicsRecording**: Biomechanics file metadata (`biomech_file_name`, system, sync times, QC) with required walk details.
+- **SynchronizedRecording**: Combines acoustics + biomechanics metadata and data after alignment.
+- **MovementCycleMetadata / MovementCycle**: Per-cycle metadata (cycle IDs, energy, QC, notes) plus the synchronized data slice used for aggregation/DB export.
+
 See [MIGRATION.md](MIGRATION.md) for detailed module mappings.
 
 Prerequisites

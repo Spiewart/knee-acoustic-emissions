@@ -18,7 +18,7 @@ import numpy as np
 import pandas as pd
 
 if TYPE_CHECKING:
-    from src.models import BiomechanicsCycle
+    from src.models import BiomechanicsRecording
 
 logger = logging.getLogger(__name__)
 
@@ -929,7 +929,7 @@ def create_audio_record_from_data(
 
 def create_biomechanics_record_from_data(
     biomechanics_file: Path,
-    recordings: List['BiomechanicsCycle'],
+    recordings: List['BiomechanicsRecording'],
     sheet_name: Optional[str] = None,
     error: Optional[Exception] = None,
 ) -> BiomechanicsImportRecord:
@@ -937,7 +937,7 @@ def create_biomechanics_record_from_data(
 
     Args:
         biomechanics_file: Path to biomechanics Excel file
-        recordings: List of BiomechanicsCycle objects
+        recordings: List of BiomechanicsRecording objects
         sheet_name: Name of the sheet that was read
         error: Exception if import failed
 

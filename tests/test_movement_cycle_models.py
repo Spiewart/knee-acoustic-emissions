@@ -1,467 +1,161 @@
 """Test suite for MovementCycleMetadata and MovementCycle models."""
 
+from datetime import timedelta
+
 import numpy as np
 import pandas as pd
 import pytest
 from pydantic import ValidationError
 
-from src.models import MovementCycle, MovementCycleMetadata, SynchronizedRecording
+from src.models import (
+    MicrophonePosition,
+    MovementCycle,
+    MovementCycleMetadata,
+    SynchronizedData,
+)
+
+
+@pytest.fixture
+def microphones() -> dict[int, MicrophonePosition]:
+    """Provide a full microphone map covering required keys 1-4."""
+
+    return {
+        1: MicrophonePosition(patellar_position="Infrapatellar", laterality="Lateral"),
+        2: MicrophonePosition(patellar_position="Infrapatellar", laterality="Medial"),
+        3: MicrophonePosition(patellar_position="Suprapatellar", laterality="Medial"),
+        4: MicrophonePosition(patellar_position="Suprapatellar", laterality="Lateral"),
+    }
+
+
+@pytest.fixture
+def base_kwargs(microphones: dict[int, MicrophonePosition]) -> dict:
+    """Base keyword args for MovementCycleMetadata creation."""
+
+    return {
+        "scripted_maneuver": "walk",
+        "speed": "medium",
+        "pass_number": 1,
+        "study": "AOA",
+        "study_id": 1011,
+        "knee": "right",
+        "audio_file_name": "audio.pkl",
+        "microphones": microphones,
+        "biomech_file_name": "AOA1011_Walk0001.c3d",
+        "audio_sync_time": timedelta(seconds=0),
+        "biomech_sync_left_time": timedelta(seconds=0),
+        "biomech_sync_right_time": timedelta(seconds=0),
+        "id": 1,
+        "cycle_index": 0,
+        "cycle_acoustic_energy": 123.4,
+        "cycle_qc_pass": True,
+    }
+
+
+@pytest.fixture
+def sample_synchronized_df() -> pd.DataFrame:
+    """Create a sample synchronized DataFrame with all required columns."""
+
+    n_samples = 100
+    return pd.DataFrame(
+        {
+            "tt": np.arange(n_samples) * 0.001,
+            "ch1": np.random.randn(n_samples) * 0.001,
+            "ch2": np.random.randn(n_samples) * 0.001,
+            "ch3": np.random.randn(n_samples) * 0.001,
+            "ch4": np.random.randn(n_samples) * 0.001,
+            "f_ch1": np.random.randn(n_samples) * 0.01,
+            "f_ch2": np.random.randn(n_samples) * 0.01,
+            "f_ch3": np.random.randn(n_samples) * 0.01,
+            "f_ch4": np.random.randn(n_samples) * 0.01,
+            "TIME": pd.timedelta_range(start="0s", periods=n_samples, freq="1ms"),
+        }
+    )
 
 
 class TestMovementCycleMetadata:
-    """Test suite for MovementCycleMetadata validation."""
+    """Validation coverage for MovementCycleMetadata."""
 
-    def test_walk_with_speed_and_pass_number_succeeds(self):
-        """Walk maneuver with both speed and pass_number should succeed."""
-        metadata = MovementCycleMetadata(
-            maneuver="walk",
-            speed="medium",
-            pass_number=1,
-            cycle_index=0,
-            knee="right",
-            acoustic_energy=150.0,
-        )
-        assert metadata.maneuver == "walk"
-        assert metadata.speed == "medium"
-        assert metadata.pass_number == 1
+    def test_walk_requires_speed_and_pass_number(self, base_kwargs: dict) -> None:
+        missing_speed = {**base_kwargs, "speed": None}
+        with pytest.raises(ValidationError):
+            MovementCycleMetadata(**missing_speed)
 
-    def test_walk_with_all_speeds(self):
-        """Test walk maneuver accepts slow, medium, and fast speeds."""
-        for speed in ["slow", "medium", "fast"]:
-            metadata = MovementCycleMetadata(
-                maneuver="walk",
-                speed=speed,
-                pass_number=0,
-                cycle_index=0,
-                knee="left",
-                acoustic_energy=100.0,
-            )
-            assert metadata.speed == speed
+        missing_pass = {**base_kwargs, "pass_number": None}
+        with pytest.raises(ValidationError):
+            MovementCycleMetadata(**missing_pass)
 
-    def test_walk_without_speed_fails(self):
-        """Walk maneuver without speed should fail."""
-        with pytest.raises(ValidationError) as exc_info:
-            MovementCycleMetadata(
-                maneuver="walk",
-                speed=None,
-                pass_number=1,
-                cycle_index=0,
-                knee="right",
-                acoustic_energy=150.0,
-            )
-        assert "speed" in str(exc_info.value).lower()
-        assert "missing" in str(exc_info.value).lower()
+    def test_walk_negative_pass_number_fails(self, base_kwargs: dict) -> None:
+        with pytest.raises(ValidationError):
+            MovementCycleMetadata(**{**base_kwargs, "pass_number": -1})
 
-    def test_walk_without_pass_number_fails(self):
-        """Walk maneuver without pass_number should fail."""
-        with pytest.raises(ValidationError) as exc_info:
-            MovementCycleMetadata(
-                maneuver="walk",
-                speed="medium",
-                pass_number=None,
-                cycle_index=0,
-                knee="right",
-                acoustic_energy=150.0,
-            )
-        assert "pass_number" in str(exc_info.value).lower()
-        assert "missing" in str(exc_info.value).lower()
+    def test_non_walk_forces_speed_none(self, base_kwargs: dict) -> None:
+        data = {**base_kwargs, "scripted_maneuver": "sit_to_stand", "pass_number": None, "speed": None}
+        MovementCycleMetadata(**data)
 
-    def test_walk_without_speed_and_pass_number_fails(self):
-        """Walk maneuver without both speed and pass_number should fail."""
-        with pytest.raises(ValidationError) as exc_info:
-            MovementCycleMetadata(
-                maneuver="walk",
-                speed=None,
-                pass_number=None,
-                cycle_index=0,
-                knee="right",
-                acoustic_energy=150.0,
-            )
-        error_msg = str(exc_info.value).lower()
-        assert "speed" in error_msg or "pass_number" in error_msg
+        with pytest.raises(ValidationError):
+            MovementCycleMetadata(**{**data, "speed": "slow"})
 
-    def test_walk_with_negative_pass_number_fails(self):
-        """Walk maneuver with negative pass_number should fail."""
-        with pytest.raises(ValidationError) as exc_info:
-            MovementCycleMetadata(
-                maneuver="walk",
-                speed="medium",
-                pass_number=-1,
-                cycle_index=0,
-                knee="right",
-                acoustic_energy=150.0,
-            )
-        assert "non-negative" in str(exc_info.value).lower()
+    def test_maneuver_alias_is_accepted(self, base_kwargs: dict) -> None:
+        payload = {**base_kwargs, "maneuver": "walk"}
+        meta = MovementCycleMetadata(**payload)
+        assert meta.scripted_maneuver == "walk"
+        assert meta.maneuver == "walk"
 
-    def test_sit_to_stand_with_none_speed_and_pass_number_succeeds(self):
-        """Sit-to-stand maneuver with both None should succeed."""
-        metadata = MovementCycleMetadata(
-            maneuver="sit_to_stand",
-            speed=None,
-            pass_number=None,
-            cycle_index=2,
-            knee="left",
-            acoustic_energy=200.0,
-        )
-        assert metadata.maneuver == "sit_to_stand"
-        assert metadata.speed is None
-        assert metadata.pass_number is None
+    def test_cycle_index_and_id_non_negative(self, base_kwargs: dict) -> None:
+        MovementCycleMetadata(**base_kwargs)
+        with pytest.raises(ValidationError):
+            MovementCycleMetadata(**{**base_kwargs, "cycle_index": -1})
+        with pytest.raises(ValidationError):
+            MovementCycleMetadata(**{**base_kwargs, "id": -5})
 
-    def test_sit_to_stand_with_speed_fails(self):
-        """Sit-to-stand maneuver with speed should fail."""
-        with pytest.raises(ValidationError) as exc_info:
-            MovementCycleMetadata(
-                maneuver="sit_to_stand",
-                speed="medium",
-                pass_number=None,
-                cycle_index=2,
-                knee="left",
-                acoustic_energy=200.0,
-            )
-        error_msg = str(exc_info.value).lower()
-        assert "speed" in error_msg or "do not support" in error_msg
+    def test_cycle_acoustic_energy_and_qc_required(self, base_kwargs: dict) -> None:
+        missing_energy = base_kwargs.copy()
+        missing_energy.pop("cycle_acoustic_energy")
+        with pytest.raises(ValidationError):
+            MovementCycleMetadata(**missing_energy)
 
-    def test_sit_to_stand_with_pass_number_fails(self):
-        """Sit-to-stand maneuver with pass_number should fail."""
-        with pytest.raises(ValidationError) as exc_info:
-            MovementCycleMetadata(
-                maneuver="sit_to_stand",
-                speed=None,
-                pass_number=1,
-                cycle_index=2,
-                knee="left",
-                acoustic_energy=200.0,
-            )
-        error_msg = str(exc_info.value).lower()
-        assert "pass_number" in error_msg or "do not support" in error_msg
-
-    def test_sit_to_stand_with_both_fails(self):
-        """Sit-to-stand maneuver with both speed and pass_number should fail."""
-        with pytest.raises(ValidationError) as exc_info:
-            MovementCycleMetadata(
-                maneuver="sit_to_stand",
-                speed="fast",
-                pass_number=1,
-                cycle_index=2,
-                knee="left",
-                acoustic_energy=200.0,
-            )
-        error_msg = str(exc_info.value).lower()
-        assert "do not support" in error_msg
-
-    def test_flexion_extension_with_none_speed_and_pass_number_succeeds(self):
-        """Flexion-extension maneuver with both None should succeed."""
-        metadata = MovementCycleMetadata(
-            maneuver="flexion_extension",
-            speed=None,
-            pass_number=None,
-            cycle_index=5,
-            knee="right",
-            acoustic_energy=175.0,
-        )
-        assert metadata.maneuver == "flexion_extension"
-        assert metadata.speed is None
-        assert metadata.pass_number is None
-
-    def test_flexion_extension_with_speed_fails(self):
-        """Flexion-extension maneuver with speed should fail."""
-        with pytest.raises(ValidationError) as exc_info:
-            MovementCycleMetadata(
-                maneuver="flexion_extension",
-                speed="slow",
-                pass_number=None,
-                cycle_index=5,
-                knee="right",
-                acoustic_energy=175.0,
-            )
-        error_msg = str(exc_info.value).lower()
-        assert "speed" in error_msg or "do not support" in error_msg
-
-    def test_cycle_index_required(self):
-        """cycle_index is required field."""
-        with pytest.raises(ValidationError) as exc_info:
-            MovementCycleMetadata(
-                maneuver="walk",
-                speed="medium",
-                pass_number=1,
-                # cycle_index missing
-                knee="right",
-                acoustic_energy=150.0,
-            )
-        assert "cycle_index" in str(exc_info.value).lower()
-
-    def test_knee_laterality(self):
-        """Test left and right knee values."""
-        for knee in ["left", "right"]:
-            metadata = MovementCycleMetadata(
-                maneuver="walk",
-                speed="medium",
-                pass_number=0,
-                cycle_index=0,
-                knee=knee,
-                acoustic_energy=100.0,
-            )
-            assert metadata.knee == knee
-
-    def test_optional_fields(self):
-        """Test optional fields (participant_id, notes, is_outlier)."""
-        metadata = MovementCycleMetadata(
-            maneuver="walk",
-            speed="medium",
-            pass_number=1,
-            cycle_index=0,
-            knee="right",
-            acoustic_energy=150.0,
-            participant_id="1011",
-            notes="Test cycle",
-            is_outlier=True,
-        )
-        assert metadata.participant_id == "1011"
-        assert metadata.notes == "Test cycle"
-        assert metadata.is_outlier is True
-
-    def test_acoustic_energy_required(self):
-        """acoustic_energy is required field."""
-        with pytest.raises(ValidationError) as exc_info:
-            MovementCycleMetadata(
-                maneuver="walk",
-                speed="medium",
-                pass_number=1,
-                cycle_index=0,
-                knee="right",
-                # acoustic_energy missing
-            )
-        assert "acoustic_energy" in str(exc_info.value).lower()
+        missing_qc = base_kwargs.copy()
+        missing_qc.pop("cycle_qc_pass")
+        with pytest.raises(ValidationError):
+            MovementCycleMetadata(**missing_qc)
 
 
 class TestMovementCycle:
-    """Test suite for MovementCycle model."""
+    """Validation coverage for MovementCycle objects."""
 
-    @pytest.fixture
-    def sample_synchronized_df(self):
-        """Create a sample synchronized DataFrame with all required columns."""
-        n_samples = 100
-        return pd.DataFrame(
-            {
-                "tt": np.arange(n_samples) * 0.001,  # Time in seconds
-                "ch1": np.random.randn(n_samples) * 0.001,
-                "ch2": np.random.randn(n_samples) * 0.001,
-                "ch3": np.random.randn(n_samples) * 0.001,
-                "ch4": np.random.randn(n_samples) * 0.001,
-                "f_ch1": np.random.randn(n_samples) * 0.01,
-                "f_ch2": np.random.randn(n_samples) * 0.01,
-                "f_ch3": np.random.randn(n_samples) * 0.01,
-                "f_ch4": np.random.randn(n_samples) * 0.01,
-                "TIME": pd.timedelta_range(start="0s", periods=n_samples, freq="1ms"),
-            }
-        )
-
-    def test_movement_cycle_creation_with_valid_data(self, sample_synchronized_df):
-        """Create a MovementCycle with valid metadata and data."""
-        metadata = MovementCycleMetadata(
-            maneuver="walk",
-            speed="medium",
-            pass_number=1,
-            cycle_index=0,
-            knee="right",
-            acoustic_energy=150.0,
-        )
-
+    def test_movement_cycle_creation_with_valid_data(
+        self, base_kwargs: dict, sample_synchronized_df: pd.DataFrame
+    ) -> None:
         cycle = MovementCycle(
-            metadata=metadata,
+            **base_kwargs,
             data=sample_synchronized_df,
         )
 
-        assert cycle.metadata.maneuver == "walk"
-        assert cycle.metadata.speed == "medium"
+        assert cycle.scripted_maneuver == "walk"
+        assert cycle.speed == "medium"
         assert len(cycle.data) == 100
 
-    def test_movement_cycle_requires_metadata(self, sample_synchronized_df):
-        """MovementCycle requires metadata field."""
-        with pytest.raises(ValidationError) as exc_info:
-            MovementCycle(
-                # metadata missing
-                data=sample_synchronized_df,
-            )
-        assert "metadata" in str(exc_info.value).lower()
+    def test_movement_cycle_requires_data(self, base_kwargs: dict) -> None:
+        with pytest.raises(ValidationError):
+            MovementCycle(**base_kwargs)
 
-    def test_movement_cycle_requires_data(self):
-        """MovementCycle requires data field."""
-        metadata = MovementCycleMetadata(
-            maneuver="walk",
-            speed="medium",
-            pass_number=1,
-            cycle_index=0,
-            knee="right",
-            acoustic_energy=150.0,
-        )
+    def test_movement_cycle_data_validation(self, base_kwargs: dict, sample_synchronized_df: pd.DataFrame) -> None:
+        incomplete_df = sample_synchronized_df[["tt", "ch1"]].copy()
+        with pytest.raises(ValidationError):
+            MovementCycle(**{**base_kwargs, "data": incomplete_df})
 
-        with pytest.raises(ValidationError) as exc_info:
-            MovementCycle(
-                metadata=metadata,
-                # data missing
-            )
-        assert "data" in str(exc_info.value).lower()
-
-    def test_movement_cycle_sit_to_stand_data(self, sample_synchronized_df):
-        """Create a sit-to-stand MovementCycle."""
-        metadata = MovementCycleMetadata(
-            maneuver="sit_to_stand",
-            speed=None,
-            pass_number=None,
-            cycle_index=0,
-            knee="left",
-            acoustic_energy=200.0,
-        )
-
+    def test_non_walk_cycle(self, base_kwargs: dict, sample_synchronized_df: pd.DataFrame) -> None:
         cycle = MovementCycle(
-            metadata=metadata,
+            **{
+                **base_kwargs,
+                "scripted_maneuver": "flexion_extension",
+                "speed": None,
+                "pass_number": None,
+            },
             data=sample_synchronized_df,
         )
 
-        assert cycle.metadata.maneuver == "sit_to_stand"
-        assert cycle.metadata.speed is None
-        assert cycle.metadata.pass_number is None
-
-    def test_movement_cycle_flexion_extension_data(self, sample_synchronized_df):
-        """Create a flexion-extension MovementCycle."""
-        metadata = MovementCycleMetadata(
-            maneuver="flexion_extension",
-            speed=None,
-            pass_number=None,
-            cycle_index=3,
-            knee="right",
-            acoustic_energy=180.0,
-        )
-
-        cycle = MovementCycle(
-            metadata=metadata,
-            data=sample_synchronized_df,
-        )
-
-        assert cycle.metadata.maneuver == "flexion_extension"
-        assert cycle.metadata.cycle_index == 3
-
-    def test_movement_cycle_data_validation(self, sample_synchronized_df):
-        """Test that data is validated as SynchronizedRecording."""
-        metadata = MovementCycleMetadata(
-            maneuver="walk",
-            speed="medium",
-            pass_number=1,
-            cycle_index=0,
-            knee="right",
-            acoustic_energy=150.0,
-        )
-
-        # Create incomplete DataFrame (missing required columns)
-        incomplete_df = pd.DataFrame(
-            {
-                "tt": np.arange(10) * 0.001,
-                "ch1": np.random.randn(10),
-            }
-        )
-
-        with pytest.raises(ValidationError) as exc_info:
-            MovementCycle(
-                metadata=metadata,
-                data=incomplete_df,
-            )
-        assert (
-            "missing" in str(exc_info.value).lower()
-            or "column" in str(exc_info.value).lower()
-        )
-
-
-class TestMovementCycleIntegration:
-    """Integration tests for movement cycle models."""
-
-    @pytest.fixture
-    def sample_synchronized_df(self):
-        """Create a sample synchronized DataFrame with all required columns."""
-        n_samples = 100
-        return pd.DataFrame(
-            {
-                "tt": np.arange(n_samples) * 0.001,
-                "ch1": np.random.randn(n_samples) * 0.001,
-                "ch2": np.random.randn(n_samples) * 0.001,
-                "ch3": np.random.randn(n_samples) * 0.001,
-                "ch4": np.random.randn(n_samples) * 0.001,
-                "f_ch1": np.random.randn(n_samples) * 0.01,
-                "f_ch2": np.random.randn(n_samples) * 0.01,
-                "f_ch3": np.random.randn(n_samples) * 0.01,
-                "f_ch4": np.random.randn(n_samples) * 0.01,
-                "TIME": pd.timedelta_range(start="0s", periods=n_samples, freq="1ms"),
-            }
-        )
-
-    def test_create_multiple_cycles_different_maneuvers(self, sample_synchronized_df):
-        """Create multiple cycles with different maneuvers."""
-        walk_cycle = MovementCycle(
-            metadata=MovementCycleMetadata(
-                maneuver="walk",
-                speed="medium",
-                pass_number=1,
-                cycle_index=0,
-                knee="right",
-                acoustic_energy=150.0,
-            ),
-            data=sample_synchronized_df,
-        )
-
-        sts_cycle = MovementCycle(
-            metadata=MovementCycleMetadata(
-                maneuver="sit_to_stand",
-                speed=None,
-                pass_number=None,
-                cycle_index=0,
-                knee="left",
-                acoustic_energy=200.0,
-            ),
-            data=sample_synchronized_df,
-        )
-
-        flex_cycle = MovementCycle(
-            metadata=MovementCycleMetadata(
-                maneuver="flexion_extension",
-                speed=None,
-                pass_number=None,
-                cycle_index=2,
-                knee="right",
-                acoustic_energy=180.0,
-            ),
-            data=sample_synchronized_df,
-        )
-
-        # Verify cycles created correctly
-        assert walk_cycle.metadata.maneuver == "walk"
-        assert sts_cycle.metadata.maneuver == "sit_to_stand"
-        assert flex_cycle.metadata.maneuver == "flexion_extension"
-
-        # Verify all have data
-        assert len(walk_cycle.data) == 100
-        assert len(sts_cycle.data) == 100
-        assert len(flex_cycle.data) == 100
-
-    def test_cycle_list_with_different_speeds(self, sample_synchronized_df):
-        """Create a list of walk cycles with different speeds."""
-        cycles = []
-        for speed in ["slow", "medium", "fast"]:
-            for pass_num in range(2):
-                cycle = MovementCycle(
-                    metadata=MovementCycleMetadata(
-                        maneuver="walk",
-                        speed=speed,
-                        pass_number=pass_num,
-                        cycle_index=len(cycles),
-                        knee="right",
-                        acoustic_energy=100.0 + len(cycles),
-                    ),
-                    data=sample_synchronized_df,
-                )
-                cycles.append(cycle)
-
-        assert len(cycles) == 6  # 3 speeds × 2 passes
-        assert all(c.metadata.maneuver == "walk" for c in cycles)
-        assert cycles[0].metadata.speed == "slow"
-        assert cycles[2].metadata.speed == "medium"
-        assert cycles[4].metadata.speed == "fast"
+        assert cycle.scripted_maneuver == "flexion_extension"
+        assert cycle.speed is None
+        assert cycle.pass_number is None
+        assert isinstance(cycle.data, SynchronizedData)

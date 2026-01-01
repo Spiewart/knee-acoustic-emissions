@@ -65,19 +65,19 @@ The project uses the following dependencies:
 Pydantic models for data validation:
 
 - **`MicrophonePosition`**: Microphone placement metadata (patellar position, laterality)
-- **`AcousticsMetadata`**: Audio recording metadata with conditional validation
+- **`AcousticsFileMetadata`**: Audio recording metadata with conditional validation
   - `scripted_maneuver`: "walk", "sit_to_stand", or "flexion_extension"
   - `speed`: "slow", "medium", or "fast" (only for walk)
   - `knee`: "left" or "right"
   - Microphone dictionary with keys 1-4
 
-- **`BiomechanicsMetadata`**: Motion capture recording metadata with **conditional validation rules**:
+- **`BiomechanicsFileMetadata`**: Motion capture recording metadata with **conditional validation rules**:
   - **When `maneuver="walk"`**: `pass_number` (int, required) and `speed` (required, one of "slow", "normal", "fast")
   - **When `maneuver="sit_to_stand"` or `"flexion_extension"`**: `pass_number` and `speed` must be `None`
 
-- **`BiomechanicsCycle`**: Biomechanics data + metadata
-- **`AcousticsCycle`**: Audio data + metadata
-- **`SynchronizedCycle`**: Combined audio + biomechanics data
+- **`BiomechanicsRecording`**: Biomechanics data + metadata
+- **`AcousticsRecording`**: Audio data + metadata
+- **`SynchronizedRecording`**: Combined audio + biomechanics data
 
 ### Processing Modules
 
@@ -175,9 +175,9 @@ Avoid running `pytest` directly in the terminal as it often hangs.
 
 ## Important Implementation Details
 
-### BiomechanicsMetadata Validation
+### BiomechanicsFileMetadata Validation
 
-The `BiomechanicsMetadata` class enforces conditional validation:
+The `BiomechanicsFileMetadata` class enforces conditional validation:
 
 ```python
 @field_validator('speed')
@@ -220,18 +220,18 @@ Where:
 
 ### DataFrame Columns
 
-**Audio Data (AcousticsRecording)**:
+**Audio Data (AcousticsData)**:
 
 - `tt`: time vector
 - `ch1`, `ch2`, `ch3`, `ch4`: audio channels
 - `f_ch1`, `f_ch2`, `f_ch3`, `f_ch4`: instantaneous frequency
 
-**Biomechanics Data (BiomechanicsRecording)**:
+**Biomechanics Data (BiomechanicsData)**:
 
 - `TIME`: time vector (timedelta, relative to start)
 - Various motion capture columns (joint angles, positions, etc.)
 
-**Synchronized Data (SynchronizedRecording)**:
+**Synchronized Data (SynchronizedData)**:
 
 - All columns from both audio and biomechanics
 
@@ -250,7 +250,7 @@ Where:
 ### Debugging Data Issues
 
 1. Check that DataFrames have required columns (validated in `__get_pydantic_core_schema__`)
-2. Verify conditional validation in BiomechanicsMetadata (maneuver → speed/pass_number rules)
+2. Verify conditional validation in BiomechanicsFileMetadata (maneuver → speed/pass_number rules)
 3. Ensure TIME column is properly relative (not absolute timestamps)
 4. Check for proper handling of multiple passes/speeds in walking data
 
@@ -271,7 +271,7 @@ Currently, only "walk" maneuvers are fully supported. To extend:
 | Issue | Solution |
 |-------|----------|
 | Import errors for dependencies | Ensure venv activated and `pip install -r requirements.txt` run |
-| Pydantic validation errors | Check field types and conditional rules in `BiomechanicsMetadata` |
+| Pydantic validation errors | Check field types and conditional rules in `BiomechanicsFileMetadata` |
 | Test failures | Run `pytest tests/test_smoke.py` first to check end-to-end functionality |
 | DataFrame column missing | Verify data source has required columns before DataFrame creation |
 | Time synchronization issues | Check foot stomp detection in biomechanics data |
