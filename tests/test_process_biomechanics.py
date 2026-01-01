@@ -16,7 +16,7 @@ from src.biomechanics.importers import (
     import_biomechanics_recordings,
     normalize_recording_dataframe,
 )
-from src.models import BiomechanicsCycle
+from src.models import BiomechanicsRecording
 
 
 def test_import_biomechanics(fake_participant_directory) -> None:
@@ -39,7 +39,7 @@ def test_import_biomechanics(fake_participant_directory) -> None:
     assert len(biomechanics_recordings) == 2
 
     for recording in biomechanics_recordings:
-        assert isinstance(recording, BiomechanicsCycle)
+        assert isinstance(recording, BiomechanicsRecording)
         assert recording.maneuver
         maneuvers = ["walk", "sit_to_stand", "flexion_extension"]
         assert recording.maneuver in maneuvers
@@ -440,7 +440,7 @@ def test_import_biomechanics_sit_to_stand(fake_participant_directory) -> None:
     assert len(biomechanics_recordings) == 1
 
     recording = biomechanics_recordings[0]
-    assert isinstance(recording, BiomechanicsCycle)
+    assert isinstance(recording, BiomechanicsRecording)
     assert recording.maneuver == "sit_to_stand"
     assert recording.speed is None
     assert recording.pass_number is None
@@ -467,7 +467,7 @@ def test_import_biomechanics_flexion_extension(
     assert len(biomechanics_recordings) == 1
 
     recording = biomechanics_recordings[0]
-    assert isinstance(recording, BiomechanicsCycle)
+    assert isinstance(recording, BiomechanicsRecording)
     assert recording.maneuver == "flexion_extension"
     assert recording.speed is None
     assert recording.pass_number is None

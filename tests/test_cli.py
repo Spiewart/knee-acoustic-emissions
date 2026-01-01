@@ -2,6 +2,7 @@
 
 import json
 import sys
+import warnings
 from pathlib import Path
 from unittest.mock import patch
 
@@ -32,10 +33,16 @@ def test_ae_read_audio(tmp_path, capsys):
     # Write one block of data
     bin_file.write_bytes(bytearray(512))
 
-    with patch.object(
-        sys, "argv", ["ae-read-audio", str(bin_file), "--out", str(tmp_path)]
-    ):
-        read_audio_main()
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message="Unrecognized firmware version! Using default number of bits and sample rate",
+            category=UserWarning,
+        )
+        with patch.object(
+            sys, "argv", ["ae-read-audio", str(bin_file), "--out", str(tmp_path)]
+        ):
+            read_audio_main()
 
     captured = capsys.readouterr()
     assert "Data saved to" in captured.out

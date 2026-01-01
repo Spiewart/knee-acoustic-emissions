@@ -1,8 +1,21 @@
-from typing import Annotated, Literal, Optional, Self
+from datetime import datetime, timedelta
+from typing import Annotated, ClassVar, Literal, Optional
+
+try:  # Python <3.11 compatibility
+    from typing import Self
+except ImportError:  # pragma: no cover - fallback for older runtimes
+    from typing_extensions import Self
 
 import pandas as pd
-from pydantic import BaseModel, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from pydantic_core import CoreSchema, PydanticCustomError, core_schema
+
+
+class StudyMetadata(BaseModel):
+    """Metadata for an acoustic emission study."""
+
+    study: str = Field(..., description="Study name/code")
+    study_id: int = Field(..., description="Numeric study identifier")
 
 
 class MicrophonePosition(BaseModel):
@@ -12,31 +25,147 @@ class MicrophonePosition(BaseModel):
     laterality: Literal["Medial", "Lateral"]
 
 
-class AcousticsMetadata(BaseModel):
+class KneeMetadata(BaseModel):
+    """Metadata for a knee in an acoustic emission study."""
+
+    knee: Literal["left", "right"]
+
+
+class PassData(pd.DataFrame):
+    """Pass/event metadata exported from biomechanics processing."""
+
+    @classmethod
+    def __get_pydantic_core_schema__(
+        cls, _source_type, _handler
+    ) -> CoreSchema:
+        def validate_dataframe(value: pd.DataFrame) -> Self:
+            if not isinstance(value, pd.DataFrame):
+                raise PydanticCustomError(
+                    "not_dataframe", "Value is not a pandas DataFrame"
+                )
+
+            required_columns: list[str] = ["Event Info", "Time (sec)"]
+            if not all(col in value.columns for col in required_columns):
+                missing: set[str] = set(required_columns) - set(value.columns)
+                raise PydanticCustomError(
+                    "missing_column",
+                    "PassData DataFrame is missing required columns: "
+                    f"{', '.join(missing)}",
+                )
+            return cls(value)
+
+        return core_schema.no_info_after_validator_function(
+            validate_dataframe,
+            core_schema.any_schema(),
+        )
+
+
+class ScriptedManeuverMetadata(BaseModel):
+    """Common fields for a scripted maneuver.
+
+    `scripted_maneuver` is the canonical field name, but `maneuver` is
+    accepted as an alias for backwards compatibility.
+    """
+
+    model_config = ConfigDict(populate_by_name=True)
+    require_walk_details: ClassVar[bool] = False
+
+    scripted_maneuver: Literal["walk", "sit_to_stand", "flexion_extension"] = Field(
+        alias="maneuver"
+    )
+    speed: Optional[Literal["slow", "normal", "fast", "medium"]] = None
+    pass_number: Optional[int] = None
+    pass_data: Optional[PassData] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def harmonize_maneuver_alias(cls, values: dict) -> dict:
+        """Allow both `scripted_maneuver` and its alias `maneuver`.
+
+        If both are provided they must agree; otherwise fill the canonical
+        `scripted_maneuver` field from the alias.
+        """
+        alias_val = values.get("maneuver")
+        canonical_val = values.get("scripted_maneuver")
+        if alias_val is not None and canonical_val is not None and alias_val != canonical_val:
+            raise ValueError("maneuver and scripted_maneuver must match if both are provided")
+        if canonical_val is None and alias_val is not None:
+            values["scripted_maneuver"] = alias_val
+        return values
+
+    @property
+    def maneuver(self) -> Literal["walk", "sit_to_stand", "flexion_extension"]:
+        return self.scripted_maneuver
+
+    @field_validator("speed")
+    @classmethod
+    def validate_speed_for_maneuver(
+        cls, value: Optional[str], info
+    ) -> Optional[str]:
+        maneuver = info.data.get("scripted_maneuver") or info.data.get("maneuver")
+        if maneuver == "walk" and cls.require_walk_details:
+            if value is None:
+                raise ValueError("speed is required when maneuver is 'walk'")
+        elif maneuver != "walk" and value is not None:
+            raise ValueError(
+                "speed must be None when maneuver is "
+                f"'{maneuver}'"
+            )
+        return value
+
+    @field_validator("pass_number")
+    @classmethod
+    def validate_pass_number_for_maneuver(
+        cls, value: Optional[int], info
+    ) -> Optional[int]:
+        maneuver = info.data.get("scripted_maneuver") or info.data.get("maneuver")
+        if maneuver == "walk" and cls.require_walk_details:
+            if value is None:
+                raise ValueError(
+                    "pass_number is required when maneuver is 'walk'"
+                )
+            if value < 0:
+                raise ValueError("pass_number must be non-negative")
+        elif maneuver != "walk" and value is not None:
+            raise ValueError(
+                "pass_number must be None when maneuver is "
+                f"'{maneuver}'"
+            )
+        return value
+
+
+class AcousticsFileMetadata(
+    ScriptedManeuverMetadata,
+    KneeMetadata,
+    StudyMetadata,
+):
     """Metadata for an acoustics recording."""
 
-    scripted_maneuver: Literal["walk", "sit_to_stand", "flexion_extension"]
-    speed: Optional[Literal["slow", "medium", "fast"]] = None
-    knee: Literal["left", "right"]
-    file_name: str
+    model_config = ConfigDict(populate_by_name=True)
+
+    audio_file_name: str = Field(alias="file_name")
+    audio_serial_number: str = "unknown"
+    audio_firmware_version: int = 0
+    date_of_recording: datetime = Field(default_factory=lambda: datetime.min)
     microphones: Annotated[
         dict[Literal[1, 2, 3, 4], MicrophonePosition],
         "Microphone index (1-4) mapped to position metadata",
     ]
-    notes: Optional[str] = None
     microphone_notes: Optional[dict[Literal[1, 2, 3, 4], str]] = None
+    # Time from start of recording to audio sync event
+    audio_sync_time: Optional[timedelta] = None
+    audio_qc_pass: bool = False
+    audio_qc_version: int = 1
+    audio_notes: Optional[str] = None
 
-    @field_validator("microphones")
-    @classmethod
-    def validate_microphone_keys(cls, value: dict) -> dict:
-        """Ensure microphones dict has exactly keys {1,2,3,4}."""
-        required_keys: set[int] = {1, 2, 3, 4}
-        if set(value.keys()) != required_keys:
-            raise ValueError(
-                "microphones must contain exactly keys "
-                f"{required_keys}, got {set(value.keys())}"
-            )
-        return value
+    @property
+    def file_name(self) -> str:
+        return self.audio_file_name
+
+    @property
+    def notes(self) -> Optional[str]:
+        """Backward-compatible alias for audio_notes."""
+        return self.audio_notes
 
     @field_validator("microphone_notes")
     @classmethod
@@ -54,8 +183,20 @@ class AcousticsMetadata(BaseModel):
             )
         return value
 
+    @field_validator("microphones")
+    @classmethod
+    def validate_microphone_keys(cls, value: dict) -> dict:
+        """Ensure microphones dict has exactly keys {1,2,3,4}."""
+        required_keys: set[int] = {1, 2, 3, 4}
+        if set(value.keys()) != required_keys:
+            raise ValueError(
+                "microphones must contain exactly keys "
+                f"{required_keys}, got {set(value.keys())}"
+            )
+        return value
 
-class AcousticsRecording(pd.DataFrame):
+
+class AcousticsData(pd.DataFrame):
     @classmethod
     def __get_pydantic_core_schema__(
         cls, _source_type, _handler
@@ -93,82 +234,34 @@ class AcousticsRecording(pd.DataFrame):
         )
 
 
-class AcousticsCycle(AcousticsMetadata):
+class AcousticsRecording(AcousticsFileMetadata):
     """Acoustics data paired with its metadata."""
 
-    data: AcousticsRecording
+    data: AcousticsData
 
 
-class BiomechanicsMetadata(BaseModel):
+class BiomechanicsFileMetadata(ScriptedManeuverMetadata, StudyMetadata):
     """Metadata for a biomechanics recording."""
 
-    maneuver: Literal["walk", "sit_to_stand", "flexion_extension"]
-    speed: Optional[Literal["slow", "normal", "fast"]] = None
-    pass_number: Optional[int] = None
+    model_config = ConfigDict(populate_by_name=True)
+    require_walk_details: ClassVar[bool] = True
 
-    @field_validator("speed")
-    @classmethod
-    def validate_speed_for_maneuver(
-        cls, value: Optional[str], info
-    ) -> Optional[str]:
-        if info.data.get("maneuver") == "walk":
-            if value is None:
-                raise ValueError("speed is required when maneuver is 'walk'")
-        elif value is not None:
-            raise ValueError(
-                "speed must be None when maneuver is "
-                f"'{info.data.get('maneuver')}'"
-            )
-        return value
+    biomech_file_name: str = Field(alias="file_name")
+    biomech_system: Literal["Vicon", "Qualisys"] = "Qualisys"
+    date_of_recording: Optional[datetime] = None
+    # Time from start of recording to biomech sync event
+    biomech_sync_left_time: Optional[timedelta] = None
+    biomech_sync_right_time: Optional[timedelta] = None
+    biomech_qc_pass: bool = False
+    biomech_qc_version: int = 1
+    biomech_notes: Optional[str] = None
 
-    @field_validator("pass_number")
-    @classmethod
-    def validate_pass_number_for_maneuver(
-        cls, value: Optional[int], info
-    ) -> Optional[int]:
-        if info.data.get("maneuver") == "walk":
-            if value is None:
-                raise ValueError(
-                    "pass_number is required when maneuver is 'walk'"
-                )
-        elif value is not None:
-            raise ValueError(
-                "pass_number must be None when maneuver is "
-                f"'{info.data.get('maneuver')}'"
-            )
-        return value
+    @property
+    def file_name(self) -> str:
+        return self.biomech_file_name
 
 
-class PassMetadata(pd.DataFrame):
-    """Pass event metadata with required columns."""
-
-    @classmethod
-    def __get_pydantic_core_schema__(
-        cls, _source_type, _handler
-    ) -> CoreSchema:
-        def validate_dataframe(value: pd.DataFrame) -> Self:
-            if not isinstance(value, pd.DataFrame):
-                raise PydanticCustomError(
-                    "not_dataframe", "Value is not a pandas DataFrame"
-                )
-
-            required_columns: list[str] = ["Event Info", "Time (sec)"]
-            if not all(col in value.columns for col in required_columns):
-                missing: set[str] = set(required_columns) - set(value.columns)
-                raise PydanticCustomError(
-                    "missing_column",
-                    "DataFrame is missing required columns: "
-                    f"{', '.join(missing)}",
-                )
-            return cls(value)
-
-        return core_schema.no_info_after_validator_function(
-            validate_dataframe,
-            core_schema.any_schema(),
-        )
-
-
-class BiomechanicsRecording(pd.DataFrame):
+class BiomechanicsData(pd.DataFrame):
     @classmethod
     def __get_pydantic_core_schema__(
         cls, _source_type, _handler
@@ -180,7 +273,7 @@ class BiomechanicsRecording(pd.DataFrame):
                 )
             if "TIME" not in value.columns:
                 raise PydanticCustomError(
-                    "missing_column", "DataFrame must contain 'required_col'"
+                    "missing_column", "DataFrame must contain 'TIME' column"
                 )
             return cls(value)
 
@@ -190,16 +283,13 @@ class BiomechanicsRecording(pd.DataFrame):
         )
 
 
-class BiomechanicsCycle(BiomechanicsMetadata):
+class BiomechanicsRecording(BiomechanicsFileMetadata):
     """Biomechanics data paired with metadata and sync details."""
 
-    data: BiomechanicsRecording
-    sync_left_time: Optional[float] = None
-    sync_right_time: Optional[float] = None
-    pass_metadata: Optional[PassMetadata] = None
+    data: BiomechanicsData
 
 
-class SynchronizedRecording(pd.DataFrame):
+class SynchronizedData(pd.DataFrame):
     @classmethod
     def __get_pydantic_core_schema__(
         cls, _source_type, _handler
@@ -238,61 +328,64 @@ class SynchronizedRecording(pd.DataFrame):
         )
 
 
-class SynchronizedCycle(AcousticsMetadata, BiomechanicsMetadata):
+class SynchronizedRecording(
+    AcousticsFileMetadata,
+    BiomechanicsFileMetadata,
+):
     """Synchronized acoustics and biomechanics data."""
 
-    data: SynchronizedRecording
+    require_walk_details: ClassVar[bool] = True
+
+    data: SynchronizedData
 
 
-class MovementCycleMetadata(BaseModel):
-    """Metadata for a movement cycle from a synchronized recording."""
+class MovementCycleMetadata(
+    AcousticsFileMetadata,
+    BiomechanicsFileMetadata,
+):
+    """Metadata for a knee acoustic emission recording for a single
+    movement cycle. Optionally (ideally) synchronized to a biomechanics
+    recording. Contains all the requisite information for saving to a
+    postgres database."""
 
-    maneuver: Literal["walk", "sit_to_stand", "flexion_extension"]
-    speed: Optional[Literal["slow", "medium", "fast"]] = None
-    pass_number: Optional[int] = None
+    id: int
     cycle_index: int
-    knee: Literal["left", "right"]
-    participant_id: Optional[str] = None
-    acoustic_energy: float
-    is_outlier: bool = False
-    notes: Optional[str] = None
+    audio_sync_time: timedelta
+    biomech_sync_left_time: timedelta
+    biomech_sync_right_time: timedelta
+    cycle_acoustic_energy: float
+    cycle_qc_pass: bool
+    cycle_qc_version: int = 1
+    cycle_notes: Optional[str] = None
+    require_walk_details: ClassVar[bool] = True
 
-    @model_validator(mode="after")
-    def validate_walk_parameters(self) -> "MovementCycleMetadata":
-        if self.maneuver == "walk":
-            missing: list[str] = []
-            if self.speed is None:
-                missing.append("speed")
-            if self.pass_number is None:
-                missing.append("pass_number")
-            if missing:
-                raise ValueError(
-                    "Walk maneuvers require both speed and pass_number. "
-                    f"Missing: {', '.join(missing)}"
-                )
-            if not isinstance(self.pass_number, int) or self.pass_number < 0:
-                raise ValueError(
-                    "pass_number must be a non-negative integer, "
-                    f"got {self.pass_number}"
-                )
-        else:
-            if self.speed is not None or self.pass_number is not None:
-                invalid: list[str] = []
-                if self.speed is not None:
-                    invalid.append(f"speed={self.speed}")
-                if self.pass_number is not None:
-                    invalid.append(f"pass_number={self.pass_number}")
-                raise ValueError(
-                    f"{self.maneuver.replace('_', ' ').title()} maneuvers do not "
-                    "support speed and pass_number parameters. "
-                    f"Got: {', '.join(invalid)}"
-                )
+    @field_validator("cycle_index")
+    @classmethod
+    def validate_cycle_index(cls, value: int) -> int:
+        if value < 0:
+            raise ValueError("cycle_index must be non-negative")
+        return value
 
-        return self
+    @field_validator("id")
+    @classmethod
+    def validate_id(cls, value: int) -> int:
+        if value < 0:
+            raise ValueError("id must be non-negative")
+        return value
+
+    @field_validator(
+        "audio_sync_time",
+        "biomech_sync_left_time",
+        "biomech_sync_right_time",
+    )
+    @classmethod
+    def validate_sync_times(cls, value: timedelta) -> timedelta:
+        if value is None:
+            raise ValueError("sync times are required for movement cycles")
+        return value
 
 
-class MovementCycle(BaseModel):
+class MovementCycle(MovementCycleMetadata):
     """Single movement cycle with synchronized data."""
 
-    metadata: MovementCycleMetadata
-    data: SynchronizedRecording
+    data: SynchronizedData

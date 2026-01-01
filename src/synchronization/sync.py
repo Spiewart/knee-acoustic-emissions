@@ -30,7 +30,7 @@ def get_biomechanics_metadata(
         (f for f in directory.iterdir() if "biomechanics" in f.name.lower()),
     ), None)
     if not bio_file or not bio_file.is_file():
-        raise FileNotFoundError(f"BiomechanicsCycle data file not found: {bio_file}")
+        raise FileNotFoundError(f"BiomechanicsRecording data file not found: {bio_file}")
 
     # Load the biomechanics metadata, which will be in an Excel
     # file with the specified sheet name.

@@ -8,7 +8,7 @@ from typing import Literal
 
 import pandas as pd
 
-from src.models import BiomechanicsCycle, BiomechanicsMetadata
+from src.models import BiomechanicsFileMetadata, BiomechanicsRecording
 
 
 def extract_unique_ids_from_columns(bio_df: pd.DataFrame) -> list[str]:
@@ -261,11 +261,12 @@ def _process_biomechanics_recordings(
     bio_df: pd.DataFrame,
     event_data_df: pd.DataFrame,
     maneuver: Literal["walk", "sit_to_stand", "flexion_extension"],
-) -> list[BiomechanicsCycle]:
-    """Process biomechanics data into BiomechanicsCycle objects.
+    biomechanics_file: Path,
+) -> list[BiomechanicsRecording]:
+    """Process biomechanics data into BiomechanicsRecording objects.
 
     This is a shared helper that processes the data/event DataFrames
-    and creates BiomechanicsCycle objects for each unique recording.
+    and creates BiomechanicsRecording objects for each unique recording.
     Handles both walk and non-walk maneuvers.
 
     Args:
@@ -274,7 +275,7 @@ def _process_biomechanics_recordings(
         maneuver: Type of maneuver
 
     Returns:
-        List of BiomechanicsCycle objects
+        List of BiomechanicsRecording objects
     """
     # Get the unique identifiers in the column names
     unique_ids = extract_unique_ids_from_columns(bio_df)
@@ -310,24 +311,25 @@ def _process_biomechanics_recordings(
         recording_df = normalize_recording_dataframe(recording_df, start_time)
 
         # Extract sync times for walk maneuvers
-        sync_left_time = sync_right_time = None
+        biomech_sync_left_time = biomech_sync_right_time = None
         if maneuver == "walk":
-            sync_left_time = _extract_stomp_time(event_data_df, "Sync Left")
-            sync_right_time = _extract_stomp_time(
+            biomech_sync_left_time = _extract_stomp_time(event_data_df, "Sync Left")
+            biomech_sync_right_time = _extract_stomp_time(
                 event_data_df, "Sync Right"
             )
 
-        recordings.append(
-            BiomechanicsCycle(
-                maneuver=metadata.maneuver,
-                speed=metadata.speed,
-                pass_number=metadata.pass_number,
-                sync_left_time=sync_left_time,
-                sync_right_time=sync_right_time,
-                pass_metadata=event_data_df if maneuver == "walk" else None,
-                data=recording_df,  # type: ignore[arg-type]
-            )
+        base_kwargs = metadata.model_dump()
+        base_kwargs.update(
+            {
+                "biomech_file_name": biomechanics_file.name,
+                "biomech_sync_left_time": biomech_sync_left_time,
+                "biomech_sync_right_time": biomech_sync_right_time,
+                "pass_data": event_data_df if maneuver == "walk" else None,
+                "data": recording_df,
+            }
         )
+
+        recordings.append(BiomechanicsRecording(**base_kwargs))
 
     return recordings
 
@@ -335,7 +337,7 @@ def _process_biomechanics_recordings(
 def import_walk_biomechanics(
     biomechanics_file: Path,
     speed: Literal["slow", "normal", "fast"],
-) -> list[BiomechanicsCycle]:
+) -> list[BiomechanicsRecording]:
     """Import walking biomechanics recordings from an Excel file.
 
     Handles walk-specific logic: extracting pass_number from speed sheet,
@@ -346,7 +348,7 @@ def import_walk_biomechanics(
         speed: Walking speed ("slow", "normal", or "fast")
 
     Returns:
-        List of BiomechanicsCycle objects for the walking maneuver
+        List of BiomechanicsRecording objects for the walking maneuver
 
     Raises:
         ValueError: If sheet not found or data extraction fails
@@ -394,6 +396,7 @@ def import_walk_biomechanics(
         bio_df=bio_df,
         event_data_df=event_data_df,
         maneuver="walk",
+        biomechanics_file=bio_file,
     )
 
     # Validate: walking should have one or more recordings
@@ -409,7 +412,7 @@ def import_walk_biomechanics(
 def import_fe_sts_biomechanics(
     biomechanics_file: Path,
     maneuver: Literal["sit_to_stand", "flexion_extension"],
-) -> list[BiomechanicsCycle]:
+) -> list[BiomechanicsRecording]:
     """Import flexion-extension or sit-to-stand biomechanics recordings.
 
     Handles non-walk maneuver logic: sets start_time to 0 (no frameshift),
@@ -420,7 +423,7 @@ def import_fe_sts_biomechanics(
         maneuver: Maneuver type ("sit_to_stand" or "flexion_extension")
 
     Returns:
-        List with single BiomechanicsCycle object for the maneuver
+        List with single BiomechanicsRecording object for the maneuver
 
     Raises:
         ValueError: If not exactly one recording found or sheet not found
@@ -449,6 +452,7 @@ def import_fe_sts_biomechanics(
         bio_df=bio_df,
         event_data_df=event_data_df,
         maneuver=maneuver,
+        biomechanics_file=bio_file,
     )
 
     # Validate: non-walk maneuvers should have exactly one recording
@@ -465,11 +469,11 @@ def import_biomechanics_recordings(
     biomechanics_file: Path,
     maneuver: Literal["walk", "sit_to_stand", "flexion_extension"],
     speed: Literal["slow", "normal", "fast"] | None = None,
-) -> list[BiomechanicsCycle]:
+) -> list[BiomechanicsRecording]:
     """Import biomechanics recordings from an Excel file.
 
     Extracts the study ID from the file name, constructs the appropriate sheet
-    name based on maneuver type, and returns a list of BiomechanicsCycle objects.
+    name based on maneuver type, and returns a list of BiomechanicsRecording objects.
 
     Dispatches to specialized functions based on maneuver type:
     - Walking: import_walk_biomechanics
@@ -483,7 +487,7 @@ def import_biomechanics_recordings(
             maneuvers.
 
     Returns:
-        List of BiomechanicsCycle objects with data and metadata
+        List of BiomechanicsRecording objects with data and metadata
 
     Raises:
         ValueError: If speed/maneuver combination is invalid or sheet not found
@@ -585,39 +589,39 @@ def _extract_walking_pass_info(
     return pass_number, speed
 
 
-def get_biomechanics_metadata(uid: str) -> BiomechanicsMetadata:
-    """Extract maneuver, pass number, and speed from biomechanics unique
-    identifier.
+def get_biomechanics_metadata(uid: str) -> BiomechanicsFileMetadata:
+    """Extract maneuver, pass number, speed, and study info from a UID.
 
     UID Format: Study{StudyID}_{Maneuver}{StudyNum}_{SpeedPass}_{Filt}
     Example: Study123_Walk0001_NSP1_Filt
-
-    Args:
-        uid: The unique identifier string
-
-    Returns:
-        BiomechanicsMetadata with maneuver, speed, and pass_number
-
-    Raises:
-        ValueError: If UID format is invalid or speed code not recognized
     """
+
     maneuver = _extract_maneuver_from_uid(uid)
 
-    # Non-walk maneuvers have no speed or pass_number
+    study_token = uid.split("_")[0]
+    study_alpha = "".join(filter(str.isalpha, study_token)) or None
+    study_digits = "".join(filter(str.isdigit, study_token))
+    study_id = int(study_digits) if study_digits else None
+
     if maneuver != "walk":
-        return BiomechanicsMetadata(
-            maneuver=maneuver,
+        return BiomechanicsFileMetadata(
+            scripted_maneuver=maneuver,
             speed=None,
             pass_number=None,
+            biomech_file_name=uid,
+            study=study_alpha,
+            study_id=study_id,
         )
 
-    # Walk maneuvers require speed and pass_number extraction
     pass_number, speed = _extract_walking_pass_info(uid)
 
-    return BiomechanicsMetadata(
-        maneuver="walk",
+    return BiomechanicsFileMetadata(
+        scripted_maneuver="walk",
         speed=speed,
         pass_number=pass_number,
+        biomech_file_name=uid,
+        study=study_alpha,
+        study_id=study_id,
     )
 
 

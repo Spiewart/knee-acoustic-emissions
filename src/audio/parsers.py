@@ -2,7 +2,7 @@ from typing import Any, Literal, Optional
 
 import pandas as pd
 
-from src.models import AcousticsMetadata, MicrophonePosition
+from src.models import AcousticsFileMetadata, MicrophonePosition
 
 
 def find_knee_table_start(
@@ -172,7 +172,7 @@ def get_acoustics_metadata(
     metadata_file_path: str,
     scripted_maneuver: Literal["walk", "sit_to_stand", "flexion_extension"],
     knee: Literal["left", "right"],
-) -> AcousticsMetadata:
+) -> AcousticsFileMetadata:
     """Gets acoustics metadata for a given acoustics file legend.
 
     Extracts the relevant metadata based on the scripted maneuver and knee
@@ -197,7 +197,7 @@ def get_acoustics_metadata(
         knee: The knee laterality to filter by.
 
     Returns:
-        AcousticsMetadata: A Pydantic model instance containing the
+        AcousticsFileMetadata: A Pydantic model instance containing the
                           validated acoustics metadata.
     """
     metadata_df: pd.DataFrame = pd.read_excel(
@@ -228,13 +228,14 @@ def get_acoustics_metadata(
         maneuver_metadata_df
     )
 
-    acoustics_metadata = AcousticsMetadata(
+    acoustics_metadata = AcousticsFileMetadata(
         scripted_maneuver=scripted_maneuver,
         knee=knee,
+        study="AOA",
+        study_id=0,
         file_name=file_name,
         microphones=microphones,
-        notes=notes,
-        microphone_notes=microphone_notes if microphone_notes else None,
+        audio_notes=("; ".join([microphone_note for microphone_note in microphone_notes.values()]) if microphone_notes else notes),
     )
 
     return acoustics_metadata

@@ -49,7 +49,7 @@ from src.synchronization.sync import (
 )
 
 if TYPE_CHECKING:
-    from src.models import BiomechanicsCycle
+    from src.models import BiomechanicsRecording
 
 
 def parse_participant_directory(participant_dir: Path) -> None:
@@ -517,7 +517,7 @@ def _process_walk_speed(
 
 
 def _sync_and_save_recording(
-    recording: "BiomechanicsCycle",  # type: ignore[name-defined]
+    recording: "BiomechanicsRecording",  # type: ignore[name-defined]
     audio_df: pd.DataFrame,
     synced_dir: Path,
     biomechanics_file: Path,
@@ -531,7 +531,7 @@ def _sync_and_save_recording(
     Processes and synchronizes data but does NOT write files.
 
     Args:
-        recording: BiomechanicsCycle object with biomechanics data
+        recording: BiomechanicsRecording object with biomechanics data
         audio_df: Audio data DataFrame
         synced_dir: Path where synchronized data will be saved (used for path)
         biomechanics_file: Path to biomechanics Excel file (for event data)
@@ -1143,7 +1143,7 @@ def motion_capture_folder_has_required_data(
     maneuvers = {
         "Walking": {
             "data": "Walking",
-            "pass_metadata": "Walk0001",
+            "pass_data": "Walk0001",
             "speeds": ["Slow", "Medium", "Fast"],
         },
         "SitToStand": {
@@ -1160,7 +1160,7 @@ def motion_capture_folder_has_required_data(
         if maneuver_key == "Walking":
             # Check for pass metadata sheet (single sheet shared across speeds)
             pass_metadata_sheet_name = (
-                f"AOA{study_id}_{maneuver_config['pass_metadata']}"
+                f"AOA{study_id}_{maneuver_config['pass_data']}"
             )
             if pass_metadata_sheet_name not in sheet_names:
                 raise ValueError(

@@ -326,8 +326,8 @@ def _create_biomechanics_excel(
             )
 
         # Walk0001 contains pass metadata (which pass belongs to which speed)
-        pass_metadata = pd.DataFrame(walking_events_data)
-        pass_metadata.to_excel(
+        pass_data = pd.DataFrame(walking_events_data)
+        pass_data.to_excel(
             writer,
             sheet_name=f"AOA{study_id}_Walk0001",
             index=False,
