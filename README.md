@@ -139,6 +139,55 @@ When reading `.bin` files with unknown firmware (`devFirmwareVersion`), `ae-read
 - Dry run (preview): `ae-cleanup-outputs /path/to/studies --dry-run`
 - Limit participants: `ae-cleanup-outputs /path/to/studies --limit 5`
 
+**Machine Learning (trains on processed participants with complete synced cycles):**
+
+The ML commands automatically discover participant directories with fully processed acoustics and biomechanics data (indicated by `knee_processing_log_*_{Left,Right}.xlsx` with all maneuvers having ≥1 synced files). They then extract acoustic features from movement cycles and train logistic regression models with leave-one-out cross-validation (for small datasets) or train/test split (for larger datasets).
+
+- **Knee Pain (participant-level outcome):**
+  ```bash
+  ae-ml-kneepain /path/to/project --demographics /path/to/demographics.xlsx
+  ae-ml-kneepain /path/to/project --demographics /path/to/demographics.xlsx --maneuvers walk sit_to_stand
+  ae-ml-kneepain /path/to/project --demographics /path/to/demographics.xlsx --cycle-type clean --aggregation mean --allow-partial-knees
+  ```
+
+- **Tibiofemoral KL Grade (knee-level outcome):**
+  ```bash
+  ae-ml-tfmkl /path/to/project --outcome-file /path/to/outcomes.xlsx --sheet "TFM KL"
+  ae-ml-tfmkl /path/to/project --outcome-file /path/to/outcomes.xlsx --sheet "TFM KL" --maneuvers walk
+  ```
+
+- **Patellofemoral KL Grade (knee-level outcome):**
+  ```bash
+  ae-ml-pfmkl /path/to/project --outcome-file /path/to/outcomes.xlsx --sheet "PFM KL"
+  ae-ml-pfmkl /path/to/project --outcome-file /path/to/outcomes.xlsx --sheet "PFM KL" --allow-partial-knees
+  ```
+
+- **Varus Thrust (knee-level outcome):**
+  ```bash
+  ae-ml-varusthrust /path/to/project --outcome-file /path/to/outcomes.xlsx --sheet "Varus Thrust"
+  ae-ml-varusthrust /path/to/project --outcome-file /path/to/outcomes.xlsx --sheet "Varus Thrust" --aggregation median
+  ```
+
+**ML Options:**
+
+*Participant-level (`ae-ml-kneepain`):**
+- `--demographics`: Path to demographics Excel file with outcome column (required).
+- `--maneuvers`: Filter to specific maneuvers (e.g., `walk sit_to_stand`); defaults to all.
+- `--cycle-type`: Load "clean" or "outliers" cycles (default: "clean").
+- `--aggregation`: How to aggregate features per participant: "mean", "median", "max", "min" (default: "mean").
+- `--allow-partial-knees`: Include participants with only one processed knee (default: require both).
+
+*Knee-level (`ae-ml-tfmkl`, `ae-ml-pfmkl`, `ae-ml-varusthrust`):**
+- `--outcome-file`: Path to Excel file with knee-level outcome variable (defaults to `cohort_chars_PRELIM_12_22_2025.xlsx` in project root).
+- `--sheet`: Sheet name when both knees are in one sheet (e.g., "Varus Thrust", "TFM KL").
+- `--left-sheet` / `--right-sheet`: Use separate sheets for left/right knees (e.g., "KOOS R Knee", "KOOS L Knee").
+- `--side-column`: Column indicating knee side in outcome data (default: "Knee").
+- `--maneuvers`: Filter to specific maneuvers (e.g., `walk sit_to_stand`); defaults to all.
+- `--cycle-type`: Load "clean" or "outliers" cycles (default: "clean").
+- `--aggregation`: How to aggregate features per participant/knee: "mean", "median", "max", "min" (default: "mean").
+- `--allow-partial-knees`: Include participants with only one processed knee (default: require both).
+
+
 ### Using Python Modules Directly (No installation)
 
 **Bin processing:**
