@@ -51,24 +51,25 @@ def test_prepare_knee_level_features_single_sheet():
     X, y = prepare_knee_level_features_and_labels(
         features_df=features_df,
         outcome_column="Varus Thrust",
-        aggregation="mean",
         outcome_df=outcome_df,
         side_column="Knee",
         knee_label_map={"Right": "R", "Left": "L"},
     )
 
-    # Expect four knee-level rows
-    assert X.shape == (4, 1)
-    assert set(X.index) == {(101, "R"), (101, "L"), (102, "R"), (102, "L")}
-    assert y.loc[(101, "R")] == 1
-    assert y.loc[(101, "L")] == 0
-    assert y.loc[(102, "R")] == 0
-    assert y.loc[(102, "L")] == 1
-    # Aggregated feature means per knee
-    assert X.loc[(101, "R"), "feat"] == 2.0  # mean of 1 and 3
-    assert X.loc[(101, "L"), "feat"] == 5.0
-    assert X.loc[(102, "R"), "feat"] == 7.0
-    assert X.loc[(102, "L"), "feat"] == 9.0
+    # Expect 5 per-cycle rows (participant 101 R has 2 cycles, others have 1 each)
+    assert X.shape == (5, 1)
+    # Check that we have both cycles for participant 101 R
+    idx_list = X.index.tolist()
+    assert idx_list.count((101, "R")) == 2
+    assert idx_list.count((101, "L")) == 1
+    assert idx_list.count((102, "R")) == 1
+    assert idx_list.count((102, "L")) == 1
+    # Per-cycle feature values
+    assert X.loc[(101, "R"), "feat"].tolist() == [1.0, 3.0]
+    assert X.loc[(101, "L"), "feat"].iloc[0] == 5.0
+    assert X.loc[(102, "R"), "feat"].iloc[0] == 7.0
+    assert X.loc[(102, "L"), "feat"].iloc[0] == 9.0
+
 
 
 def test_prepare_knee_level_features_per_knee_sheets():
@@ -87,7 +88,6 @@ def test_prepare_knee_level_features_per_knee_sheets():
     X, y = prepare_knee_level_features_and_labels(
         features_df=features_df,
         outcome_column="KOOS",
-        aggregation="mean",
         outcome_df_per_knee=outcome_df_per_knee,
     )
 

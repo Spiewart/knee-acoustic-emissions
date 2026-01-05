@@ -76,24 +76,23 @@ def prepare_features_and_labels(
 def prepare_knee_level_features_and_labels(
     features_df: pd.DataFrame,
     outcome_column: str,
-    aggregation: str = "per_cycle",
     outcome_df: Optional[pd.DataFrame] = None,
     outcome_df_per_knee: Optional[Dict[str, pd.DataFrame]] = None,
     side_column: str = "knee",
     knee_label_map: Optional[Dict[str, str]] = None,
 ) -> Tuple[pd.DataFrame, pd.Series]:
-    """Prepare feature matrix and labels at the knee level.
+    """Prepare feature matrix and labels at the knee level using per-cycle features.
 
     Supports two patterns for outcome data:
     1) Single sheet with a knee side column (e.g., Varus Thrust sheet).
     2) Separate sheets for each knee (e.g., "KOOS R Knee" and "KOOS L Knee").
 
+    Each cycle becomes a separate training sample with its study_id and knee side.
+
     Args:
         features_df: DataFrame with extracted features (one row per cycle) containing
             "study_id" and a knee side column (default: "knee").
         outcome_column: Name of the outcome column in the outcome data.
-        aggregation: How to aggregate features per participant per knee
-            ("mean", "median", "max", "min").
         outcome_df: Outcome DataFrame when both knees are in one sheet and
             differentiated by ``side_column``.
         outcome_df_per_knee: Mapping of knee label to outcome DataFrame when each
@@ -107,18 +106,34 @@ def prepare_knee_level_features_and_labels(
 
     Returns:
         Tuple of (X, y) where:
-            X: Feature matrix with one row per participant per knee
-            y: Binary outcome labels (0/1)
+            X: Feature matrix with one row per cycle (indexed by study_id, knee)
+            y: Binary outcome labels (0/1) corresponding to the study_id/knee
     """
     if outcome_df is None and outcome_df_per_knee is None:
         raise ValueError("Provide either outcome_df or outcome_df_per_knee")
 
-    # Use per-cycle samples (no aggregation) so each cycle is a training row
+    # Extract feature columns (all columns except metadata)
     feature_cols = [
         col for col in features_df.columns
         if col not in ["study_id", "knee", "maneuver", "speed", "cycle_index"]
     ]
+
+    # Normalize knee labels in features
     agg_features = features_df.copy()
+
+    def _normalize_knee(val: Any) -> str:
+        sval = str(val).strip()
+        if knee_label_map and sval in knee_label_map:
+            sval = str(knee_label_map[sval]).strip()
+        # Default to upper-case short labels if not mapped
+        if sval.lower() in {"right", "r"}:
+            return "R"
+        if sval.lower() in {"left", "l"}:
+            return "L"
+        return sval
+
+    agg_features["knee"] = agg_features["knee"].apply(_normalize_knee)
+    agg_features = agg_features.set_index(["study_id", "knee"]).sort_index()
 
     # Build a combined outcome DataFrame with standardized knee labels
     if outcome_df_per_knee is not None:
@@ -131,23 +146,7 @@ def prepare_knee_level_features_and_labels(
     else:
         combined_outcomes = outcome_df.copy()
 
-    # Normalize knee labels to concise forms (e.g., "Right"->"R", case-insensitive)
-    def _normalize_knee(val: Any) -> str:
-        sval = str(val).strip()
-        if knee_label_map and sval in knee_label_map:
-            sval = str(knee_label_map[sval]).strip()
-        # Default to upper-case short labels if not mapped
-        if sval.lower() in {"right", "r"}:
-            return "R"
-        if sval.lower() in {"left", "l"}:
-            return "L"
-        return sval
-
     combined_outcomes[side_column] = combined_outcomes[side_column].apply(_normalize_knee)
-
-    agg_features = agg_features.copy()
-    agg_features["knee"] = agg_features["knee"].apply(_normalize_knee)
-    agg_features = agg_features.set_index(["study_id", "knee"])
 
     # Standardize outcome column names to align indexes
     combined_outcomes = combined_outcomes.rename(columns={"Study ID": "study_id", side_column: "knee"})

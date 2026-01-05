@@ -29,6 +29,7 @@ def build_parser(command_help: str) -> argparse.ArgumentParser:
     parser.add_argument("--cycle-type", choices=["clean", "outliers"], default="clean")
     # Aggregation is fixed to per_cycle; option removed to simplify usage
     parser.add_argument("--allow-partial-knees", action="store_true", help="Include participants with only one processed knee")
+    parser.add_argument("--no-contralateral-exclusion", action="store_true", help="Disable exclusion of contralateral knees from training")
     return parser
 
 
@@ -74,6 +75,7 @@ def run_knee_outcome_cli(
         participant_ids=participant_ids,
         cycle_type=args.cycle_type,
         maneuvers=maneuvers,
+        exclude_contralateral_knees=not args.no_contralateral_exclusion,
     )
 
     print("\nML run complete")

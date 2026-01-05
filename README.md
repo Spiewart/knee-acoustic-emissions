@@ -143,6 +143,10 @@ When reading `.bin` files with unknown firmware (`devFirmwareVersion`), `ae-read
 
 The ML commands automatically discover participant directories with fully processed acoustics and biomechanics data (indicated by `knee_processing_log_*_{Left,Right}.xlsx` with all maneuvers having ≥1 synced files). They then extract acoustic features from movement cycles and train logistic regression models with leave-one-out cross-validation (for small datasets) or train/test split (for larger datasets).
 
+**Important: Data Leakage Prevention for Knee-Level Models**
+
+For knee-level models (TFM KL, PFM KL, Varus Thrust), the training process automatically excludes the contralateral knee of any participant whose other knee appears in the test set. This prevents data leakage from shared physiological characteristics between a participant's two knees.
+
 - **Knee Pain (participant-level outcome):**
   ```bash
   ae-ml-kneepain /path/to/project --demographics /path/to/demographics.xlsx
@@ -184,8 +188,8 @@ The ML commands automatically discover participant directories with fully proces
 - `--side-column`: Column indicating knee side in outcome data (default: "Knee").
 - `--maneuvers`: Filter to specific maneuvers (e.g., `walk sit_to_stand`); defaults to all.
 - `--cycle-type`: Load "clean" or "outliers" cycles (default: "clean").
-- `--aggregation`: How to aggregate features per participant/knee: "mean", "median", "max", "min" (default: "mean").
 - `--allow-partial-knees`: Include participants with only one processed knee (default: require both).
+- `--no-contralateral-exclusion`: Disable exclusion of contralateral knees from training; by default, contralateral knees are excluded to prevent data leakage.
 
 
 ### Using Python Modules Directly (No installation)
