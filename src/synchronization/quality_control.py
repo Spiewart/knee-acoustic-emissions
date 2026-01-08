@@ -23,7 +23,6 @@ except ImportError:
 
 from src.biomechanics.cycle_parsing import extract_movement_cycles
 from src.models import MicrophonePosition, MovementCycleMetadata
-from src.qc_versions import get_audio_qc_version, get_biomech_qc_version, get_cycle_qc_version
 
 logger = logging.getLogger(__name__)
 
@@ -247,7 +246,6 @@ def _build_cycle_metadata_for_cycle(
         cycle_index=result.index,
         cycle_acoustic_energy=float(result.energy),
         cycle_qc_pass=result.qc_pass,
-        cycle_qc_version=get_cycle_qc_version(),
         scripted_maneuver=context["maneuver"],
         speed=context["speed"],
         pass_number=context["pass_number"],
@@ -261,11 +259,9 @@ def _build_cycle_metadata_for_cycle(
         microphones=context["microphones"],
         microphone_notes=context["microphone_notes"],
         audio_sync_time=context["audio_sync_time"],
-        audio_qc_version=get_audio_qc_version(),
         biomech_file_name=context["biomech_file_name"],
         biomech_sync_left_time=context["biomech_sync_left_time"],
         biomech_sync_right_time=context["biomech_sync_right_time"],
-        biomech_qc_version=get_biomech_qc_version(),
     )
 
 

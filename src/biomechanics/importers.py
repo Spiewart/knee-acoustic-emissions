@@ -9,7 +9,6 @@ from typing import Literal
 import pandas as pd
 
 from src.models import BiomechanicsFileMetadata, BiomechanicsRecording
-from src.qc_versions import get_biomech_qc_version
 
 
 def extract_unique_ids_from_columns(bio_df: pd.DataFrame) -> list[str]:
@@ -612,7 +611,6 @@ def get_biomechanics_metadata(uid: str) -> BiomechanicsFileMetadata:
             biomech_file_name=uid,
             study=study_alpha,
             study_id=study_id,
-            biomech_qc_version=get_biomech_qc_version(),
         )
 
     pass_number, speed = _extract_walking_pass_info(uid)
@@ -624,7 +622,6 @@ def get_biomechanics_metadata(uid: str) -> BiomechanicsFileMetadata:
         biomech_file_name=uid,
         study=study_alpha,
         study_id=study_id,
-        biomech_qc_version=get_biomech_qc_version(),
     )
 
 

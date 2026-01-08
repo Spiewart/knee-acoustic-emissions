@@ -3,7 +3,6 @@ from typing import Any, Literal, Optional
 import pandas as pd
 
 from src.models import AcousticsFileMetadata, MicrophonePosition
-from src.qc_versions import get_audio_qc_version
 
 
 def find_knee_table_start(
@@ -237,7 +236,6 @@ def get_acoustics_metadata(
         file_name=file_name,
         microphones=microphones,
         audio_notes=("; ".join([microphone_note for microphone_note in microphone_notes.values()]) if microphone_notes else notes),
-        audio_qc_version=get_audio_qc_version(),
     )
 
     return acoustics_metadata
