@@ -59,6 +59,8 @@ class TestAudioProcessingRecord:
         assert data["Status"] == "success"
         assert data["Sample Rate (Hz)"] == 46875.0
         assert data["Ch1 RMS"] == 150.3
+        assert "Audio QC Version" in data
+        assert data["Audio QC Version"] == 1
 
     def test_default_values(self):
         """Test that default values are set correctly."""
@@ -68,6 +70,7 @@ class TestAudioProcessingRecord:
         assert record.num_channels == 4
         assert record.sample_rate is None
         assert record.has_instantaneous_freq is False
+        assert record.audio_qc_version == 1
 
 
 class TestBiomechanicsImportRecord:
@@ -100,6 +103,8 @@ class TestBiomechanicsImportRecord:
         assert data["Biomechanics File"] == "test.xlsx"
         assert data["Sheet Name"] == "Walk0001"
         assert data["Num Recordings"] == 5
+        assert "Biomech QC Version" in data
+        assert data["Biomech QC Version"] == 1
 
 
 class TestSynchronizationRecord:
@@ -135,6 +140,10 @@ class TestSynchronizationRecord:
         assert data["Sync File"] == "test_sync"
         assert data["Status"] == "success"
         assert data["Num Samples"] == 1000
+        assert "Audio QC Version" in data
+        assert data["Audio QC Version"] == 1
+        assert "Biomech QC Version" in data
+        assert data["Biomech QC Version"] == 1
 
 
 class TestMovementCyclesRecord:
@@ -167,6 +176,8 @@ class TestMovementCyclesRecord:
         assert data["Source Sync File"] == "test_sync"
         assert data["Clean Cycles"] == 8
         assert data["Outlier Cycles"] == 2
+        assert "Cycle QC Version" in data
+        assert data["Cycle QC Version"] == 1
 
 
 class TestManeuverProcessingLog:

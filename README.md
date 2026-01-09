@@ -33,7 +33,7 @@ Data Models
 - **SynchronizedRecording**: Combines acoustics + biomechanics metadata and data after alignment.
 - **MovementCycleMetadata / MovementCycle**: Per-cycle metadata (cycle IDs, energy, QC, notes) plus the synchronized data slice used for aggregation/DB export.
 
-See [MIGRATION.md](MIGRATION.md) for detailed module mappings.
+See [MIGRATION.md](MIGRATION.md) for detailed module mappings and [QC_VERSIONING.md](docs/QC_VERSIONING.md) for QA/QC version tracking.
 
 Prerequisites
 -----------

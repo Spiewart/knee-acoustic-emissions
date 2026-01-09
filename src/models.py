@@ -10,6 +10,8 @@ import pandas as pd
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from pydantic_core import CoreSchema, PydanticCustomError, core_schema
 
+from src.qc_versions import get_audio_qc_version, get_biomech_qc_version, get_cycle_qc_version
+
 
 class StudyMetadata(BaseModel):
     """Metadata for an acoustic emission study."""
@@ -155,7 +157,7 @@ class AcousticsFileMetadata(
     # Time from start of recording to audio sync event
     audio_sync_time: Optional[timedelta] = None
     audio_qc_pass: bool = False
-    audio_qc_version: int = 1
+    audio_qc_version: int = Field(default_factory=get_audio_qc_version)
     audio_notes: Optional[str] = None
 
     @property
@@ -253,7 +255,7 @@ class BiomechanicsFileMetadata(ScriptedManeuverMetadata, StudyMetadata):
     biomech_sync_left_time: Optional[timedelta] = None
     biomech_sync_right_time: Optional[timedelta] = None
     biomech_qc_pass: bool = False
-    biomech_qc_version: int = 1
+    biomech_qc_version: int = Field(default_factory=get_biomech_qc_version)
     biomech_notes: Optional[str] = None
 
     @property
@@ -355,7 +357,7 @@ class MovementCycleMetadata(
     biomech_sync_right_time: timedelta
     cycle_acoustic_energy: float
     cycle_qc_pass: bool
-    cycle_qc_version: int = 1
+    cycle_qc_version: int = Field(default_factory=get_cycle_qc_version)
     cycle_notes: Optional[str] = None
     require_walk_details: ClassVar[bool] = True
 
