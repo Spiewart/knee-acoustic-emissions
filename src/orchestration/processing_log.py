@@ -17,6 +17,12 @@ from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional
 import numpy as np
 import pandas as pd
 
+from src.qc_versions import (
+    get_audio_qc_version,
+    get_biomech_qc_version,
+    get_cycle_qc_version,
+)
+
 if TYPE_CHECKING:
     from src.models import BiomechanicsRecording
 
@@ -61,6 +67,9 @@ class AudioProcessingRecord:
     # Instantaneous frequency added?
     has_instantaneous_freq: bool = False
 
+    # QC version tracking
+    audio_qc_version: int = field(default_factory=get_audio_qc_version)
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for Excel export."""
         return {
@@ -86,6 +95,7 @@ class AudioProcessingRecord:
             "Ch3 Peak": self.channel_3_peak,
             "Ch4 Peak": self.channel_4_peak,
             "Has Inst. Freq": self.has_instantaneous_freq,
+            "Audio QC Version": self.audio_qc_version,
         }
 
 
@@ -115,6 +125,9 @@ class BiomechanicsImportRecord:
     start_time: Optional[float] = None
     end_time: Optional[float] = None
 
+    # QC version tracking
+    biomech_qc_version: int = field(default_factory=get_biomech_qc_version)
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for Excel export."""
         return {
@@ -130,6 +143,7 @@ class BiomechanicsImportRecord:
             "Sample Rate (Hz)": self.sample_rate,
             "Start Time (s)": self.start_time,
             "End Time (s)": self.end_time,
+            "Biomech QC Version": self.biomech_qc_version,
         }
 
 
@@ -166,6 +180,10 @@ class SynchronizationRecord:
     sync_qc_performed: bool = False
     sync_qc_passed: Optional[bool] = None
 
+    # QC version tracking (sync uses audio QC version since it's audio-bio alignment)
+    audio_qc_version: int = field(default_factory=get_audio_qc_version)
+    biomech_qc_version: int = field(default_factory=get_biomech_qc_version)
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for Excel export."""
         return {
@@ -186,6 +204,8 @@ class SynchronizationRecord:
             "Duration (s)": self.duration_seconds,
             "Sync QC Done": self.sync_qc_performed,
             "Sync QC Passed": self.sync_qc_passed,
+            "Audio QC Version": self.audio_qc_version,
+            "Biomech QC Version": self.biomech_qc_version,
         }
 
 
@@ -223,6 +243,9 @@ class MovementCyclesRecord:
     # Detailed per-cycle metrics (flattened later into a sheet)
     per_cycle_details: list[Dict[str, Any]] = field(default_factory=list)
 
+    # QC version tracking
+    cycle_qc_version: int = field(default_factory=get_cycle_qc_version)
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for Excel export."""
         return {
@@ -241,6 +264,7 @@ class MovementCyclesRecord:
             "Min Duration (s)": self.min_cycle_duration_s,
             "Max Duration (s)": self.max_cycle_duration_s,
             "Mean Acoustic AUC": self.mean_acoustic_auc,
+            "Cycle QC Version": self.cycle_qc_version,
         }
 
 
