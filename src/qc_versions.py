@@ -8,8 +8,6 @@ Version History:
     Audio QC v1: Initial implementation with periodic audio detection
     Biomechanics QC v1: Basic biomechanics validation
     Cycle QC v1: Initial cycle-level acoustic energy thresholding
-    Cycle QC v2: Added biomechanics waveform validation with pattern-specific checks
-                 (peak detection, start/end angle matching, monotonicity validation)
 """
 
 from typing import Literal
@@ -18,7 +16,7 @@ from typing import Literal
 # Increment these when QC methods are modified
 AUDIO_QC_VERSION = 1
 BIOMECH_QC_VERSION = 1
-CYCLE_QC_VERSION = 2
+CYCLE_QC_VERSION = 1
 
 
 def get_audio_qc_version() -> int:

@@ -96,11 +96,11 @@ class TestMovementCycleQC:
 
     def test_biomechanics_rom_validation(self):
         """Should validate cycles based on knee angle range of motion and waveform."""
-        # Create cycle with good ROM and proper walking pattern (40 degrees)
+        # Create cycle with good ROM and proper walking pattern (30 degrees)
         cycle_good = _create_test_cycle(base_amplitude=1.0)
         # Create a proper gait pattern: start low, peak in middle, end low
         n = len(cycle_good)
-        gait_pattern = 10 + 30 * np.sin(np.linspace(0, np.pi, n))  # 10-40 degree range
+        gait_pattern = 10 + 30 * np.sin(np.linspace(0, np.pi, n))  # 10-40 degree range (ROM=30°)
         cycle_good["Knee Angle Z"] = gait_pattern
         
         # Create cycle with insufficient ROM (5 degrees)
@@ -118,22 +118,29 @@ class TestMovementCycleQC:
 
     def test_biomechanics_rom_different_maneuvers(self):
         """Should use different ROM thresholds for different maneuvers."""
-        # Create cycle with ROM of 25 degrees and proper walking pattern
-        cycle = _create_test_cycle(base_amplitude=1.0)
-        n = len(cycle)
-        # Walking pattern with 25 degree ROM
-        gait_pattern = 5 + 25 * np.sin(np.linspace(0, np.pi, n))
-        cycle["Knee Angle Z"] = gait_pattern
+        # Create cycle with ROM of 25 degrees and proper walking pattern for "walk"
+        cycle_walk = _create_test_cycle(base_amplitude=1.0)
+        n = len(cycle_walk)
+        # Walking pattern with 25 degree ROM (gait-like up-then-down)
+        gait_pattern_walk = 5 + 25 * np.sin(np.linspace(0, np.pi, n))
+        cycle_walk["Knee Angle Z"] = gait_pattern_walk
         
         # For walk (threshold=20°), this should pass
         qc_walk = MovementCycleQC(maneuver="walk", acoustic_threshold=0.0)
-        clean_walk, outliers_walk = qc_walk.analyze_cycles([cycle])
+        clean_walk, outliers_walk = qc_walk.analyze_cycles([cycle_walk])
         assert len(clean_walk) == 1
         assert len(outliers_walk) == 0
         
-        # For sit_to_stand (threshold=40°), this should fail due to ROM
+        # Create cycle with ROM of 25 degrees and proper sit-to-stand pattern
+        cycle_sts = _create_test_cycle(base_amplitude=1.0)
+        n_sts = len(cycle_sts)
+        # Sit-to-stand pattern: monotonically decreasing from 40° to 15° (ROM 25°)
+        sts_pattern = np.linspace(40.0, 15.0, n_sts)
+        cycle_sts["Knee Angle Z"] = sts_pattern
+        
+        # For sit_to_stand (threshold=40°), this should fail due to ROM while having a valid waveform shape
         qc_sts = MovementCycleQC(maneuver="sit_to_stand", acoustic_threshold=0.0)
-        clean_sts, outliers_sts = qc_sts.analyze_cycles([cycle])
+        clean_sts, outliers_sts = qc_sts.analyze_cycles([cycle_sts])
         assert len(clean_sts) == 0
         assert len(outliers_sts) == 1
 

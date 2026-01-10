@@ -181,14 +181,21 @@ If cycles are missing the `Knee Angle Z` column:
 
 ## QC Version History
 
-- **v1**: Initial acoustic energy thresholding only
-- **v2**: Added biomechanics validation with knee angle ROM checks (current)
+- **v1**: Initial acoustic energy thresholding with biomechanics waveform validation (current)
+
+Biomechanics validation includes:
+- Range of motion (ROM) checks with maneuver-specific thresholds
+- Peak detection for identifying flexion peaks
+- Start/end angle matching for cyclic maneuvers
+- Monotonicity validation for sit-to-stand transitions
+- Maneuver-specific trajectory validation
 
 See `src/qc_versions.py` for version management details.
 
 ## Related Modules
 
 - `src/synchronization/quality_control.py`: Main QC implementation
+- `src/biomechanics/quality_control.py`: Biomechanics waveform validation
 - `src/biomechanics/cycle_parsing.py`: Movement cycle extraction
 - `src/qc_versions.py`: QC version management
 - `tests/test_sync_qc.py`: QC test suite
