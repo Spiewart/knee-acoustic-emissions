@@ -8,7 +8,8 @@ Version History:
     Audio QC v1: Initial implementation with periodic audio detection
     Biomechanics QC v1: Basic biomechanics validation
     Cycle QC v1: Initial cycle-level acoustic energy thresholding
-    Cycle QC v2: Added biomechanics validation with knee angle range of motion checks
+    Cycle QC v2: Added biomechanics waveform validation with pattern-specific checks
+                 (peak detection, start/end angle matching, monotonicity validation)
 """
 
 from typing import Literal

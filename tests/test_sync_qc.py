@@ -95,14 +95,17 @@ class TestMovementCycleQC:
         assert len(clean_r) == 1
 
     def test_biomechanics_rom_validation(self):
-        """Should validate cycles based on knee angle range of motion."""
-        # Create cycle with good ROM (40 degrees)
+        """Should validate cycles based on knee angle range of motion and waveform."""
+        # Create cycle with good ROM and proper walking pattern (40 degrees)
         cycle_good = _create_test_cycle(base_amplitude=1.0)
-        cycle_good["Knee Angle Z"] = np.linspace(0, 40, len(cycle_good))
+        # Create a proper gait pattern: start low, peak in middle, end low
+        n = len(cycle_good)
+        gait_pattern = 10 + 30 * np.sin(np.linspace(0, np.pi, n))  # 10-40 degree range
+        cycle_good["Knee Angle Z"] = gait_pattern
         
         # Create cycle with insufficient ROM (5 degrees)
         cycle_bad = _create_test_cycle(base_amplitude=1.0)
-        cycle_bad["Knee Angle Z"] = np.linspace(0, 5, len(cycle_bad))
+        cycle_bad["Knee Angle Z"] = np.ones(len(cycle_bad)) * 15  # Flat line, no movement
         
         # Test with default threshold for walk (20 degrees)
         qc = MovementCycleQC(maneuver="walk", acoustic_threshold=0.0)
@@ -115,9 +118,12 @@ class TestMovementCycleQC:
 
     def test_biomechanics_rom_different_maneuvers(self):
         """Should use different ROM thresholds for different maneuvers."""
-        # Create cycle with ROM of 25 degrees
+        # Create cycle with ROM of 25 degrees and proper walking pattern
         cycle = _create_test_cycle(base_amplitude=1.0)
-        cycle["Knee Angle Z"] = np.linspace(0, 25, len(cycle))
+        n = len(cycle)
+        # Walking pattern with 25 degree ROM
+        gait_pattern = 5 + 25 * np.sin(np.linspace(0, np.pi, n))
+        cycle["Knee Angle Z"] = gait_pattern
         
         # For walk (threshold=20°), this should pass
         qc_walk = MovementCycleQC(maneuver="walk", acoustic_threshold=0.0)
@@ -125,7 +131,7 @@ class TestMovementCycleQC:
         assert len(clean_walk) == 1
         assert len(outliers_walk) == 0
         
-        # For sit_to_stand (threshold=40°), this should fail
+        # For sit_to_stand (threshold=40°), this should fail due to ROM
         qc_sts = MovementCycleQC(maneuver="sit_to_stand", acoustic_threshold=0.0)
         clean_sts, outliers_sts = qc_sts.analyze_cycles([cycle])
         assert len(clean_sts) == 0
@@ -134,7 +140,10 @@ class TestMovementCycleQC:
     def test_biomechanics_custom_rom_threshold(self):
         """Should allow custom ROM thresholds."""
         cycle = _create_test_cycle(base_amplitude=1.0)
-        cycle["Knee Angle Z"] = np.linspace(0, 30, len(cycle))
+        n = len(cycle)
+        # Create walking pattern with 30 degree ROM
+        gait_pattern = 5 + 30 * np.sin(np.linspace(0, np.pi, n))
+        cycle["Knee Angle Z"] = gait_pattern
         
         # With custom threshold of 35°, this should fail
         qc = MovementCycleQC(
@@ -154,41 +163,44 @@ class TestMovementCycleQC:
         qc = MovementCycleQC(maneuver="walk", acoustic_threshold=0.0)
         clean, outliers = qc.analyze_cycles([cycle])
         
-        # Cycle should be outlier due to ROM = 0
+        # Cycle should be outlier due to missing column
         assert len(clean) == 0
         assert len(outliers) == 1
 
     def test_biomechanics_with_nan_values(self):
         """Should handle NaN values in knee angle data."""
         cycle = _create_test_cycle(base_amplitude=1.0)
-        knee_angle = np.linspace(0, 40, len(cycle))
-        knee_angle[10:20] = np.nan  # Insert some NaN values
-        cycle["Knee Angle Z"] = knee_angle
+        n = len(cycle)
+        # Create proper walking pattern
+        gait_pattern = 10 + 30 * np.sin(np.linspace(0, np.pi, n))
+        gait_pattern[10:20] = np.nan  # Insert some NaN values
+        cycle["Knee Angle Z"] = gait_pattern
         
         qc = MovementCycleQC(maneuver="walk", acoustic_threshold=0.0)
         clean, outliers = qc.analyze_cycles([cycle])
         
-        # Should still compute ROM from valid values
+        # Should still validate from valid values
         assert len(clean) == 1
         assert len(outliers) == 0
 
     def test_two_stage_qc_both_checks(self):
         """Should apply both acoustic and biomechanics checks."""
-        # Cycle 1: Good acoustic, good ROM
+        # Cycle 1: Good acoustic, good ROM and pattern
         cycle1 = _create_test_cycle(base_amplitude=1.0)
-        cycle1["Knee Angle Z"] = np.linspace(0, 40, len(cycle1))
+        n = len(cycle1)
+        cycle1["Knee Angle Z"] = 10 + 30 * np.sin(np.linspace(0, np.pi, n))
         
-        # Cycle 2: Good acoustic, bad ROM
+        # Cycle 2: Good acoustic, bad ROM/pattern
         cycle2 = _create_test_cycle(base_amplitude=1.0)
-        cycle2["Knee Angle Z"] = np.linspace(0, 5, len(cycle2))
+        cycle2["Knee Angle Z"] = np.ones(len(cycle2)) * 15  # Flat line
         
-        # Cycle 3: Bad acoustic, good ROM
+        # Cycle 3: Bad acoustic, good ROM and pattern
         cycle3 = _create_test_cycle(base_amplitude=0.01)
-        cycle3["Knee Angle Z"] = np.linspace(0, 40, len(cycle3))
+        cycle3["Knee Angle Z"] = 10 + 30 * np.sin(np.linspace(0, np.pi, len(cycle3)))
         
-        # Cycle 4: Bad acoustic, bad ROM
+        # Cycle 4: Bad acoustic, bad ROM/pattern
         cycle4 = _create_test_cycle(base_amplitude=0.01)
-        cycle4["Knee Angle Z"] = np.linspace(0, 5, len(cycle4))
+        cycle4["Knee Angle Z"] = np.ones(len(cycle4)) * 15
         
         qc = MovementCycleQC(
             maneuver="walk",
@@ -200,6 +212,94 @@ class TestMovementCycleQC:
         # Only cycle1 should pass both checks
         assert len(clean) == 1
         assert len(outliers) == 3
+
+    def test_walking_waveform_validation(self):
+        """Should validate proper walking gait pattern."""
+        cycle = _create_test_cycle(base_amplitude=1.0)
+        n = len(cycle)
+        
+        # Valid walking pattern: start low, peak in middle, end low
+        valid_pattern = 10 + 30 * np.sin(np.linspace(0, np.pi, n))
+        cycle["Knee Angle Z"] = valid_pattern
+        
+        qc = MovementCycleQC(maneuver="walk", acoustic_threshold=0.0)
+        clean, outliers = qc.analyze_cycles([cycle])
+        
+        assert len(clean) == 1
+        assert len(outliers) == 0
+
+    def test_walking_waveform_rejects_mismatched_endpoints(self):
+        """Should reject walking cycles with mismatched start/end angles."""
+        cycle = _create_test_cycle(base_amplitude=1.0)
+        n = len(cycle)
+        
+        # Invalid pattern: starts low but ends high
+        invalid_pattern = np.linspace(10, 50, n)
+        cycle["Knee Angle Z"] = invalid_pattern
+        
+        qc = MovementCycleQC(maneuver="walk", acoustic_threshold=0.0)
+        clean, outliers = qc.analyze_cycles([cycle])
+        
+        assert len(clean) == 0
+        assert len(outliers) == 1
+
+    def test_sit_to_stand_waveform_validation(self):
+        """Should validate proper sit-to-stand pattern."""
+        cycle = _create_test_cycle(base_amplitude=1.0)
+        n = len(cycle)
+        
+        # Valid sit-to-stand: high angle (sitting) to low angle (standing)
+        valid_pattern = 80 - 60 * (np.arange(n) / n)  # 80° to 20°
+        cycle["Knee Angle Z"] = valid_pattern
+        
+        qc = MovementCycleQC(maneuver="sit_to_stand", acoustic_threshold=0.0)
+        clean, outliers = qc.analyze_cycles([cycle])
+        
+        assert len(clean) == 1
+        assert len(outliers) == 0
+
+    def test_sit_to_stand_rejects_increasing_pattern(self):
+        """Should reject sit-to-stand with increasing angle (wrong direction)."""
+        cycle = _create_test_cycle(base_amplitude=1.0)
+        n = len(cycle)
+        
+        # Invalid: angle increases instead of decreases
+        invalid_pattern = 20 + 60 * (np.arange(n) / n)  # 20° to 80° (backwards)
+        cycle["Knee Angle Z"] = invalid_pattern
+        
+        qc = MovementCycleQC(maneuver="sit_to_stand", acoustic_threshold=0.0)
+        clean, outliers = qc.analyze_cycles([cycle])
+        
+        assert len(clean) == 0
+        assert len(outliers) == 1
+
+    def test_flexion_extension_waveform_validation(self):
+        """Should validate proper flexion-extension pattern."""
+        cycle = _create_test_cycle(base_amplitude=1.0)
+        n = len(cycle)
+        
+        # Valid flexion-extension: start at extension, flex, return to extension
+        valid_pattern = 10 + 50 * np.sin(np.linspace(0, np.pi, n))
+        cycle["Knee Angle Z"] = valid_pattern
+        
+        qc = MovementCycleQC(maneuver="flexion_extension", acoustic_threshold=0.0)
+        clean, outliers = qc.analyze_cycles([cycle])
+        
+        assert len(clean) == 1
+        assert len(outliers) == 0
+
+    def test_flexion_extension_rejects_no_peak(self):
+        """Should reject flexion-extension cycles without clear peak."""
+        cycle = _create_test_cycle(base_amplitude=1.0)
+        
+        # Invalid: flat line, no flexion
+        cycle["Knee Angle Z"] = np.ones(len(cycle)) * 20
+        
+        qc = MovementCycleQC(maneuver="flexion_extension", acoustic_threshold=0.0)
+        clean, outliers = qc.analyze_cycles([cycle])
+        
+        assert len(clean) == 0
+        assert len(outliers) == 1
 
 
 class TestPerformSyncQC:

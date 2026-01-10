@@ -474,10 +474,15 @@ class MovementCycleQC:
         self,
         cycles: list[pd.DataFrame],
     ) -> tuple[list[pd.DataFrame], list[pd.DataFrame]]:
-        """Stage 2: Validate biomechanics data for appropriate knee angle fluctuations.
+        """Stage 2: Validate biomechanics data for appropriate knee angle waveform patterns.
 
-        Checks that each cycle has sufficient range of motion (ROM) in the knee angle
-        to indicate proper movement execution. Cycles with insufficient ROM may indicate:
+        Validates that each cycle exhibits the stereotypic knee angle fluctuation pattern
+        expected for the maneuver type. This includes:
+        - Sufficient range of motion (ROM)
+        - Presence of expected peaks/troughs at appropriate locations
+        - Proper waveform shape characteristics
+
+        Cycles with improper patterns may indicate:
         - Incorrect cycle boundaries
         - Incomplete movements
         - Data quality issues in biomechanics recordings
@@ -492,18 +497,17 @@ class MovementCycleQC:
         outlier_cycles = []
 
         for cycle_idx, cycle_df in enumerate(cycles):
-            rom = self._compute_knee_angle_rom(cycle_df)
+            is_valid, reason = self._validate_knee_angle_waveform(cycle_df)
 
-            if rom >= self.biomech_min_rom:
+            if is_valid:
                 clean_cycles.append(cycle_df)
                 logger.debug(
-                    f"Cycle {cycle_idx}: CLEAN biomechanics (ROM={rom:.1f}°)"
+                    f"Cycle {cycle_idx}: CLEAN biomechanics ({reason})"
                 )
             else:
                 outlier_cycles.append(cycle_df)
                 logger.debug(
-                    f"Cycle {cycle_idx}: OUTLIER biomechanics (ROM={rom:.1f}°, "
-                    f"threshold={self.biomech_min_rom:.1f}°)"
+                    f"Cycle {cycle_idx}: OUTLIER biomechanics ({reason})"
                 )
 
         return clean_cycles, outlier_cycles
@@ -540,6 +544,193 @@ class MovementCycleQC:
 
         rom = float(np.max(knee_angle_clean) - np.min(knee_angle_clean))
         return rom
+
+    def _validate_knee_angle_waveform(self, cycle_df: pd.DataFrame) -> tuple[bool, str]:
+        """Validate that knee angle waveform matches expected pattern for the maneuver.
+
+        Performs waveform-level validation beyond simple ROM checks, verifying that
+        the knee angle exhibits the stereotypic fluctuation pattern characteristic
+        of the maneuver type.
+
+        Args:
+            cycle_df: Single movement cycle DataFrame with 'Knee Angle Z' column.
+
+        Returns:
+            Tuple of (is_valid, reason) where is_valid indicates if the cycle passes
+            validation and reason provides details about the validation result.
+        """
+        if "Knee Angle Z" not in cycle_df.columns:
+            return False, "missing 'Knee Angle Z' column"
+
+        if len(cycle_df) < 10:
+            return False, "insufficient data points"
+
+        knee_angle = cycle_df["Knee Angle Z"].values
+        
+        # Remove any NaN values
+        valid_mask = ~np.isnan(knee_angle)
+        if not valid_mask.any():
+            return False, "all values are NaN"
+        
+        knee_angle_clean = knee_angle[valid_mask]
+        
+        if len(knee_angle_clean) < 10:
+            return False, "insufficient valid data points after NaN removal"
+
+        # First check: Minimum ROM requirement
+        rom = float(np.max(knee_angle_clean) - np.min(knee_angle_clean))
+        if rom < self.biomech_min_rom:
+            return False, f"ROM={rom:.1f}° below threshold {self.biomech_min_rom:.1f}°"
+
+        # Perform maneuver-specific waveform validation
+        if self.maneuver == "walk":
+            return self._validate_walking_waveform(knee_angle_clean, rom)
+        elif self.maneuver == "sit_to_stand":
+            return self._validate_sit_to_stand_waveform(knee_angle_clean, rom)
+        elif self.maneuver == "flexion_extension":
+            return self._validate_flexion_extension_waveform(knee_angle_clean, rom)
+        else:
+            # Unknown maneuver - fall back to ROM-only check
+            return True, f"ROM={rom:.1f}°"
+
+    def _validate_walking_waveform(
+        self,
+        knee_angle: np.ndarray,
+        rom: float,
+    ) -> tuple[bool, str]:
+        """Validate waveform pattern for walking gait cycles.
+
+        Walking gait cycles should exhibit:
+        1. Start and end at similar low angles (heel strike)
+        2. A flexion peak during swing phase (typically in middle third of cycle)
+        3. Single dominant peak (not multiple peaks of similar magnitude)
+
+        Args:
+            knee_angle: Clean knee angle array (no NaNs)
+            rom: Pre-computed range of motion
+
+        Returns:
+            Tuple of (is_valid, reason)
+        """
+        from scipy.signal import find_peaks
+
+        # Check for proper start/end angles (should be at extension, i.e., minima)
+        start_angle = knee_angle[0]
+        end_angle = knee_angle[-1]
+        angle_tolerance = 10.0  # degrees
+        
+        if abs(end_angle - start_angle) > angle_tolerance:
+            return False, f"start/end angle mismatch: {abs(end_angle - start_angle):.1f}° > {angle_tolerance}°"
+
+        # Find flexion peaks (maxima)
+        peaks, properties = find_peaks(knee_angle, prominence=rom * 0.3)
+        
+        if len(peaks) == 0:
+            return False, "no flexion peak detected"
+        
+        # Should have one dominant peak during swing phase
+        if len(peaks) > 2:
+            return False, f"too many peaks detected ({len(peaks)})"
+
+        # Peak should be in middle portion of cycle (20-80%)
+        cycle_length = len(knee_angle)
+        peak_idx = peaks[0]  # Use first/dominant peak
+        peak_position = peak_idx / cycle_length
+        
+        if peak_position < 0.2 or peak_position > 0.8:
+            return False, f"peak at {peak_position*100:.0f}% of cycle (expected 20-80%)"
+
+        return True, f"ROM={rom:.1f}°, valid gait pattern"
+
+    def _validate_sit_to_stand_waveform(
+        self,
+        knee_angle: np.ndarray,
+        rom: float,
+    ) -> tuple[bool, str]:
+        """Validate waveform pattern for sit-to-stand maneuvers.
+
+        Sit-to-stand should exhibit:
+        1. High angle at start (sitting position, flexed knee)
+        2. Decrease to low angle (standing position, extended knee)
+        3. Generally monotonic decrease or clear transition
+
+        Args:
+            knee_angle: Clean knee angle array (no NaNs)
+            rom: Pre-computed range of motion
+
+        Returns:
+            Tuple of (is_valid, reason)
+        """
+        # Check that we start relatively high and end relatively low
+        start_angle = knee_angle[0]
+        end_angle = knee_angle[-1]
+        
+        # For sit-to-stand, we expect the angle to decrease
+        angle_change = start_angle - end_angle
+        
+        # The change should be substantial (at least 50% of ROM)
+        if angle_change < rom * 0.5:
+            return False, f"insufficient angle decrease: {angle_change:.1f}° < {rom*0.5:.1f}°"
+
+        # Check for general downward trend (allowing some variation)
+        # Split into thirds and check that later thirds have lower mean angles
+        third = len(knee_angle) // 3
+        first_third_mean = np.mean(knee_angle[:third])
+        last_third_mean = np.mean(knee_angle[-third:])
+        
+        if last_third_mean > first_third_mean:
+            return False, "angle increases rather than decreases (not sit-to-stand pattern)"
+
+        return True, f"ROM={rom:.1f}°, valid sit-to-stand pattern"
+
+    def _validate_flexion_extension_waveform(
+        self,
+        knee_angle: np.ndarray,
+        rom: float,
+    ) -> tuple[bool, str]:
+        """Validate waveform pattern for flexion-extension maneuvers.
+
+        Flexion-extension cycles should exhibit:
+        1. Start and end at similar angles (extension position)
+        2. Clear flexion peak in the middle
+        3. Relatively smooth, cyclic pattern
+
+        Args:
+            knee_angle: Clean knee angle array (no NaNs)
+            rom: Pre-computed range of motion
+
+        Returns:
+            Tuple of (is_valid, reason)
+        """
+        from scipy.signal import find_peaks
+
+        # Check for proper start/end angles (should be similar - at extension)
+        start_angle = knee_angle[0]
+        end_angle = knee_angle[-1]
+        angle_tolerance = 15.0  # degrees - more lenient than walking
+        
+        if abs(end_angle - start_angle) > angle_tolerance:
+            return False, f"start/end angle mismatch: {abs(end_angle - start_angle):.1f}° > {angle_tolerance}°"
+
+        # Find flexion peaks (maxima)
+        peaks, _ = find_peaks(knee_angle, prominence=rom * 0.3)
+        
+        if len(peaks) == 0:
+            return False, "no flexion peak detected"
+
+        # Should have at least one clear peak
+        if len(peaks) > 3:
+            return False, f"too many peaks detected ({len(peaks)})"
+
+        # Main peak should be in middle portion of cycle
+        cycle_length = len(knee_angle)
+        peak_idx = peaks[np.argmax(knee_angle[peaks])]  # Get index of highest peak
+        peak_position = peak_idx / cycle_length
+        
+        if peak_position < 0.25 or peak_position > 0.75:
+            return False, f"peak at {peak_position*100:.0f}% of cycle (expected 25-75%)"
+
+        return True, f"ROM={rom:.1f}°, valid flexion-extension pattern"
 
 
 def perform_sync_qc(

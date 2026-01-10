@@ -11,7 +11,7 @@ Each scripted maneuver has stereotypic (characteristic) fluctuations in the knee
 - Inertial Measurement Units (IMUs)
 - Motion Analysis systems
 
-The biomechanics QC validates these expected patterns by checking the **range of motion (ROM)** - the difference between maximum and minimum knee angles within each cycle.
+The biomechanics QC validates these expected patterns through **waveform-level analysis**, checking both the range of motion (ROM) and the shape of the knee angle trajectory to ensure it matches the stereotypic pattern for each maneuver.
 
 ## QC Stages
 
@@ -20,21 +20,35 @@ The `MovementCycleQC` class performs two-stage quality control:
 ### Stage 1: Acoustic Signal Validation
 Filters cycles by acoustic signal strength using area-under-curve (AUC). Cycles with insufficient acoustic energy are flagged as outliers.
 
-### Stage 2: Biomechanics Validation (New)
-Validates that each cycle has sufficient knee angle range of motion to indicate proper movement execution. Cycles with insufficient ROM may indicate:
-- Incorrect cycle boundaries
-- Incomplete movements
-- Data quality issues in biomechanics recordings
+### Stage 2: Biomechanics Waveform Validation
+Validates that each cycle exhibits the expected stereotypic knee angle waveform pattern. This includes:
 
-## Expected Range of Motion by Maneuver
+1. **Range of Motion (ROM) Check**: Minimum ROM thresholds specific to each maneuver
+2. **Waveform Pattern Validation**: Verifies the shape and characteristics of the knee angle trajectory
 
-The QC uses maneuver-specific thresholds for knee angle ROM:
+#### Walking Gait Validation
+- Start and end angles must be similar (heel strike positions)
+- Single dominant flexion peak during swing phase (middle 20-80% of cycle)
+- Peak should not be at the extremes of the cycle
 
-| Maneuver | Default ROM Threshold | Rationale |
-|----------|----------------------|-----------|
-| **Walk** | 20 degrees | Walking has smaller ROM per gait cycle (typically 30-60°) |
-| **Sit-to-stand** | 40 degrees | Large ROM from sitting (~90° flexion) to standing (~0-10°) |
-| **Flexion-extension** | 40 degrees | Significant ROM during controlled flexion-extension cycles |
+#### Sit-to-Stand Validation
+- High angle at start (sitting position, ~90° flexion)
+- Decrease to low angle at end (standing position, ~0-10° extension)
+- Angle change must be substantial (≥50% of ROM)
+- General downward trend (later thirds should have lower mean angles)
+
+#### Flexion-Extension Validation
+- Start and end angles should be similar (extension position)
+- Clear flexion peak in the middle portion (25-75% of cycle)
+- Not more than 3 peaks (avoids noisy/erratic signals)
+
+## Expected Patterns by Maneuver
+
+| Maneuver | ROM Threshold | Waveform Characteristics |
+|----------|--------------|--------------------------|
+| **Walk** | 20° | Start low (heel strike) → peak during swing → end low (heel strike) |
+| **Sit-to-stand** | 40° | Start high (sitting ~90°) → decrease to low (standing ~0-10°) |
+| **Flexion-extension** | 40° | Start low (extension) → peak during flexion → end low (extension) |
 
 ## Usage
 
