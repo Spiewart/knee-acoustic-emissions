@@ -97,10 +97,10 @@ class TestQCVersionIntegration:
         assert metadata.biomech_qc_version == BIOMECH_QC_VERSION
         assert metadata.cycle_qc_version == CYCLE_QC_VERSION
 
-        # Verify current values (all should be 1 initially)
+        # Verify current values
         assert metadata.audio_qc_version == 1
         assert metadata.biomech_qc_version == 1
-        assert metadata.cycle_qc_version == 1
+        assert metadata.cycle_qc_version == 2  # Updated to v2 with biomechanics validation
 
     def test_metadata_serialization_includes_versions(self):
         """QC versions should be included when metadata is serialized."""
