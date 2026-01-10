@@ -94,6 +94,113 @@ class TestMovementCycleQC:
         clean_r, _ = qc_raw.analyze_cycles([cycle])
         assert len(clean_r) == 1
 
+    def test_biomechanics_rom_validation(self):
+        """Should validate cycles based on knee angle range of motion."""
+        # Create cycle with good ROM (40 degrees)
+        cycle_good = _create_test_cycle(base_amplitude=1.0)
+        cycle_good["Knee Angle Z"] = np.linspace(0, 40, len(cycle_good))
+        
+        # Create cycle with insufficient ROM (5 degrees)
+        cycle_bad = _create_test_cycle(base_amplitude=1.0)
+        cycle_bad["Knee Angle Z"] = np.linspace(0, 5, len(cycle_bad))
+        
+        # Test with default threshold for walk (20 degrees)
+        qc = MovementCycleQC(maneuver="walk", acoustic_threshold=0.0)
+        clean, outliers = qc.analyze_cycles([cycle_good, cycle_bad])
+        
+        assert len(clean) == 1
+        assert len(outliers) == 1
+        # Verify that cycle_bad was identified as outlier
+        assert len(outliers[0]) == len(cycle_bad)
+
+    def test_biomechanics_rom_different_maneuvers(self):
+        """Should use different ROM thresholds for different maneuvers."""
+        # Create cycle with ROM of 25 degrees
+        cycle = _create_test_cycle(base_amplitude=1.0)
+        cycle["Knee Angle Z"] = np.linspace(0, 25, len(cycle))
+        
+        # For walk (threshold=20°), this should pass
+        qc_walk = MovementCycleQC(maneuver="walk", acoustic_threshold=0.0)
+        clean_walk, outliers_walk = qc_walk.analyze_cycles([cycle])
+        assert len(clean_walk) == 1
+        assert len(outliers_walk) == 0
+        
+        # For sit_to_stand (threshold=40°), this should fail
+        qc_sts = MovementCycleQC(maneuver="sit_to_stand", acoustic_threshold=0.0)
+        clean_sts, outliers_sts = qc_sts.analyze_cycles([cycle])
+        assert len(clean_sts) == 0
+        assert len(outliers_sts) == 1
+
+    def test_biomechanics_custom_rom_threshold(self):
+        """Should allow custom ROM thresholds."""
+        cycle = _create_test_cycle(base_amplitude=1.0)
+        cycle["Knee Angle Z"] = np.linspace(0, 30, len(cycle))
+        
+        # With custom threshold of 35°, this should fail
+        qc = MovementCycleQC(
+            maneuver="walk", 
+            acoustic_threshold=0.0,
+            biomech_min_rom=35.0
+        )
+        clean, outliers = qc.analyze_cycles([cycle])
+        assert len(clean) == 0
+        assert len(outliers) == 1
+
+    def test_biomechanics_missing_knee_angle_column(self):
+        """Should handle cycles missing 'Knee Angle Z' column gracefully."""
+        cycle = _create_test_cycle(base_amplitude=1.0)
+        del cycle["Knee Angle Z"]
+        
+        qc = MovementCycleQC(maneuver="walk", acoustic_threshold=0.0)
+        clean, outliers = qc.analyze_cycles([cycle])
+        
+        # Cycle should be outlier due to ROM = 0
+        assert len(clean) == 0
+        assert len(outliers) == 1
+
+    def test_biomechanics_with_nan_values(self):
+        """Should handle NaN values in knee angle data."""
+        cycle = _create_test_cycle(base_amplitude=1.0)
+        knee_angle = np.linspace(0, 40, len(cycle))
+        knee_angle[10:20] = np.nan  # Insert some NaN values
+        cycle["Knee Angle Z"] = knee_angle
+        
+        qc = MovementCycleQC(maneuver="walk", acoustic_threshold=0.0)
+        clean, outliers = qc.analyze_cycles([cycle])
+        
+        # Should still compute ROM from valid values
+        assert len(clean) == 1
+        assert len(outliers) == 0
+
+    def test_two_stage_qc_both_checks(self):
+        """Should apply both acoustic and biomechanics checks."""
+        # Cycle 1: Good acoustic, good ROM
+        cycle1 = _create_test_cycle(base_amplitude=1.0)
+        cycle1["Knee Angle Z"] = np.linspace(0, 40, len(cycle1))
+        
+        # Cycle 2: Good acoustic, bad ROM
+        cycle2 = _create_test_cycle(base_amplitude=1.0)
+        cycle2["Knee Angle Z"] = np.linspace(0, 5, len(cycle2))
+        
+        # Cycle 3: Bad acoustic, good ROM
+        cycle3 = _create_test_cycle(base_amplitude=0.01)
+        cycle3["Knee Angle Z"] = np.linspace(0, 40, len(cycle3))
+        
+        # Cycle 4: Bad acoustic, bad ROM
+        cycle4 = _create_test_cycle(base_amplitude=0.01)
+        cycle4["Knee Angle Z"] = np.linspace(0, 5, len(cycle4))
+        
+        qc = MovementCycleQC(
+            maneuver="walk",
+            acoustic_threshold=1.0,
+            biomech_min_rom=20.0
+        )
+        clean, outliers = qc.analyze_cycles([cycle1, cycle2, cycle3, cycle4])
+        
+        # Only cycle1 should pass both checks
+        assert len(clean) == 1
+        assert len(outliers) == 3
+
 
 class TestPerformSyncQC:
     """Test suite for the main perform_sync_qc pipeline."""

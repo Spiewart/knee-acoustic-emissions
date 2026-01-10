@@ -319,6 +319,7 @@ class MovementCycleQC:
         speed: Optional[Literal["slow", "medium", "fast"]] = None,
         acoustic_threshold: float = 100.0,
         acoustic_channel: Literal["raw", "filtered"] = "filtered",
+        biomech_min_rom: Optional[float] = None,
     ):
         """Initialize QC analyzer.
 
@@ -327,11 +328,29 @@ class MovementCycleQC:
             speed: Speed level for walking (slow, medium, fast)
             acoustic_threshold: Minimum RMS acoustic energy threshold per cycle
             acoustic_channel: Whether to use raw (ch) or filtered (f_ch) channels
+            biomech_min_rom: Minimum knee angle range of motion (degrees) for valid biomechanics.
+                           If None, uses maneuver-specific defaults:
+                           - walk: 20 degrees
+                           - sit_to_stand: 40 degrees
+                           - flexion_extension: 40 degrees
         """
         self.maneuver = maneuver
         self.speed = speed
         self.acoustic_threshold = acoustic_threshold
         self.acoustic_channel = acoustic_channel
+        
+        # Set default biomechanics ROM thresholds based on maneuver
+        if biomech_min_rom is None:
+            if maneuver == "walk":
+                self.biomech_min_rom = 20.0  # Walking has smaller ROM per cycle
+            elif maneuver == "sit_to_stand":
+                self.biomech_min_rom = 40.0  # Sit-to-stand has large ROM
+            elif maneuver == "flexion_extension":
+                self.biomech_min_rom = 40.0  # Flexion-extension has significant ROM
+            else:
+                self.biomech_min_rom = 20.0  # Default fallback
+        else:
+            self.biomech_min_rom = biomech_min_rom
 
     def analyze_cycles(
         self,
@@ -342,7 +361,8 @@ class MovementCycleQC:
         **Stage 1**: Filters cycles by acoustic signal strength using area-under-curve (AUC).
         Cycles with acoustic energy below the threshold are flagged as outliers.
 
-        **Stage 2**: (Future) Compares clean cycles to expected acoustic-biomechanics relationships.
+        **Stage 2**: Validates biomechanics data to ensure appropriate knee angle fluctuations.
+        Cycles with insufficient range of motion are flagged as outliers.
 
         Args:
             cycles: List of movement cycle DataFrames from cycle parser.
@@ -350,7 +370,7 @@ class MovementCycleQC:
         Returns:
             Tuple of (clean_cycles, outlier_cycles):
             - clean_cycles: Cycles passing all QC checks.
-            - outlier_cycles: Cycles flagged as problematic (low signal, etc.).
+            - outlier_cycles: Cycles flagged as problematic (low signal, insufficient ROM, etc.).
         """
         if not cycles:
             logger.warning("No cycles provided for QC analysis")
@@ -359,17 +379,19 @@ class MovementCycleQC:
         # Stage 1: Identify cycles with insufficient acoustic signal
         clean_cycles, outliers_low_signal = self._stage1_acoustic_threshold(cycles)
 
-        # Stage 2: Compare clean cycles to expected relationships
-        # (Advanced validation could go here)
+        # Stage 2: Validate biomechanics data (knee angle range of motion)
+        clean_cycles_final, outliers_biomech = self._stage2_biomechanics_validation(clean_cycles)
 
-        outlier_cycles = outliers_low_signal
+        # Combine all outliers
+        outlier_cycles = outliers_low_signal + outliers_biomech
 
         logger.info(
-            f"QC complete: {len(clean_cycles)} clean cycles, "
-            f"{len(outlier_cycles)} outliers"
+            f"QC complete: {len(clean_cycles_final)} clean cycles, "
+            f"{len(outlier_cycles)} outliers "
+            f"(acoustic: {len(outliers_low_signal)}, biomechanics: {len(outliers_biomech)})"
         )
 
-        return clean_cycles, outlier_cycles
+        return clean_cycles_final, outlier_cycles
 
     def _stage1_acoustic_threshold(
         self,
@@ -448,6 +470,77 @@ class MovementCycleQC:
 
         return total_auc
 
+    def _stage2_biomechanics_validation(
+        self,
+        cycles: list[pd.DataFrame],
+    ) -> tuple[list[pd.DataFrame], list[pd.DataFrame]]:
+        """Stage 2: Validate biomechanics data for appropriate knee angle fluctuations.
+
+        Checks that each cycle has sufficient range of motion (ROM) in the knee angle
+        to indicate proper movement execution. Cycles with insufficient ROM may indicate:
+        - Incorrect cycle boundaries
+        - Incomplete movements
+        - Data quality issues in biomechanics recordings
+
+        Args:
+            cycles: List of cycle DataFrames that passed acoustic threshold.
+
+        Returns:
+            Tuple of (clean_cycles, outlier_cycles)
+        """
+        clean_cycles = []
+        outlier_cycles = []
+
+        for cycle_idx, cycle_df in enumerate(cycles):
+            rom = self._compute_knee_angle_rom(cycle_df)
+
+            if rom >= self.biomech_min_rom:
+                clean_cycles.append(cycle_df)
+                logger.debug(
+                    f"Cycle {cycle_idx}: CLEAN biomechanics (ROM={rom:.1f}°)"
+                )
+            else:
+                outlier_cycles.append(cycle_df)
+                logger.debug(
+                    f"Cycle {cycle_idx}: OUTLIER biomechanics (ROM={rom:.1f}°, "
+                    f"threshold={self.biomech_min_rom:.1f}°)"
+                )
+
+        return clean_cycles, outlier_cycles
+
+    def _compute_knee_angle_rom(self, cycle_df: pd.DataFrame) -> float:
+        """Compute range of motion (ROM) for knee angle in a cycle.
+
+        ROM is calculated as the difference between maximum and minimum knee angle
+        values within the cycle, representing the extent of joint movement.
+
+        Args:
+            cycle_df: Single movement cycle DataFrame with 'Knee Angle Z' column.
+
+        Returns:
+            Range of motion in degrees. Returns 0.0 if 'Knee Angle Z' column is missing
+            or if the cycle has insufficient data.
+        """
+        if "Knee Angle Z" not in cycle_df.columns:
+            logger.warning("Cycle missing 'Knee Angle Z' column for ROM computation")
+            return 0.0
+
+        if len(cycle_df) < 2:
+            logger.warning("Cycle too short for ROM computation")
+            return 0.0
+
+        knee_angle = cycle_df["Knee Angle Z"].values
+        
+        # Remove any NaN values before computing ROM
+        knee_angle_clean = knee_angle[~np.isnan(knee_angle)]
+        
+        if len(knee_angle_clean) == 0:
+            logger.warning("Cycle has only NaN values in 'Knee Angle Z'")
+            return 0.0
+
+        rom = float(np.max(knee_angle_clean) - np.min(knee_angle_clean))
+        return rom
+
 
 def perform_sync_qc(
     synced_pkl_path: Path,
@@ -455,6 +548,7 @@ def perform_sync_qc(
     maneuver: Optional[Literal["walk", "sit_to_stand", "flexion_extension"]] = None,
     speed: Optional[Literal["slow", "medium", "fast"]] = None,
     acoustic_threshold: float = 100.0,
+    biomech_min_rom: Optional[float] = None,
     create_plots: bool = True,
 ) -> tuple[list[pd.DataFrame], list[pd.DataFrame], Path]:
     """Perform complete QC pipeline on a synchronized recording.
@@ -465,6 +559,8 @@ def perform_sync_qc(
         maneuver: Type of movement. If None, inferred from file path.
         speed: Speed level for walking. If None, inferred from file path.
         acoustic_threshold: Minimum acoustic energy per cycle.
+        biomech_min_rom: Minimum knee angle range of motion (degrees) for valid biomechanics.
+                        If None, uses maneuver-specific defaults.
         create_plots: Whether to create visualization plots.
 
     Returns:
@@ -503,6 +599,7 @@ def perform_sync_qc(
         maneuver=maneuver,
         speed=speed,
         acoustic_threshold=acoustic_threshold,
+        biomech_min_rom=biomech_min_rom,
     )
     clean_cycles, outlier_cycles = qc.analyze_cycles(cycles)
 
@@ -797,6 +894,15 @@ def main() -> int:
     )
 
     parser.add_argument(
+        "--biomech-min-rom",
+        type=float,
+        default=None,
+        help="Minimum knee angle range of motion (degrees) for valid biomechanics. "
+             "If not specified, uses maneuver-specific defaults: "
+             "walk=20°, sit_to_stand=40°, flexion_extension=40°",
+    )
+
+    parser.add_argument(
         "--no-plots",
         action="store_true",
         help="Skip creation of visualization plots",
@@ -855,6 +961,7 @@ def main() -> int:
                 maneuver=args.maneuver,
                 speed=args.speed,
                 acoustic_threshold=args.threshold,
+                biomech_min_rom=args.biomech_min_rom,
                 create_plots=not args.no_plots,
             )
 
