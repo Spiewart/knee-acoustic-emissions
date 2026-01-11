@@ -5,9 +5,11 @@
 The raw audio QC module provides automated quality checks for unprocessed acoustic recordings from .bin files. It detects two main types of issues:
 
 1. **Signal Dropout**: Silence or flatline conditions in microphones
-2. **Artifactual Noise**: Spikes, outliers, or abnormal signal patterns
+2. **Artifactual Noise**: Two types of artifacts:
+   - **Type 1**: One-off or time-limited spikes (intermittent background noise: talking, objects falling)
+   - **Type 2**: Consistent periodic background noise at specific frequencies (fans, motors)
 
-Bad sections are annotated with timestamps and stored in processing logs for review and downstream analysis.
+Bad sections are annotated with timestamps and stored in processing logs for review and downstream analysis. The module also provides synchronization support for aligning QC results with biomechanics data.
 
 ## Features
 
@@ -25,11 +27,34 @@ Default thresholds:
 
 ### Artifact Detection
 
-Identifies abnormal signal spikes or noise bursts:
-- Detects values exceeding mean + N×std in local sliding window
+Identifies two types of abnormal signal patterns:
+
+**Type 1: One-off Spikes**
+- Detects intermittent background noise (people talking, glass breaking)
+- Uses local statistical thresholds (mean + N×std)
 - Default: 5 standard deviations
 - Window size: 0.01 seconds
-- Minimum duration: 0.01 seconds
+
+**Type 2: Periodic Background Noise**
+- Detects consistent noise at specific frequencies (fan running, motor hum)
+- Uses power spectral density analysis (Welch's method)
+- Identifies prominent spectral peaks
+- Configurable threshold (0-1 scale, default: 0.3)
+
+### Synchronization Support
+
+Methods to handle audio QC in synchronized data context:
+
+**`adjust_bad_intervals_for_sync()`**
+- Adjusts bad interval timestamps from audio coordinates to synchronized (biomechanics) coordinates
+- Uses stomp times to calculate offset
+- Ensures QC results align with synchronized data
+
+**`check_cycle_in_bad_interval()`**
+- Checks if movement cycles overlap with bad audio segments
+- Configurable overlap threshold (default: 10%)
+- Returns whether cycle should be marked as failing audio QC
+- Can populate `audio_QC_passed` field in cycle metadata
 
 ### Audio Segment Clipping
 
@@ -139,6 +164,73 @@ artifact_intervals = detect_artifactual_noise(
     time_col="tt",
     audio_channels=["ch1", "ch2", "ch3", "ch4"],
     spike_threshold_sigma=5.0,
+    detect_periodic_noise=True,
+    periodic_noise_threshold=0.3,
+)
+```
+
+### Synchronization Workflow
+
+When working with synchronized audio-biomechanics data:
+
+```python
+from src.audio.raw_qc import (
+    run_raw_audio_qc,
+    merge_bad_intervals,
+    adjust_bad_intervals_for_sync,
+    check_cycle_in_bad_interval,
+)
+
+# Step 1: Run QC on raw audio
+dropout, artifacts = run_raw_audio_qc(audio_df)
+bad_intervals_audio = merge_bad_intervals(dropout, artifacts)
+
+# Step 2: Get stomp times from synchronization
+audio_stomp_time = 3.5  # seconds (in audio coordinates)
+bio_stomp_time = 12.0   # seconds (in biomechanics coordinates)
+
+# Step 3: Adjust bad intervals to synchronized coordinates
+bad_intervals_synced = adjust_bad_intervals_for_sync(
+    bad_intervals_audio,
+    audio_stomp_time,
+    bio_stomp_time,
+)
+
+# Step 4: Check if movement cycles have bad audio
+for cycle in movement_cycles:
+    cycle_start = cycle['start_time']  # in synced coordinates
+    cycle_end = cycle['end_time']
+    
+    audio_qc_passed = not check_cycle_in_bad_interval(
+        cycle_start,
+        cycle_end,
+        bad_intervals_synced,
+        overlap_threshold=0.1,  # 10% overlap threshold
+    )
+    
+    # Update cycle metadata
+    cycle['audio_QC_passed'] = audio_qc_passed
+    if not audio_qc_passed:
+        print(f"Cycle {cycle['id']} failed audio QC due to bad segments")
+```
+
+### Controlling Artifact Detection Types
+
+```python
+from src.audio.raw_qc import run_raw_audio_qc
+
+# Detect only spikes, not periodic noise
+dropout, artifacts = run_raw_audio_qc(
+    df,
+    detect_periodic_noise=False,
+)
+
+# Detect both types with custom thresholds
+dropout, artifacts = run_raw_audio_qc(
+    df,
+    spike_threshold_sigma=3.0,          # More sensitive to spikes
+    periodic_noise_threshold=0.2,       # More sensitive to periodic noise
+    detect_periodic_noise=True,
 )
 ```
 
@@ -154,9 +246,22 @@ Intervals indicate periods where signal quality is compromised:
 ### Artifact Intervals
 
 Intervals indicate periods with abnormal signal characteristics:
-- Brief spikes: May be electrical interference or EMI
-- Sustained artifacts: Check for environmental noise sources
-- Frequent artifacts: May indicate sensor saturation or clipping
+
+**Type 1: One-off Spikes**
+- Brief, isolated spikes: Electrical interference or EMI
+- Burst patterns: Someone talking, doors closing, objects falling
+- Irregular timing: Environmental disturbances
+
+**Type 2: Periodic Background Noise**
+- Entire recording flagged: Consistent fan or motor running throughout
+- Specific frequency dominance: HVAC system, machinery
+- Steady presence: Background equipment noise
+
+**General Guidelines:**
+- Short artifacts (< 0.1s): Often transient electrical noise
+- Medium artifacts (0.1-1s): Likely environmental events
+- Long artifacts (> 1s): Sustained background noise or periodic interference
+- Frequent short artifacts: Check for EMI sources or grounding issues
 
 ### QC_not_passed in Logs
 
