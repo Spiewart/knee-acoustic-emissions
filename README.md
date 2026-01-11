@@ -214,6 +214,43 @@ For knee-level models (TFM KL, PFM KL, Varus Thrust), the training process autom
 **Visualization:**
 - Plot synced data: `python -m cli.visualize synced_data.pkl`
 
+Raw Audio QC (signal quality)
+-----------------------------
+
+The raw audio QC module automatically detects signal dropout and artifactual noise when processing .bin files. This QC runs during the bin processing stage (before other QC checks) and ensures raw sensor data quality.
+
+**Automatic QC during bin processing:**
+```bash
+ae-process-directory /path/to/studies --entrypoint bin
+```
+
+**What it detects:**
+- **Signal dropout**: Silence or flatline conditions (sensor failure/disconnection)
+- **Artifactual noise**: Spikes, outliers, or abnormal signal patterns
+
+**Results storage:**
+- Bad intervals are stored in processing logs as `QC_not_passed` column
+- Format: List of (start_time, end_time) tuples in seconds
+- Example: `[(1.5, 2.3), (5.0, 6.2)]` indicates two problematic sections
+
+**Programmatic usage:**
+```python
+from src.audio.raw_qc import run_raw_audio_qc, merge_bad_intervals, clip_bad_segments
+import pandas as pd
+
+# Load audio data
+df = pd.read_pickle("audio_data.pkl")
+
+# Run QC
+dropout_intervals, artifact_intervals = run_raw_audio_qc(df)
+
+# Merge and optionally clip out bad segments
+bad_intervals = merge_bad_intervals(dropout_intervals, artifact_intervals)
+clean_df = clip_bad_segments(df, bad_intervals)
+```
+
+See [docs/RAW_AUDIO_QC.md](docs/RAW_AUDIO_QC.md) for detailed documentation, tuning guidelines, and API reference.
+
 Audio QC (maneuver-specific)
 ----------------------------
 

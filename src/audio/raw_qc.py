@@ -7,6 +7,57 @@ This module provides QC checks for unprocessed/raw audio recordings to identify:
 Sections with dropout or artifacts are annotated with timestamps, and methods
 are provided for clipping out poor quality sections while preserving timestamps
 and synchronization metadata.
+
+Usage Example
+-------------
+```python
+from src.audio.raw_qc import run_raw_audio_qc, merge_bad_intervals, clip_bad_segments
+import pandas as pd
+
+# Load audio data
+df = pd.read_pickle("audio_data.pkl")
+
+# Run QC to detect dropout and artifacts
+dropout_intervals, artifact_intervals = run_raw_audio_qc(df)
+
+# Merge all bad intervals
+bad_intervals = merge_bad_intervals(dropout_intervals, artifact_intervals)
+
+# Optionally clip out bad segments
+clean_df = clip_bad_segments(df, bad_intervals)
+
+# The bad_intervals can be stored in processing logs as QC_not_passed
+qc_not_passed = str(bad_intervals)  # Format for Excel logs
+```
+
+Quality Control Criteria
+------------------------
+
+**Dropout Detection:**
+- Silence: RMS amplitude below threshold (default: 0.001)
+- Flatline: Variance below threshold (default: 0.0001)
+- Window size: 0.5 seconds (default)
+- Minimum duration: 0.1 seconds (default)
+
+**Artifact Detection:**
+- Spikes: Values exceeding mean + N*std in local window (default: 5 sigma)
+- Window size: 0.01 seconds (default)
+- Minimum duration: 0.01 seconds (default)
+
+Thresholds can be adjusted based on signal characteristics and recording conditions.
+
+Integration with Processing Pipeline
+------------------------------------
+This module is integrated into the bin processing stage (`_process_bin_stage` in
+`participant.py`). When processing .bin files:
+1. Raw audio is read from .bin file
+2. QC is performed to detect dropout and artifacts
+3. Bad intervals are stored in AudioProcessingRecord as QC_not_passed
+4. Processing logs are updated with QC results
+5. Clean audio proceeds to frequency augmentation
+
+The QC_not_passed field in logs contains a string representation of
+list of (start_time, end_time) tuples indicating sections that did not pass QC.
 """
 
 from __future__ import annotations
