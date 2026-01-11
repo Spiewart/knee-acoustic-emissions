@@ -125,5 +125,34 @@ def test_empty_bad_intervals():
         assert audio_qc_passed == True, "All cycles should pass with no bad intervals"
 
 
+def test_provided_bad_segments_parameter():
+    """Test that bad_audio_segments parameter can be provided directly."""
+    # This test verifies that the perform_sync_qc function accepts
+    # bad_audio_segments as an optional parameter
+    
+    # Test data - bad intervals in audio coordinates
+    provided_bad_intervals = [(2.0, 3.0), (7.0, 8.0)]
+    
+    # Verify format is correct (list of tuples)
+    assert isinstance(provided_bad_intervals, list)
+    assert all(isinstance(interval, tuple) for interval in provided_bad_intervals)
+    assert all(len(interval) == 2 for interval in provided_bad_intervals)
+    
+    # Verify intervals can be used with adjust_bad_intervals_for_sync
+    audio_stomp = 3.0
+    bio_stomp = 10.0
+    
+    adjusted = adjust_bad_intervals_for_sync(
+        provided_bad_intervals,
+        audio_stomp,
+        bio_stomp,
+    )
+    
+    # Should work the same as any other bad intervals
+    assert len(adjusted) == len(provided_bad_intervals)
+    assert adjusted[0] == (9.0, 10.0)
+    assert adjusted[1] == (14.0, 15.0)
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

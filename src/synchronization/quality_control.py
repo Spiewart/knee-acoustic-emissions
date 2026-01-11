@@ -612,6 +612,7 @@ def perform_sync_qc(
     acoustic_threshold: float = 100.0,
     biomech_min_rom: Optional[float] = None,
     create_plots: bool = True,
+    bad_audio_segments: Optional[list[tuple[float, float]]] = None,
 ) -> tuple[list[pd.DataFrame], list[pd.DataFrame], Path]:
     """Perform complete QC pipeline on a synchronized recording.
 
@@ -624,6 +625,10 @@ def perform_sync_qc(
         biomech_min_rom: Minimum knee angle range of motion (degrees) for valid biomechanics.
                         If None, uses maneuver-specific defaults.
         create_plots: Whether to create visualization plots.
+        bad_audio_segments: Optional list of (start_time, end_time) tuples in audio coordinates
+                           indicating bad audio segments from raw audio QC. If None, attempts
+                           to load from processing log. Useful for providing segments from
+                           alternative sources (e.g., database) in the future.
 
     Returns:
         Tuple of (clean_cycles, outlier_cycles, output_directory)
@@ -687,8 +692,18 @@ def perform_sync_qc(
     )
     
     # Check cycles against raw audio QC bad intervals
+    # Use provided bad_audio_segments or load from processing log
+    if bad_audio_segments is not None:
+        # Use provided bad segments
+        audio_qc_bad_intervals = bad_audio_segments
+        logger.debug("Using provided bad_audio_segments for QC checks")
+    else:
+        # Fall back to loading from processing log (default behavior)
+        audio_qc_bad_intervals = metadata_context.get("audio_qc_bad_intervals", [])
+        if audio_qc_bad_intervals:
+            logger.debug("Loaded bad audio segments from processing log")
+    
     # Adjust bad intervals from audio coordinates to synchronized coordinates
-    audio_qc_bad_intervals = metadata_context.get("audio_qc_bad_intervals", [])
     if audio_qc_bad_intervals:
         from src.audio.raw_qc import adjust_bad_intervals_for_sync, check_cycle_in_bad_interval
         
