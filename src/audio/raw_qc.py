@@ -40,11 +40,20 @@ Quality Control Criteria
 - Minimum duration: 0.1 seconds (default)
 
 **Artifact Detection:**
-- Spikes: Values exceeding mean + N*std in local window (default: 5 sigma)
+- One-off spikes: Values exceeding mean + N*std in local window (default: 5 sigma)
+- Periodic noise: Consistent background noise at specific frequencies (e.g., fan)
 - Window size: 0.01 seconds (default)
 - Minimum duration: 0.01 seconds (default)
 
 Thresholds can be adjusted based on signal characteristics and recording conditions.
+
+Synchronization Support
+-----------------------
+Methods are provided to handle audio QC in the context of synchronized data:
+- `adjust_bad_intervals_for_sync()`: Adjusts bad interval timestamps from audio
+  coordinates to synchronized (biomechanics) coordinates using stomp times
+- `check_cycle_in_bad_interval()`: Checks if a movement cycle overlaps with
+  bad audio intervals and should be marked as failing audio QC
 
 Integration with Processing Pipeline
 ------------------------------------
@@ -178,11 +187,16 @@ def detect_artifactual_noise(
     spike_threshold_sigma: float = 5.0,
     spike_window_s: float = 0.01,
     min_artifact_duration_s: float = 0.01,
+    periodic_noise_threshold: float = 0.3,
+    detect_periodic_noise: bool = True,
 ) -> List[Tuple[float, float]]:
     """Detect artifactual noise (spikes, outliers) in audio channels.
 
-    Artifacts are identified when signal values exceed a threshold based on
-    local statistics, indicating abnormal spikes or noise bursts.
+    Detects two types of artifacts:
+    1. One-off or time-limited spikes: Intermittent background noise (e.g., 
+       someone talking, glass falling) detected via local statistical thresholds
+    2. Consistent periodic background noise: Noise at specific frequencies 
+       (e.g., fan running) detected via spectral analysis
 
     Args:
         df: Audio DataFrame with time and channel data
@@ -191,6 +205,8 @@ def detect_artifactual_noise(
         spike_threshold_sigma: Number of standard deviations for spike detection
         spike_window_s: Window size for computing local statistics (seconds)
         min_artifact_duration_s: Minimum continuous artifact duration to report
+        periodic_noise_threshold: Threshold for detecting periodic noise (0-1)
+        detect_periodic_noise: Whether to detect periodic background noise
 
     Returns:
         List of (start_time, end_time) tuples indicating artifact periods
@@ -223,7 +239,7 @@ def detect_artifactual_noise(
     for ch in available_channels:
         ch_data = pd.to_numeric(df[ch], errors="coerce").to_numpy()
 
-        # Compute local mean and std using sliding window
+        # Type 1: Detect one-off spikes via local statistics
         local_mean = _sliding_window_mean(ch_data, window_samples)
         local_std = _sliding_window_std(ch_data, window_samples)
 
@@ -231,6 +247,11 @@ def detect_artifactual_noise(
         threshold = local_mean + spike_threshold_sigma * local_std
         ch_artifacts = np.abs(ch_data) > threshold
         artifact_mask |= ch_artifacts
+
+        # Type 2: Detect periodic background noise via spectral analysis
+        if detect_periodic_noise:
+            periodic_mask = _detect_periodic_noise(ch_data, fs, periodic_noise_threshold)
+            artifact_mask |= periodic_mask
 
     # Convert artifact mask to time intervals
     artifact_intervals = _mask_to_intervals(
@@ -252,10 +273,16 @@ def run_raw_audio_qc(
     spike_window_s: float = 0.01,
     min_dropout_duration_s: float = 0.1,
     min_artifact_duration_s: float = 0.01,
+    periodic_noise_threshold: float = 0.3,
+    detect_periodic_noise: bool = True,
 ) -> Tuple[List[Tuple[float, float]], List[Tuple[float, float]]]:
     """Run comprehensive raw audio QC checks.
 
     Detects both signal dropout and artifactual noise in raw audio recordings.
+    
+    Artifactual noise detection includes:
+    - One-off or time-limited spikes (intermittent background noise)
+    - Consistent periodic background noise at specific frequencies
 
     Args:
         df: Audio DataFrame with time and channel data
@@ -268,6 +295,8 @@ def run_raw_audio_qc(
         spike_window_s: Window size for spike detection (seconds)
         min_dropout_duration_s: Minimum dropout duration to report
         min_artifact_duration_s: Minimum artifact duration to report
+        periodic_noise_threshold: Threshold for periodic noise detection (0-1)
+        detect_periodic_noise: Whether to detect periodic background noise
 
     Returns:
         Tuple of (dropout_intervals, artifact_intervals) where each is a list
@@ -290,6 +319,8 @@ def run_raw_audio_qc(
         spike_threshold_sigma=spike_threshold_sigma,
         spike_window_s=spike_window_s,
         min_artifact_duration_s=min_artifact_duration_s,
+        periodic_noise_threshold=periodic_noise_threshold,
+        detect_periodic_noise=detect_periodic_noise,
     )
 
     return dropout_intervals, artifact_intervals
@@ -372,6 +403,85 @@ def clip_bad_segments(
 
     # Return filtered DataFrame
     return df[keep_mask].reset_index(drop=True)
+
+
+def adjust_bad_intervals_for_sync(
+    bad_intervals: List[Tuple[float, float]],
+    audio_stomp_time: float,
+    bio_stomp_time: float,
+) -> List[Tuple[float, float]]:
+    """Adjust bad interval timestamps for synchronization offset.
+    
+    When audio and biomechanics are synchronized via stomp times, the audio
+    timestamps are shifted. This function adjusts the bad intervals from 
+    raw audio coordinates to synchronized (biomechanics) coordinates.
+    
+    Args:
+        bad_intervals: List of (start, end) tuples in audio time coordinates
+        audio_stomp_time: Stomp time in audio recording (seconds)
+        bio_stomp_time: Stomp time in biomechanics recording (seconds)
+        
+    Returns:
+        List of (start, end) tuples in synchronized time coordinates
+    """
+    if not bad_intervals:
+        return []
+    
+    # Calculate the offset: bio_stomp - audio_stomp
+    # This is the shift applied to audio timestamps during synchronization
+    offset = bio_stomp_time - audio_stomp_time
+    
+    # Adjust all intervals by the offset
+    adjusted_intervals = [
+        (start + offset, end + offset)
+        for start, end in bad_intervals
+    ]
+    
+    return adjusted_intervals
+
+
+def check_cycle_in_bad_interval(
+    cycle_start_time: float,
+    cycle_end_time: float,
+    bad_intervals: List[Tuple[float, float]],
+    overlap_threshold: float = 0.1,
+) -> bool:
+    """Check if a movement cycle overlaps with bad audio intervals.
+    
+    Returns True if the cycle has significant overlap with any bad interval,
+    indicating that audio QC should be marked as failed for this cycle.
+    
+    Args:
+        cycle_start_time: Start time of movement cycle (seconds)
+        cycle_end_time: End time of movement cycle (seconds)
+        bad_intervals: List of (start, end) bad interval tuples (seconds)
+        overlap_threshold: Fraction of cycle duration that must overlap
+                          to mark as failed (default: 0.1 = 10%)
+    
+    Returns:
+        True if cycle fails audio QC due to bad intervals, False otherwise
+    """
+    if not bad_intervals:
+        return False
+    
+    cycle_duration = cycle_end_time - cycle_start_time
+    if cycle_duration <= 0:
+        return False
+    
+    # Calculate total overlap with all bad intervals
+    total_overlap = 0.0
+    
+    for bad_start, bad_end in bad_intervals:
+        # Calculate overlap between cycle and this bad interval
+        overlap_start = max(cycle_start_time, bad_start)
+        overlap_end = min(cycle_end_time, bad_end)
+        
+        if overlap_end > overlap_start:
+            total_overlap += (overlap_end - overlap_start)
+    
+    # Check if overlap exceeds threshold
+    overlap_fraction = total_overlap / cycle_duration
+    return overlap_fraction >= overlap_threshold
 
 
 # Helper functions for sliding window operations
@@ -493,3 +603,67 @@ def _mask_to_intervals(
                 intervals.append((float(start_time), float(end_time)))
 
     return intervals
+
+
+def _detect_periodic_noise(
+    data: np.ndarray,
+    fs: float,
+    threshold: float = 0.3,
+) -> np.ndarray:
+    """Detect periodic background noise using spectral analysis.
+    
+    Identifies consistent periodic noise (e.g., fan running) by analyzing
+    the power spectral density. Periods with elevated power at specific
+    frequencies are marked as artifacts.
+    
+    Args:
+        data: Audio signal data
+        fs: Sampling frequency (Hz)
+        threshold: Threshold for periodic noise detection (0-1)
+                  Higher values = less sensitive
+    
+    Returns:
+        Boolean mask where True indicates periodic noise
+    """
+    from scipy.signal import welch
+    
+    if len(data) < 256:
+        return np.zeros(len(data), dtype=bool)
+    
+    # Compute power spectral density
+    try:
+        nperseg = min(len(data), int(fs * 2))  # 2 second windows
+        freqs, psd = welch(data, fs=fs, nperseg=nperseg, noverlap=nperseg // 2)
+    except Exception:
+        return np.zeros(len(data), dtype=bool)
+    
+    if len(psd) == 0:
+        return np.zeros(len(data), dtype=bool)
+    
+    # Identify prominent spectral peaks (potential periodic noise)
+    # Ignore DC and very low frequencies (< 5 Hz)
+    freq_mask = freqs > 5.0
+    if not np.any(freq_mask):
+        return np.zeros(len(data), dtype=bool)
+    
+    psd_nondc = psd[freq_mask]
+    if len(psd_nondc) == 0:
+        return np.zeros(len(data), dtype=bool)
+    
+    # Calculate relative power: peak power / median power
+    median_power = np.median(psd_nondc)
+    if median_power <= 0:
+        return np.zeros(len(data), dtype=bool)
+    
+    max_power = np.max(psd_nondc)
+    relative_power = max_power / median_power
+    
+    # If relative power is high, we have a strong periodic component
+    # This indicates consistent background noise at a specific frequency
+    has_periodic_noise = relative_power > (1.0 / threshold)
+    
+    if has_periodic_noise:
+        # Mark entire signal as artifact (periodic noise is typically present throughout)
+        return np.ones(len(data), dtype=bool)
+    else:
+        return np.zeros(len(data), dtype=bool)
