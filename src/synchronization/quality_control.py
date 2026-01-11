@@ -37,6 +37,7 @@ class _CycleResult(NamedTuple):
     index: int
     energy: float
     qc_pass: bool
+    audio_qc_pass: bool = True  # Raw audio QC pass/fail
 
 
 def _find_participant_dir(path: Path) -> Optional[Path]:
@@ -184,10 +185,11 @@ def _build_cycle_metadata_context(
     if maneuver == "walk" and pass_number is None:
         pass_number = 0
 
-    # Load sync times from processing log
+    # Load sync times and audio QC results from processing log
     audio_sync_time = timedelta(0)
     biomech_sync_left_time = timedelta(0)
     biomech_sync_right_time = timedelta(0)
+    audio_qc_bad_intervals = []  # Bad intervals from raw audio QC
 
     if participant_dir:
         try:
@@ -207,6 +209,16 @@ def _build_cycle_metadata_context(
             log = ManeuverProcessingLog.load_from_excel(log_path)
 
             if log:
+                # Load audio QC bad intervals
+                if log.audio_record and log.audio_record.QC_not_passed:
+                    try:
+                        import ast
+                        # Parse the string representation of the list of tuples
+                        audio_qc_bad_intervals = ast.literal_eval(log.audio_record.QC_not_passed)
+                    except Exception as exc:
+                        logger.debug("Failed to parse QC_not_passed: %s", exc)
+                
+                # Load sync times
                 sync_file_stem = synced_pkl_path.stem
                 for rec in log.synchronization_records:
                     if rec.sync_file_name == sync_file_stem:
@@ -239,6 +251,7 @@ def _build_cycle_metadata_context(
         "audio_sync_time": audio_sync_time,
         "biomech_sync_left_time": biomech_sync_left_time,
         "biomech_sync_right_time": biomech_sync_right_time,
+        "audio_qc_bad_intervals": audio_qc_bad_intervals,
     }
 
 
@@ -251,6 +264,7 @@ def _build_cycle_metadata_for_cycle(
         cycle_index=result.index,
         cycle_acoustic_energy=float(result.energy),
         cycle_qc_pass=result.qc_pass,
+        audio_qc_pass=result.audio_qc_pass,
         scripted_maneuver=context["maneuver"],
         speed=context["speed"],
         pass_number=context["pass_number"],
@@ -662,6 +676,7 @@ def perform_sync_qc(
                 index=idx,
                 energy=energy,
                 qc_pass=id(cycle_df) in clean_ids,
+                audio_qc_pass=True,  # Will be updated if raw audio QC finds issues
             )
         )
 
@@ -669,6 +684,84 @@ def perform_sync_qc(
         synced_pkl_path=synced_pkl_path,
         maneuver=maneuver,
         speed=speed,
+    )
+    
+    # Check cycles against raw audio QC bad intervals
+    # Adjust bad intervals from audio coordinates to synchronized coordinates
+    audio_qc_bad_intervals = metadata_context.get("audio_qc_bad_intervals", [])
+    if audio_qc_bad_intervals:
+        from src.audio.raw_qc import adjust_bad_intervals_for_sync, check_cycle_in_bad_interval
+        
+        audio_sync_time = metadata_context["audio_sync_time"].total_seconds()
+        # Use the appropriate biomech stomp time (left or right based on knee)
+        knee = metadata_context.get("knee", "left")
+        if knee == "left":
+            bio_sync_time = metadata_context["biomech_sync_left_time"].total_seconds()
+        else:
+            bio_sync_time = metadata_context["biomech_sync_right_time"].total_seconds()
+        
+        # Adjust bad intervals to synchronized coordinates
+        synced_bad_intervals = adjust_bad_intervals_for_sync(
+            audio_qc_bad_intervals,
+            audio_sync_time,
+            bio_sync_time,
+        )
+        
+        logger.info(
+            f"Checking {len(cycles)} cycles against {len(synced_bad_intervals)} "
+            f"raw audio QC bad intervals (adjusted for sync)"
+        )
+        
+        # Check each cycle and update results
+        updated_results = []
+        for result in cycle_results:
+            cycle_df = result.cycle
+            audio_qc_pass = True  # Default to pass
+            
+            if "tt" in cycle_df.columns:
+                # Get cycle time bounds
+                if isinstance(cycle_df["tt"].iloc[0], pd.Timedelta):
+                    cycle_start = cycle_df["tt"].iloc[0].total_seconds()
+                    cycle_end = cycle_df["tt"].iloc[-1].total_seconds()
+                else:
+                    cycle_start = float(cycle_df["tt"].iloc[0])
+                    cycle_end = float(cycle_df["tt"].iloc[-1])
+                
+                # Check if cycle overlaps with bad intervals
+                fails_audio_qc = check_cycle_in_bad_interval(
+                    cycle_start,
+                    cycle_end,
+                    synced_bad_intervals,
+                    overlap_threshold=0.1,  # 10% overlap threshold
+                )
+                
+                if fails_audio_qc:
+                    logger.debug(
+                        f"Cycle {result.index} failed raw audio QC "
+                        f"(time range: {cycle_start:.2f}-{cycle_end:.2f}s)"
+                    )
+                    audio_qc_pass = False
+            
+            # Create updated result with audio_qc_pass set
+            updated_results.append(
+                _CycleResult(
+                    cycle=result.cycle,
+                    index=result.index,
+                    energy=result.energy,
+                    qc_pass=result.qc_pass and audio_qc_pass,  # Fail overall QC if audio QC fails
+                    audio_qc_pass=audio_qc_pass,
+                )
+            )
+        
+        cycle_results = updated_results
+    
+    # Update clean/outlier lists based on final QC results
+    final_clean_cycles = [r.cycle for r in cycle_results if r.qc_pass]
+    final_outlier_cycles = [r.cycle for r in cycle_results if not r.qc_pass]
+    
+    logger.info(
+        f"Final QC: {len(final_clean_cycles)} clean cycles, "
+        f"{len(final_outlier_cycles)} outliers (after raw audio QC check)"
     )
 
     # Set output directory
@@ -678,7 +771,8 @@ def perform_sync_qc(
 
     # Save results and metadata
     _save_qc_results(
-        clean_cycles,
+        final_clean_cycles,
+        final_outlier_cycles,
         outlier_cycles,
         output_dir,
         synced_pkl_path.stem,
@@ -689,7 +783,7 @@ def perform_sync_qc(
 
     logger.info(f"QC results saved to {output_dir}")
 
-    return clean_cycles, outlier_cycles, output_dir
+    return final_clean_cycles, final_outlier_cycles, output_dir
 
 
 def _infer_maneuver_from_path(path: Path) -> str:
