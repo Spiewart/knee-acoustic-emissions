@@ -67,6 +67,9 @@ class AudioProcessingRecord:
     # Instantaneous frequency added?
     has_instantaneous_freq: bool = False
 
+    # Raw audio QC results (dropout and artifacts)
+    QC_not_passed: Optional[str] = None  # String representation of list of (start, end) tuples
+
     # QC version tracking
     audio_qc_version: int = field(default_factory=get_audio_qc_version)
 
@@ -95,6 +98,7 @@ class AudioProcessingRecord:
             "Ch3 Peak": self.channel_3_peak,
             "Ch4 Peak": self.channel_4_peak,
             "Has Inst. Freq": self.has_instantaneous_freq,
+            "QC_not_passed": self.QC_not_passed,
             "Audio QC Version": self.audio_qc_version,
         }
 
@@ -474,6 +478,7 @@ class ManeuverProcessingLog:
                         channel_3_peak=row.get("Ch3 Peak"),
                         channel_4_peak=row.get("Ch4 Peak"),
                         has_instantaneous_freq=bool(row.get("Has Inst. Freq", False)),
+                        QC_not_passed=row.get("QC_not_passed"),
                     )
             except Exception as e:
                 logger.warning(f"Could not load audio record: {e}")

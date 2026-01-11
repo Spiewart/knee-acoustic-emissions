@@ -138,6 +138,7 @@ def _save_or_update_processing_log(
     biomechanics_file: Optional[Path] = None,
     biomechanics_recordings: Optional[list] = None,
     synced_data: Optional[list[tuple[Path, pd.DataFrame, tuple]]] = None,
+    qc_not_passed: Optional[str] = None,
 ) -> None:
     """Save or update the processing log for a maneuver.
 
@@ -152,6 +153,7 @@ def _save_or_update_processing_log(
         biomechanics_file: Path to biomechanics file
         biomechanics_recordings: List of biomechanics recordings
         synced_data: List of (output_path, synced_df, stomp_times) tuples
+        qc_not_passed: String representation of bad intervals list
     """
     try:
         # Get or create processing log
@@ -177,6 +179,9 @@ def _save_or_update_processing_log(
                 audio_pkl_path=audio_pkl_file,
                 metadata=audio_metadata,
             )
+            # Set QC_not_passed if provided
+            if qc_not_passed is not None:
+                audio_record.QC_not_passed = qc_not_passed
             log.update_audio_record(audio_record)
 
         # Update biomechanics record if data provided
@@ -1364,6 +1369,39 @@ def _process_bin_stage(participant_dir: Path) -> list[Path]:
 
             try:
                 df = pd.read_pickle(base_pkl)
+                
+                # Run raw audio QC before frequency augmentation
+                from src.audio.raw_qc import run_raw_audio_qc, merge_bad_intervals
+                
+                dropout_intervals, artifact_intervals = run_raw_audio_qc(df)
+                bad_intervals = merge_bad_intervals(dropout_intervals, artifact_intervals)
+                
+                if dropout_intervals:
+                    logging.info(
+                        "Detected %d dropout interval(s) in %s",
+                        len(dropout_intervals),
+                        bin_path.name,
+                    )
+                if artifact_intervals:
+                    logging.info(
+                        "Detected %d artifact interval(s) in %s",
+                        len(artifact_intervals),
+                        bin_path.name,
+                    )
+                
+                # Store QC results for logging
+                qc_not_passed = str(bad_intervals) if bad_intervals else None
+                
+                # Load metadata for processing log
+                metadata = {}
+                if meta_json.exists():
+                    import json
+                    try:
+                        with open(meta_json, "r") as f:
+                            metadata = json.load(f)
+                    except Exception:
+                        pass
+                
                 fs = _determine_fs_from_df_or_meta(df, meta_json)
                 from src.audio.instantaneous_frequency import (
                     add_instantaneous_frequency,
@@ -1372,6 +1410,19 @@ def _process_bin_stage(participant_dir: Path) -> list[Path]:
                 out_with_freq = outputs_dir / f"{audio_base_path.name}_with_freq.pkl"
                 df_with_freq.to_pickle(out_with_freq)
                 produced.append(out_with_freq)
+                
+                # Update processing log with QC results
+                _save_or_update_processing_log(
+                    study_id=participant_dir.name.lstrip("#"),
+                    knee_side=cast("Literal['Left', 'Right']", knee_side),
+                    maneuver_key=cast("Literal['walk', 'sit_to_stand', 'flexion_extension']", maneuver_key),
+                    maneuver_dir=maneuver_dir,
+                    audio_pkl_file=out_with_freq,
+                    audio_df=df_with_freq,
+                    audio_metadata=metadata,
+                    qc_not_passed=qc_not_passed,
+                )
+                
                 # Remove base pkl to keep only resultant dataframe
                 try:
                     base_pkl.unlink(missing_ok=True)
