@@ -288,6 +288,10 @@ def _build_cycle_metadata_for_cycle(
         cycle_acoustic_energy=float(result.energy),
         cycle_qc_pass=result.qc_pass,
         audio_qc_pass=result.audio_qc_pass,
+        audio_qc_mic_1_pass=result.audio_qc_mic_1_pass,
+        audio_qc_mic_2_pass=result.audio_qc_mic_2_pass,
+        audio_qc_mic_3_pass=result.audio_qc_mic_3_pass,
+        audio_qc_mic_4_pass=result.audio_qc_mic_4_pass,
         scripted_maneuver=context["maneuver"],
         speed=context["speed"],
         pass_number=context["pass_number"],
@@ -705,6 +709,10 @@ def perform_sync_qc(
                 energy=energy,
                 qc_pass=id(cycle_df) in clean_ids,
                 audio_qc_pass=True,  # Will be updated if raw audio QC finds issues
+                audio_qc_mic_1_pass=True,  # Per-mic QC, will be updated
+                audio_qc_mic_2_pass=True,
+                audio_qc_mic_3_pass=True,
+                audio_qc_mic_4_pass=True,
             )
         )
 
@@ -726,8 +734,11 @@ def perform_sync_qc(
         if audio_qc_bad_intervals:
             logger.debug("Loaded bad audio segments from processing log")
     
+    # Get per-mic bad intervals from metadata context
+    audio_qc_bad_intervals_per_mic = metadata_context.get("audio_qc_bad_intervals_per_mic", {})
+    
     # Adjust bad intervals from audio coordinates to synchronized coordinates
-    if audio_qc_bad_intervals:
+    if audio_qc_bad_intervals or audio_qc_bad_intervals_per_mic:
         from src.audio.raw_qc import adjust_bad_intervals_for_sync, check_cycle_in_bad_interval
         
         audio_sync_time = metadata_context["audio_sync_time"].total_seconds()
@@ -738,23 +749,47 @@ def perform_sync_qc(
         else:
             bio_sync_time = metadata_context["biomech_sync_right_time"].total_seconds()
         
-        # Adjust bad intervals to synchronized coordinates
-        synced_bad_intervals = adjust_bad_intervals_for_sync(
-            audio_qc_bad_intervals,
-            audio_sync_time,
-            bio_sync_time,
-        )
+        # Adjust overall bad intervals to synchronized coordinates
+        synced_bad_intervals = []
+        if audio_qc_bad_intervals:
+            synced_bad_intervals = adjust_bad_intervals_for_sync(
+                audio_qc_bad_intervals,
+                audio_sync_time,
+                bio_sync_time,
+            )
         
-        logger.info(
-            f"Checking {len(cycles)} cycles against {len(synced_bad_intervals)} "
-            f"raw audio QC bad intervals (adjusted for sync)"
-        )
+        # Adjust per-mic bad intervals to synchronized coordinates
+        synced_bad_intervals_per_mic = {}
+        for mic_num, intervals in audio_qc_bad_intervals_per_mic.items():
+            if intervals:
+                synced_intervals = adjust_bad_intervals_for_sync(
+                    intervals,
+                    audio_sync_time,
+                    bio_sync_time,
+                )
+                synced_bad_intervals_per_mic[mic_num] = synced_intervals
+        
+        if synced_bad_intervals:
+            logger.info(
+                f"Checking {len(cycles)} cycles against {len(synced_bad_intervals)} "
+                f"raw audio QC bad intervals (adjusted for sync)"
+            )
+        
+        if synced_bad_intervals_per_mic:
+            logger.info(
+                f"Checking {len(cycles)} cycles against per-microphone bad intervals: "
+                f"{', '.join(f'mic {k}: {len(v)} intervals' for k, v in synced_bad_intervals_per_mic.items())}"
+            )
         
         # Check each cycle and update results
         updated_results = []
         for result in cycle_results:
             cycle_df = result.cycle
-            audio_qc_pass = True  # Default to pass
+            audio_qc_pass = True  # Default to pass (overall)
+            audio_qc_mic_1_pass = True  # Per-mic defaults
+            audio_qc_mic_2_pass = True
+            audio_qc_mic_3_pass = True
+            audio_qc_mic_4_pass = True
             
             if "tt" in cycle_df.columns:
                 # Get cycle time bounds
@@ -765,22 +800,48 @@ def perform_sync_qc(
                     cycle_start = float(cycle_df["tt"].iloc[0])
                     cycle_end = float(cycle_df["tt"].iloc[-1])
                 
-                # Check if cycle overlaps with bad intervals
-                fails_audio_qc = check_cycle_in_bad_interval(
-                    cycle_start,
-                    cycle_end,
-                    synced_bad_intervals,
-                    overlap_threshold=0.1,  # 10% overlap threshold
-                )
-                
-                if fails_audio_qc:
-                    logger.debug(
-                        f"Cycle {result.index} failed raw audio QC "
-                        f"(time range: {cycle_start:.2f}-{cycle_end:.2f}s)"
+                # Check if cycle overlaps with overall bad intervals
+                if synced_bad_intervals:
+                    fails_audio_qc = check_cycle_in_bad_interval(
+                        cycle_start,
+                        cycle_end,
+                        synced_bad_intervals,
+                        overlap_threshold=0.1,  # 10% overlap threshold
                     )
-                    audio_qc_pass = False
+                    
+                    if fails_audio_qc:
+                        logger.debug(
+                            f"Cycle {result.index} failed overall audio QC "
+                            f"(time range: {cycle_start:.2f}-{cycle_end:.2f}s)"
+                        )
+                        audio_qc_pass = False
+                
+                # Check if cycle overlaps with per-mic bad intervals
+                for mic_num, mic_bad_intervals in synced_bad_intervals_per_mic.items():
+                    if mic_bad_intervals:
+                        fails_mic_qc = check_cycle_in_bad_interval(
+                            cycle_start,
+                            cycle_end,
+                            mic_bad_intervals,
+                            overlap_threshold=0.1,  # 10% overlap threshold
+                        )
+                        
+                        if fails_mic_qc:
+                            logger.debug(
+                                f"Cycle {result.index} failed mic {mic_num} audio QC "
+                                f"(time range: {cycle_start:.2f}-{cycle_end:.2f}s)"
+                            )
+                            # Update the corresponding per-mic pass/fail
+                            if mic_num == 1:
+                                audio_qc_mic_1_pass = False
+                            elif mic_num == 2:
+                                audio_qc_mic_2_pass = False
+                            elif mic_num == 3:
+                                audio_qc_mic_3_pass = False
+                            elif mic_num == 4:
+                                audio_qc_mic_4_pass = False
             
-            # Create updated result with audio_qc_pass set
+            # Create updated result with audio_qc_pass and per-mic results set
             updated_results.append(
                 _CycleResult(
                     cycle=result.cycle,
@@ -788,6 +849,10 @@ def perform_sync_qc(
                     energy=result.energy,
                     qc_pass=result.qc_pass and audio_qc_pass,  # Fail overall QC if audio QC fails
                     audio_qc_pass=audio_qc_pass,
+                    audio_qc_mic_1_pass=audio_qc_mic_1_pass,
+                    audio_qc_mic_2_pass=audio_qc_mic_2_pass,
+                    audio_qc_mic_3_pass=audio_qc_mic_3_pass,
+                    audio_qc_mic_4_pass=audio_qc_mic_4_pass,
                 )
             )
         
