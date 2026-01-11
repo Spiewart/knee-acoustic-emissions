@@ -326,6 +326,230 @@ def run_raw_audio_qc(
     return dropout_intervals, artifact_intervals
 
 
+def detect_signal_dropout_per_mic(
+    df: pd.DataFrame,
+    time_col: str = "tt",
+    audio_channels: list[str] | None = None,
+    *,
+    silence_threshold: float = 0.001,
+    flatline_threshold: float = 0.0001,
+    window_size_s: float = 0.5,
+    min_dropout_duration_s: float = 0.1,
+) -> dict[str, List[Tuple[float, float]]]:
+    """Detect signal dropout per microphone channel.
+
+    Returns bad intervals for each channel separately, allowing per-mic QC assessment.
+
+    Args:
+        df: Audio DataFrame with time and channel data
+        time_col: Name of time column
+        audio_channels: List of channel names to check (default: ch1-ch4)
+        silence_threshold: Maximum RMS amplitude for silence detection
+        flatline_threshold: Maximum variance for flatline detection
+        window_size_s: Size of sliding window for detection (seconds)
+        min_dropout_duration_s: Minimum continuous dropout duration to report
+
+    Returns:
+        Dictionary mapping channel name to list of (start_time, end_time) tuples
+    """
+    if audio_channels is None:
+        audio_channels = ["ch1", "ch2", "ch3", "ch4"]
+
+    # Filter to available channels
+    available_channels = [ch for ch in audio_channels if ch in df.columns]
+    if not available_channels or time_col not in df.columns:
+        return {}
+
+    # Convert time to seconds using helper
+    time_s = _convert_time_to_seconds(df, time_col)
+
+    # Get sampling rate
+    valid_times = time_s[np.isfinite(time_s)]
+    if len(valid_times) < 2:
+        return {}
+
+    dt_median = float(np.median(np.diff(valid_times)))
+    if dt_median <= 0:
+        return {}
+    fs = 1.0 / dt_median
+    window_samples = max(int(fs * window_size_s), 10)
+
+    # Check each channel for dropout separately
+    per_mic_intervals = {}
+
+    for ch in available_channels:
+        ch_data = pd.to_numeric(df[ch], errors="coerce").to_numpy()
+
+        # Sliding window RMS and variance
+        rms_values = _sliding_window_rms(ch_data, window_samples)
+        var_values = _sliding_window_variance(ch_data, window_samples)
+
+        # Mark dropout where RMS is too low OR variance is too low
+        ch_dropout = (rms_values < silence_threshold) | (var_values < flatline_threshold)
+
+        # Convert dropout mask to time intervals for this channel
+        intervals = _mask_to_intervals(
+            ch_dropout, time_s, min_duration_s=min_dropout_duration_s
+        )
+        
+        per_mic_intervals[ch] = intervals
+
+    return per_mic_intervals
+
+
+def detect_artifactual_noise_per_mic(
+    df: pd.DataFrame,
+    time_col: str = "tt",
+    audio_channels: list[str] | None = None,
+    *,
+    spike_threshold_sigma: float = 5.0,
+    spike_window_s: float = 0.01,
+    min_artifact_duration_s: float = 0.01,
+    periodic_noise_threshold: float = 0.3,
+    detect_periodic_noise: bool = True,
+) -> dict[str, List[Tuple[float, float]]]:
+    """Detect artifactual noise per microphone channel.
+
+    Returns bad intervals for each channel separately, allowing per-mic QC assessment.
+
+    Args:
+        df: Audio DataFrame with time and channel data
+        time_col: Name of time column
+        audio_channels: List of channel names to check (default: ch1-ch4)
+        spike_threshold_sigma: Number of standard deviations for spike detection
+        spike_window_s: Window size for computing local statistics (seconds)
+        min_artifact_duration_s: Minimum continuous artifact duration to report
+        periodic_noise_threshold: Threshold for detecting periodic noise (0-1)
+        detect_periodic_noise: Whether to detect periodic background noise
+
+    Returns:
+        Dictionary mapping channel name to list of (start_time, end_time) tuples
+    """
+    if audio_channels is None:
+        audio_channels = ["ch1", "ch2", "ch3", "ch4"]
+
+    # Filter to available channels
+    available_channels = [ch for ch in audio_channels if ch in df.columns]
+    if not available_channels or time_col not in df.columns:
+        return {}
+
+    # Convert time to seconds using helper
+    time_s = _convert_time_to_seconds(df, time_col)
+
+    # Get sampling rate
+    valid_times = time_s[np.isfinite(time_s)]
+    if len(valid_times) < 2:
+        return {}
+
+    dt_median = float(np.median(np.diff(valid_times)))
+    if dt_median <= 0:
+        return {}
+    fs = 1.0 / dt_median
+    window_samples = max(int(fs * spike_window_s), 5)
+
+    # Check each channel for artifacts separately
+    per_mic_intervals = {}
+
+    for ch in available_channels:
+        ch_data = pd.to_numeric(df[ch], errors="coerce").to_numpy()
+        artifact_mask = np.zeros(len(df), dtype=bool)
+
+        # Type 1: Detect one-off spikes via local statistics
+        local_mean = _sliding_window_mean(ch_data, window_samples)
+        local_std = _sliding_window_std(ch_data, window_samples)
+
+        # Detect spikes: values exceeding threshold * std from local mean
+        threshold = local_mean + spike_threshold_sigma * local_std
+        ch_artifacts = np.abs(ch_data) > threshold
+        artifact_mask |= ch_artifacts
+
+        # Type 2: Detect periodic background noise via spectral analysis
+        if detect_periodic_noise:
+            periodic_mask = _detect_periodic_noise(ch_data, fs, periodic_noise_threshold)
+            artifact_mask |= periodic_mask
+
+        # Convert artifact mask to time intervals for this channel
+        intervals = _mask_to_intervals(
+            artifact_mask, time_s, min_duration_s=min_artifact_duration_s
+        )
+        
+        per_mic_intervals[ch] = intervals
+
+    return per_mic_intervals
+
+
+def run_raw_audio_qc_per_mic(
+    df: pd.DataFrame,
+    time_col: str = "tt",
+    audio_channels: list[str] | None = None,
+    *,
+    silence_threshold: float = 0.001,
+    flatline_threshold: float = 0.0001,
+    spike_threshold_sigma: float = 5.0,
+    dropout_window_s: float = 0.5,
+    spike_window_s: float = 0.01,
+    min_dropout_duration_s: float = 0.1,
+    min_artifact_duration_s: float = 0.01,
+    periodic_noise_threshold: float = 0.3,
+    detect_periodic_noise: bool = True,
+) -> dict[str, List[Tuple[float, float]]]:
+    """Run comprehensive raw audio QC checks per microphone.
+
+    Detects both signal dropout and artifactual noise in raw audio recordings,
+    returning results separately for each microphone channel.
+
+    Args:
+        df: Audio DataFrame with time and channel data
+        time_col: Name of time column
+        audio_channels: List of channel names to check (default: ch1-ch4)
+        silence_threshold: Maximum RMS amplitude for silence detection
+        flatline_threshold: Maximum variance for flatline detection
+        spike_threshold_sigma: Number of standard deviations for spike detection
+        dropout_window_s: Window size for dropout detection (seconds)
+        spike_window_s: Window size for spike detection (seconds)
+        min_dropout_duration_s: Minimum dropout duration to report
+        min_artifact_duration_s: Minimum artifact duration to report
+        periodic_noise_threshold: Threshold for periodic noise detection (0-1)
+        detect_periodic_noise: Whether to detect periodic background noise
+
+    Returns:
+        Dictionary mapping channel name to list of (start_time, end_time) tuples
+        representing bad intervals for that specific channel
+    """
+    dropout_per_mic = detect_signal_dropout_per_mic(
+        df,
+        time_col=time_col,
+        audio_channels=audio_channels,
+        silence_threshold=silence_threshold,
+        flatline_threshold=flatline_threshold,
+        window_size_s=dropout_window_s,
+        min_dropout_duration_s=min_dropout_duration_s,
+    )
+
+    artifact_per_mic = detect_artifactual_noise_per_mic(
+        df,
+        time_col=time_col,
+        audio_channels=audio_channels,
+        spike_threshold_sigma=spike_threshold_sigma,
+        spike_window_s=spike_window_s,
+        min_artifact_duration_s=min_artifact_duration_s,
+        periodic_noise_threshold=periodic_noise_threshold,
+        detect_periodic_noise=detect_periodic_noise,
+    )
+
+    # Merge dropout and artifact intervals per channel
+    per_mic_bad_intervals = {}
+    all_channels = set(list(dropout_per_mic.keys()) + list(artifact_per_mic.keys()))
+    
+    for ch in all_channels:
+        dropout_intervals = dropout_per_mic.get(ch, [])
+        artifact_intervals = artifact_per_mic.get(ch, [])
+        merged = merge_bad_intervals(dropout_intervals, artifact_intervals)
+        per_mic_bad_intervals[ch] = merged
+
+    return per_mic_bad_intervals
+
+
 def merge_bad_intervals(
     dropout_intervals: List[Tuple[float, float]],
     artifact_intervals: List[Tuple[float, float]],

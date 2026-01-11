@@ -37,7 +37,11 @@ class _CycleResult(NamedTuple):
     index: int
     energy: float
     qc_pass: bool
-    audio_qc_pass: bool = True  # Raw audio QC pass/fail
+    audio_qc_pass: bool = True  # Overall audio QC pass/fail (any mic)
+    audio_qc_mic_1_pass: bool = True  # Per-mic audio QC results
+    audio_qc_mic_2_pass: bool = True
+    audio_qc_mic_3_pass: bool = True
+    audio_qc_mic_4_pass: bool = True
 
 
 def _find_participant_dir(path: Path) -> Optional[Path]:
@@ -189,7 +193,8 @@ def _build_cycle_metadata_context(
     audio_sync_time = timedelta(0)
     biomech_sync_left_time = timedelta(0)
     biomech_sync_right_time = timedelta(0)
-    audio_qc_bad_intervals = []  # Bad intervals from raw audio QC
+    audio_qc_bad_intervals = []  # Bad intervals from raw audio QC (any mic)
+    audio_qc_bad_intervals_per_mic = {}  # Per-mic bad intervals
 
     if participant_dir:
         try:
@@ -209,7 +214,7 @@ def _build_cycle_metadata_context(
             log = ManeuverProcessingLog.load_from_excel(log_path)
 
             if log:
-                # Load audio QC bad intervals
+                # Load audio QC bad intervals (all mics)
                 if log.audio_record and log.audio_record.QC_not_passed:
                     try:
                         import ast
@@ -217,6 +222,23 @@ def _build_cycle_metadata_context(
                         audio_qc_bad_intervals = ast.literal_eval(log.audio_record.QC_not_passed)
                     except Exception as exc:
                         logger.debug("Failed to parse QC_not_passed: %s", exc)
+                
+                # Load per-mic audio QC bad intervals
+                audio_qc_bad_intervals_per_mic = {}
+                if log.audio_record:
+                    try:
+                        import ast
+                        for mic_num in [1, 2, 3, 4]:
+                            field_name = f"QC_not_passed_mic_{mic_num}"
+                            field_value = getattr(log.audio_record, field_name, None)
+                            if field_value:
+                                try:
+                                    intervals = ast.literal_eval(field_value)
+                                    audio_qc_bad_intervals_per_mic[mic_num] = intervals
+                                except Exception:
+                                    pass
+                    except Exception as exc:
+                        logger.debug("Failed to parse per-mic QC_not_passed: %s", exc)
                 
                 # Load sync times
                 sync_file_stem = synced_pkl_path.stem
@@ -252,6 +274,7 @@ def _build_cycle_metadata_context(
         "biomech_sync_left_time": biomech_sync_left_time,
         "biomech_sync_right_time": biomech_sync_right_time,
         "audio_qc_bad_intervals": audio_qc_bad_intervals,
+        "audio_qc_bad_intervals_per_mic": audio_qc_bad_intervals_per_mic,
     }
 
 

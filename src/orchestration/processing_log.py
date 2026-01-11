@@ -68,7 +68,13 @@ class AudioProcessingRecord:
     has_instantaneous_freq: bool = False
 
     # Raw audio QC results (dropout and artifacts)
-    QC_not_passed: Optional[str] = None  # String representation of list of (start, end) tuples
+    QC_not_passed: Optional[str] = None  # String representation of list of (start, end) tuples (any mic)
+    
+    # Per-microphone QC results
+    QC_not_passed_mic_1: Optional[str] = None  # Bad intervals for microphone 1
+    QC_not_passed_mic_2: Optional[str] = None  # Bad intervals for microphone 2
+    QC_not_passed_mic_3: Optional[str] = None  # Bad intervals for microphone 3
+    QC_not_passed_mic_4: Optional[str] = None  # Bad intervals for microphone 4
 
     # QC version tracking
     audio_qc_version: int = field(default_factory=get_audio_qc_version)
@@ -99,6 +105,10 @@ class AudioProcessingRecord:
             "Ch4 Peak": self.channel_4_peak,
             "Has Inst. Freq": self.has_instantaneous_freq,
             "QC_not_passed": self.QC_not_passed,
+            "QC_not_passed_mic_1": self.QC_not_passed_mic_1,
+            "QC_not_passed_mic_2": self.QC_not_passed_mic_2,
+            "QC_not_passed_mic_3": self.QC_not_passed_mic_3,
+            "QC_not_passed_mic_4": self.QC_not_passed_mic_4,
             "Audio QC Version": self.audio_qc_version,
         }
 
@@ -479,6 +489,10 @@ class ManeuverProcessingLog:
                         channel_4_peak=row.get("Ch4 Peak"),
                         has_instantaneous_freq=bool(row.get("Has Inst. Freq", False)),
                         QC_not_passed=row.get("QC_not_passed"),
+                        QC_not_passed_mic_1=row.get("QC_not_passed_mic_1"),
+                        QC_not_passed_mic_2=row.get("QC_not_passed_mic_2"),
+                        QC_not_passed_mic_3=row.get("QC_not_passed_mic_3"),
+                        QC_not_passed_mic_4=row.get("QC_not_passed_mic_4"),
                     )
             except Exception as e:
                 logger.warning(f"Could not load audio record: {e}")

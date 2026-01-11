@@ -157,6 +157,10 @@ class AcousticsFileMetadata(
     # Time from start of recording to audio sync event
     audio_sync_time: Optional[timedelta] = None
     audio_qc_pass: bool = False
+    audio_qc_mic_1_pass: bool = True  # Per-microphone QC results
+    audio_qc_mic_2_pass: bool = True
+    audio_qc_mic_3_pass: bool = True
+    audio_qc_mic_4_pass: bool = True
     audio_qc_version: int = Field(default_factory=get_audio_qc_version)
     audio_notes: Optional[str] = None
 
