@@ -68,6 +68,36 @@ import numpy as np
 import pandas as pd
 
 
+def _convert_time_to_seconds(df: pd.DataFrame, time_col: str) -> np.ndarray:
+    """Convert time column to seconds as numpy array.
+    
+    Handles both numeric seconds and timedelta inputs.
+    
+    Args:
+        df: DataFrame containing time data
+        time_col: Name of time column
+        
+    Returns:
+        Array of time values in seconds
+    """
+    time_series = df[time_col]
+    
+    # Check if already numeric (seconds)
+    if pd.api.types.is_numeric_dtype(time_series):
+        return pd.to_numeric(time_series, errors="coerce").to_numpy()
+    
+    # Try converting as timedelta
+    try:
+        time_s = pd.to_numeric(
+            pd.to_timedelta(time_series, unit="s").dt.total_seconds(),
+            errors="coerce",
+        ).to_numpy()
+        return time_s
+    except (ValueError, TypeError):
+        # Fall back to direct numeric conversion
+        return pd.to_numeric(time_series, errors="coerce").to_numpy()
+
+
 def detect_signal_dropout(
     df: pd.DataFrame,
     time_col: str = "tt",
@@ -104,11 +134,8 @@ def detect_signal_dropout(
     if not available_channels or time_col not in df.columns:
         return []
 
-    # Convert time to seconds
-    time_s = pd.to_numeric(
-        pd.to_timedelta(df[time_col], unit="s").dt.total_seconds(),
-        errors="coerce",
-    ).to_numpy()
+    # Convert time to seconds using helper
+    time_s = _convert_time_to_seconds(df, time_col)
 
     # Get sampling rate
     valid_times = time_s[np.isfinite(time_s)]
@@ -176,11 +203,8 @@ def detect_artifactual_noise(
     if not available_channels or time_col not in df.columns:
         return []
 
-    # Convert time to seconds
-    time_s = pd.to_numeric(
-        pd.to_timedelta(df[time_col], unit="s").dt.total_seconds(),
-        errors="coerce",
-    ).to_numpy()
+    # Convert time to seconds using helper
+    time_s = _convert_time_to_seconds(df, time_col)
 
     # Get sampling rate
     valid_times = time_s[np.isfinite(time_s)]
