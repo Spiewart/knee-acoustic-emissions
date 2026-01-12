@@ -63,11 +63,8 @@ def test_detect_artifactual_noise_per_mic():
     spike_mask = (df['tt'] >= 5.0) & (df['tt'] <= 6.0)
     df.loc[spike_mask, 'ch2'] += 10.0  # Add large spikes
     
-    # Run per-mic artifact detection (without periodic noise detection for speed)
-    per_mic_artifacts = detect_artifactual_noise_per_mic(
-        df, 
-        detect_periodic_noise=False
-    )
+    # Run per-mic artifact detection
+    per_mic_artifacts = detect_artifactual_noise_per_mic(df)
     
     # Check that ch2 has artifact intervals
     assert 'ch2' in per_mic_artifacts
@@ -104,8 +101,8 @@ def test_run_raw_audio_qc_per_mic_combined():
     spike_mask = (df['tt'] >= 7.0) & (df['tt'] <= 8.0)
     df.loc[spike_mask, 'ch3'] += 10.0
     
-    # Run combined per-mic QC (without periodic noise for speed)
-    per_mic_bad = run_raw_audio_qc_per_mic(df, detect_periodic_noise=False)
+    # Run combined per-mic QC
+    per_mic_bad = run_raw_audio_qc_per_mic(df)
     
     # Check that we got results for all channels
     assert isinstance(per_mic_bad, dict)
@@ -138,7 +135,7 @@ def test_per_mic_qc_with_missing_channels():
     })
     
     # Run per-mic QC
-    per_mic_bad = run_raw_audio_qc_per_mic(df, detect_periodic_noise=False)
+    per_mic_bad = run_raw_audio_qc_per_mic(df)
     
     # Should only have results for available channels
     assert 'ch1' in per_mic_bad
@@ -160,7 +157,7 @@ def test_per_mic_qc_clean_signal():
     })
     
     # Run per-mic QC
-    per_mic_bad = run_raw_audio_qc_per_mic(df, detect_periodic_noise=False)
+    per_mic_bad = run_raw_audio_qc_per_mic(df)
     
     # All channels should be mostly clean (empty or very few intervals)
     for ch in ['ch1', 'ch2', 'ch3', 'ch4']:
@@ -190,7 +187,7 @@ def test_per_mic_qc_all_channels_bad():
     df.loc[(df['tt'] >= 6.5) & (df['tt'] <= 7.5), 'ch4'] = 0.0
     
     # Run per-mic QC
-    per_mic_bad = run_raw_audio_qc_per_mic(df, detect_periodic_noise=False)
+    per_mic_bad = run_raw_audio_qc_per_mic(df)
     
     # All channels should have bad intervals
     for ch in ['ch1', 'ch2', 'ch3', 'ch4']:

@@ -242,7 +242,6 @@ def test_run_raw_audio_qc_clean_signal():
         df,
         spike_threshold_sigma=8.0,  # Use very high threshold for clean signal
         silence_threshold=0.001,
-        detect_periodic_noise=False,  # Disable to avoid false positives on test data
     )
 
     # Clean signal should have minimal or no detected issues
@@ -253,7 +252,13 @@ def test_run_raw_audio_qc_clean_signal():
 
 
 def test_detect_periodic_noise():
-    """Test detection of periodic background noise."""
+    """Test detection of periodic background noise.
+    
+    NOTE: Periodic noise detection has been moved to src/audio/cycle_qc.py
+    for future implementation as movement cycle-level QC during sync_qc.
+    This test is kept as a placeholder and now tests that artifact detection
+    still works on signals with periodic components (detecting them as spikes).
+    """
     df = create_test_audio_df(duration_s=10.0, fs=1000.0)
     
     # Add a strong periodic component (simulating a fan)
@@ -262,15 +267,13 @@ def test_detect_periodic_noise():
     for ch in ["ch1", "ch2", "ch3", "ch4"]:
         df[ch] = df[ch] + periodic_signal
     
+    # Test that artifact detection still works (may detect periodic pattern as spikes)
     artifact_intervals = detect_artifactual_noise(
         df,
         spike_threshold_sigma=10.0,  # High threshold to avoid spike detection
-        detect_periodic_noise=True,
-        periodic_noise_threshold=0.1,  # Sensitive threshold
     )
     
-    # Should detect periodic noise
-    # Note: Detection may vary based on signal characteristics
+    # Should return a list (may be empty or have some detections)
     assert isinstance(artifact_intervals, list), "Should return a list"
 
 
