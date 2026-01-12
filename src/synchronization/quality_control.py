@@ -591,7 +591,7 @@ class MovementCycleQC:
             logger.warning("Cycle too short for ROM computation")
             return 0.0
 
-        knee_angle = cycle_df["Knee Angle Z"].values
+        knee_angle = pd.to_numeric(cycle_df["Knee Angle Z"], errors="coerce").values
 
         # Remove any NaN values before computing ROM
         knee_angle_clean = knee_angle[~np.isnan(knee_angle)]
@@ -621,7 +621,7 @@ class MovementCycleQC:
         if len(cycle_df) < 10:
             return False, "insufficient data points"
 
-        knee_angle = cycle_df["Knee Angle Z"].values
+        knee_angle = pd.to_numeric(cycle_df["Knee Angle Z"], errors="coerce").values
 
         # Remove any NaN values
         valid_mask = ~np.isnan(knee_angle)

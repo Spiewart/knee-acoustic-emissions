@@ -83,22 +83,22 @@ import pandas as pd
 
 def _convert_time_to_seconds(df: pd.DataFrame, time_col: str) -> np.ndarray:
     """Convert time column to seconds as numpy array.
-    
+
     Handles both numeric seconds and timedelta inputs.
-    
+
     Args:
         df: DataFrame containing time data
         time_col: Name of time column
-        
+
     Returns:
         Array of time values in seconds
     """
     time_series = df[time_col]
-    
+
     # Check if already numeric (seconds)
     if pd.api.types.is_numeric_dtype(time_series):
         return pd.to_numeric(time_series, errors="coerce").to_numpy()
-    
+
     # Try converting as timedelta
     try:
         time_s = pd.to_numeric(
@@ -194,9 +194,9 @@ def detect_artifactual_noise(
 ) -> List[Tuple[float, float]]:
     """Detect artifactual noise (spikes, outliers) in audio channels.
 
-    Detects one-off or time-limited spikes: Intermittent background noise (e.g., 
+    Detects one-off or time-limited spikes: Intermittent background noise (e.g.,
     someone talking, glass falling) detected via local statistical thresholds.
-    
+
     Note: Periodic noise detection (for consistent background noise at specific
     frequencies) has been moved to src/audio/cycle_qc.py for future implementation
     during movement cycle analysis in sync_qc.
@@ -273,10 +273,10 @@ def run_raw_audio_qc(
     """Run comprehensive raw audio QC checks.
 
     Detects both signal dropout and artifactual noise in raw audio recordings.
-    
+
     Artifactual noise detection includes:
     - One-off or time-limited spikes (intermittent background noise)
-    
+
     Note: Periodic noise detection has been moved to src/audio/cycle_qc.py for
     future implementation during movement cycle analysis in sync_qc.
 
@@ -383,7 +383,7 @@ def detect_signal_dropout_per_mic(
         intervals = _mask_to_intervals(
             ch_dropout, time_s, min_duration_s=min_dropout_duration_s
         )
-        
+
         per_mic_intervals[ch] = intervals
 
     return per_mic_intervals
@@ -401,7 +401,7 @@ def detect_artifactual_noise_per_mic(
     """Detect artifactual noise per microphone channel.
 
     Returns bad intervals for each channel separately, allowing per-mic QC assessment.
-    
+
     Note: Periodic noise detection has been moved to src/audio/cycle_qc.py for
     future implementation during movement cycle analysis in sync_qc.
 
@@ -458,7 +458,7 @@ def detect_artifactual_noise_per_mic(
         intervals = _mask_to_intervals(
             artifact_mask, time_s, min_duration_s=min_artifact_duration_s
         )
-        
+
         per_mic_intervals[ch] = intervals
 
     return per_mic_intervals
@@ -481,7 +481,7 @@ def run_raw_audio_qc_per_mic(
 
     Detects both signal dropout and artifactual noise in raw audio recordings,
     returning results separately for each microphone channel.
-    
+
     Note: Periodic noise detection has been moved to src/audio/cycle_qc.py for
     future implementation during movement cycle analysis in sync_qc.
 
@@ -523,7 +523,7 @@ def run_raw_audio_qc_per_mic(
     # Merge dropout and artifact intervals per channel
     per_mic_bad_intervals = {}
     all_channels = set(list(dropout_per_mic.keys()) + list(artifact_per_mic.keys()))
-    
+
     for ch in all_channels:
         dropout_intervals = dropout_per_mic.get(ch, [])
         artifact_intervals = artifact_per_mic.get(ch, [])
@@ -618,32 +618,32 @@ def adjust_bad_intervals_for_sync(
     bio_stomp_time: float,
 ) -> List[Tuple[float, float]]:
     """Adjust bad interval timestamps for synchronization offset.
-    
+
     When audio and biomechanics are synchronized via stomp times, the audio
-    timestamps are shifted. This function adjusts the bad intervals from 
+    timestamps are shifted. This function adjusts the bad intervals from
     raw audio coordinates to synchronized (biomechanics) coordinates.
-    
+
     Args:
         bad_intervals: List of (start, end) tuples in audio time coordinates
         audio_stomp_time: Stomp time in audio recording (seconds)
         bio_stomp_time: Stomp time in biomechanics recording (seconds)
-        
+
     Returns:
         List of (start, end) tuples in synchronized time coordinates
     """
     if not bad_intervals:
         return []
-    
+
     # Calculate the offset: bio_stomp - audio_stomp
     # This is the shift applied to audio timestamps during synchronization
     offset = bio_stomp_time - audio_stomp_time
-    
+
     # Adjust all intervals by the offset
     adjusted_intervals = [
         (start + offset, end + offset)
         for start, end in bad_intervals
     ]
-    
+
     return adjusted_intervals
 
 
@@ -654,38 +654,38 @@ def check_cycle_in_bad_interval(
     overlap_threshold: float = 0.1,
 ) -> bool:
     """Check if a movement cycle overlaps with bad audio intervals.
-    
+
     Returns True if the cycle has significant overlap with any bad interval,
     indicating that audio QC should be marked as failed for this cycle.
-    
+
     Args:
         cycle_start_time: Start time of movement cycle (seconds)
         cycle_end_time: End time of movement cycle (seconds)
         bad_intervals: List of (start, end) bad interval tuples (seconds)
         overlap_threshold: Fraction of cycle duration that must overlap
                           to mark as failed (default: 0.1 = 10%)
-    
+
     Returns:
         True if cycle fails audio QC due to bad intervals, False otherwise
     """
     if not bad_intervals:
         return False
-    
+
     cycle_duration = cycle_end_time - cycle_start_time
     if cycle_duration <= 0:
         return False
-    
+
     # Calculate total overlap with all bad intervals
     total_overlap = 0.0
-    
+
     for bad_start, bad_end in bad_intervals:
         # Calculate overlap between cycle and this bad interval
         overlap_start = max(cycle_start_time, bad_start)
         overlap_end = min(cycle_end_time, bad_end)
-        
+
         if overlap_end > overlap_start:
             total_overlap += (overlap_end - overlap_start)
-    
+
     # Check if overlap exceeds threshold
     overlap_fraction = total_overlap / cycle_duration
     return overlap_fraction >= overlap_threshold
@@ -694,73 +694,167 @@ def check_cycle_in_bad_interval(
 # Helper functions for sliding window operations
 
 def _sliding_window_rms(data: np.ndarray, window_size: int) -> np.ndarray:
-    """Compute RMS using sliding window."""
-    result = np.zeros(len(data))
+    """Compute RMS using vectorized cumulative sum approach (O(n) complexity).
+
+    Fully vectorized using numpy cumulative sums and advanced indexing,
+    avoiding all Python loops for maximum performance on large arrays.
+    """
+    if len(data) == 0:
+        return np.array([])
+
+    if len(data) == 1:
+        return np.array([np.sqrt(data[0] ** 2)])
+
+    # Replace NaN with 0 for RMS calculation
+    data_clean = np.nan_to_num(data, nan=0.0).astype(np.float64)
+
+    # RMS = sqrt(mean(x^2))
+    squared = data_clean ** 2
+
+    # Cumulative sum for O(n) window sum computation
+    cumsum = np.concatenate(([0.0], np.cumsum(squared)))
+
     half_window = window_size // 2
 
-    for i in range(len(data)):
-        start = max(0, i - half_window)
-        end = min(len(data), i + half_window + 1)
-        window = data[start:end]
-        valid_window = window[np.isfinite(window)]
-        if len(valid_window) > 0:
-            result[i] = np.sqrt(np.mean(valid_window ** 2))
-        else:
-            result[i] = 0.0
+    # Vectorized index computation
+    indices = np.arange(len(data))
+    start_indices = np.maximum(0, indices - half_window)
+    end_indices = np.minimum(len(data), indices + half_window + 1)
+
+    # Vectorized window sum computation using advanced indexing
+    window_sums = cumsum[end_indices] - cumsum[start_indices]
+    window_counts = end_indices - start_indices
+
+    # Vectorized RMS computation
+    result = np.sqrt(window_sums / window_counts)
 
     return result
 
 
 def _sliding_window_variance(data: np.ndarray, window_size: int) -> np.ndarray:
-    """Compute variance using sliding window."""
-    result = np.zeros(len(data))
+    """Compute variance using vectorized cumulative sum approach (O(n) complexity).
+
+    Fully vectorized using numpy cumulative sums and advanced indexing,
+    avoiding all Python loops for maximum performance on large arrays.
+    """
+    if len(data) == 0:
+        return np.array([])
+
+    if len(data) == 1:
+        return np.array([0.0])
+
+    # Replace NaN with 0 for variance calculation
+    data_clean = np.nan_to_num(data, nan=0.0).astype(np.float64)
+
+    # Variance = E[x^2] - (E[x])^2
+    # Cumulative sums for O(n) window sum computation
+    cumsum_x = np.concatenate(([0.0], np.cumsum(data_clean)))
+    cumsum_x2 = np.concatenate(([0.0], np.cumsum(data_clean ** 2)))
+
     half_window = window_size // 2
 
-    for i in range(len(data)):
-        start = max(0, i - half_window)
-        end = min(len(data), i + half_window + 1)
-        window = data[start:end]
-        valid_window = window[np.isfinite(window)]
-        if len(valid_window) > 1:
-            result[i] = np.var(valid_window)
-        else:
-            result[i] = 0.0
+    # Vectorized index computation
+    indices = np.arange(len(data))
+    start_indices = np.maximum(0, indices - half_window)
+    end_indices = np.minimum(len(data), indices + half_window + 1)
+
+    # Vectorized window sum computation
+    sum_x = cumsum_x[end_indices] - cumsum_x[start_indices]
+    sum_x2 = cumsum_x2[end_indices] - cumsum_x2[start_indices]
+    window_counts = end_indices - start_indices
+
+    # Vectorized variance computation
+    mean_x = sum_x / window_counts
+    mean_x2 = sum_x2 / window_counts
+
+    result = mean_x2 - mean_x ** 2
+
+    # Clamp to zero (numerical precision can cause tiny negative values)
+    result = np.maximum(result, 0.0)
 
     return result
 
 
 def _sliding_window_mean(data: np.ndarray, window_size: int) -> np.ndarray:
-    """Compute mean using sliding window."""
-    result = np.zeros(len(data))
+    """Compute mean using vectorized cumulative sum approach (O(n) complexity).
+
+    Fully vectorized using numpy cumulative sums and advanced indexing,
+    avoiding all Python loops for maximum performance on large arrays.
+    """
+    if len(data) == 0:
+        return np.array([])
+
+    if len(data) == 1:
+        return np.array([data[0]])
+
+    # Replace NaN with 0 for mean calculation
+    data_clean = np.nan_to_num(data, nan=0.0).astype(np.float64)
+
+    # Cumulative sum for O(n) window sum computation
+    cumsum_x = np.concatenate(([0.0], np.cumsum(data_clean)))
+
     half_window = window_size // 2
 
-    for i in range(len(data)):
-        start = max(0, i - half_window)
-        end = min(len(data), i + half_window + 1)
-        window = data[start:end]
-        valid_window = window[np.isfinite(window)]
-        if len(valid_window) > 0:
-            result[i] = np.mean(valid_window)
-        else:
-            result[i] = 0.0
+    # Vectorized index computation
+    indices = np.arange(len(data))
+    start_indices = np.maximum(0, indices - half_window)
+    end_indices = np.minimum(len(data), indices + half_window + 1)
+
+    # Vectorized window sum computation
+    sum_x = cumsum_x[end_indices] - cumsum_x[start_indices]
+    window_counts = end_indices - start_indices
+
+    # Vectorized mean computation
+    result = sum_x / window_counts
 
     return result
 
 
 def _sliding_window_std(data: np.ndarray, window_size: int) -> np.ndarray:
-    """Compute standard deviation using sliding window."""
-    result = np.zeros(len(data))
+    """Compute standard deviation using vectorized cumulative sum approach (O(n) complexity).
+
+    Fully vectorized using numpy cumulative sums and advanced indexing,
+    avoiding all Python loops for maximum performance on large arrays.
+    """
+    if len(data) == 0:
+        return np.array([])
+
+    if len(data) == 1:
+        return np.array([0.0])
+
+    # Replace NaN with 0 for std calculation
+    data_clean = np.nan_to_num(data, nan=0.0).astype(np.float64)
+
+    # StdDev = sqrt(variance)
+    # Cumulative sums for O(n) window sum computation
+    cumsum_x = np.concatenate(([0.0], np.cumsum(data_clean)))
+    cumsum_x2 = np.concatenate(([0.0], np.cumsum(data_clean ** 2)))
+
     half_window = window_size // 2
 
-    for i in range(len(data)):
-        start = max(0, i - half_window)
-        end = min(len(data), i + half_window + 1)
-        window = data[start:end]
-        valid_window = window[np.isfinite(window)]
-        if len(valid_window) > 1:
-            result[i] = np.std(valid_window)
-        else:
-            result[i] = 0.0
+    # Vectorized index computation
+    indices = np.arange(len(data))
+    start_indices = np.maximum(0, indices - half_window)
+    end_indices = np.minimum(len(data), indices + half_window + 1)
+
+    # Vectorized window sum computation
+    sum_x = cumsum_x[end_indices] - cumsum_x[start_indices]
+    sum_x2 = cumsum_x2[end_indices] - cumsum_x2[start_indices]
+    window_counts = end_indices - start_indices
+
+    # Vectorized variance computation: var = E[x^2] - (E[x])^2
+    mean_x = sum_x / window_counts
+    mean_x2 = sum_x2 / window_counts
+
+    variance = mean_x2 - mean_x ** 2
+
+    # Clamp to zero (numerical precision can cause tiny negative values)
+    variance = np.maximum(variance, 0.0)
+
+    # Standard deviation = sqrt(variance)
+    result = np.sqrt(variance)
+
+    return result
 
     return result
 
@@ -824,63 +918,63 @@ def _detect_periodic_noise(
     threshold: float = 0.3,
 ) -> np.ndarray:
     """DEPRECATED: Moved to src/audio/cycle_qc.py for future cycle-level QC.
-    
+
     This function is preserved but no longer called from raw_qc.py.
     It will be integrated into movement cycle QC during sync_qc in a future
     enhancement to avoid performance issues during bin processing.
-    
+
     Detect periodic background noise using spectral analysis.
-    
+
     Identifies consistent periodic noise (e.g., fan running) by analyzing
     the power spectral density. Periods with elevated power at specific
     frequencies are marked as artifacts.
-    
+
     Args:
         data: Audio signal data
         fs: Sampling frequency (Hz)
         threshold: Threshold for periodic noise detection (0-1)
                   Higher values = less sensitive
-    
+
     Returns:
         Boolean mask where True indicates periodic noise
     """
     from scipy.signal import welch
-    
+
     if len(data) < 256:
         return np.zeros(len(data), dtype=bool)
-    
+
     # Compute power spectral density
     try:
         nperseg = min(len(data), int(fs * 2))  # 2 second windows
         freqs, psd = welch(data, fs=fs, nperseg=nperseg, noverlap=nperseg // 2)
     except Exception:
         return np.zeros(len(data), dtype=bool)
-    
+
     if len(psd) == 0:
         return np.zeros(len(data), dtype=bool)
-    
+
     # Identify prominent spectral peaks (potential periodic noise)
     # Ignore DC and very low frequencies (< 5 Hz)
     freq_mask = freqs > 5.0
     if not np.any(freq_mask):
         return np.zeros(len(data), dtype=bool)
-    
+
     psd_nondc = psd[freq_mask]
     if len(psd_nondc) == 0:
         return np.zeros(len(data), dtype=bool)
-    
+
     # Calculate relative power: peak power / median power
     median_power = np.median(psd_nondc)
     if median_power <= 0:
         return np.zeros(len(data), dtype=bool)
-    
+
     max_power = np.max(psd_nondc)
     relative_power = max_power / median_power
-    
+
     # If relative power is high, we have a strong periodic component
     # This indicates consistent background noise at a specific frequency
     has_periodic_noise = relative_power > (1.0 / threshold)
-    
+
     if has_periodic_noise:
         # Mark entire signal as artifact (periodic noise is typically present throughout)
         return np.ones(len(data), dtype=bool)
