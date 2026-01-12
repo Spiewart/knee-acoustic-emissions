@@ -25,7 +25,7 @@ import numpy as np
 import pandas as pd
 
 
-def read_audio_board_file(fname: str, output_folder: Optional[str] = None) -> None:
+def read_audio_board_file(fname: str, output_folder: Optional[str] = None) -> pd.DataFrame:
     """Read binary file produced by the audio board and save a .mat file.
 
     Parameters
@@ -35,6 +35,12 @@ def read_audio_board_file(fname: str, output_folder: Optional[str] = None) -> No
     output_folder : Optional[str]
         Folder where the .mat output will be written. If None, the
         output is saved next to the input file.
+    
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame containing the audio data with columns 'tt', 'ch1', 'ch2', 'ch3', 'ch4'.
+        Returns empty DataFrame if no data available.
     """
     if output_folder is None:
         output_folder = os.path.dirname(fname)
@@ -217,6 +223,9 @@ def read_audio_board_file(fname: str, output_folder: Optional[str] = None) -> No
         warnings.warn("Unable to write metadata JSON file")
 
     print(f"Data saved to {fname_out} and {meta_fname}")
+    
+    # Return the DataFrame for immediate use
+    return df
 
 
 def get_audio_board_file_helper(fname: str, fs: float, numBits: int) -> Optional[Dict]:
