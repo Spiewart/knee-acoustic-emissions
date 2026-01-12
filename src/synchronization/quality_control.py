@@ -5,6 +5,7 @@ Performs two-stage QC on synchronized recordings:
 2. Compares clean cycles to expected acoustic-biomechanics relationships
 """
 
+import ast
 import json
 import logging
 import re
@@ -217,7 +218,6 @@ def _build_cycle_metadata_context(
                 # Load audio QC bad intervals (all mics)
                 if log.audio_record and log.audio_record.QC_not_passed:
                     try:
-                        import ast
                         # Parse the string representation of the list of tuples
                         audio_qc_bad_intervals = ast.literal_eval(log.audio_record.QC_not_passed)
                     except Exception as exc:
