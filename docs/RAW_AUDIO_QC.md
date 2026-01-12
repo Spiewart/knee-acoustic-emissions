@@ -209,7 +209,7 @@ for cycle in movement_cycles:
     )
     
     # Update cycle metadata
-    cycle['audio_QC_passed'] = audio_qc_passed
+    cycle['audio_qc_pass'] = audio_qc_passed
     if not audio_qc_passed:
         print(f"Cycle {cycle['id']} failed audio QC due to bad segments")
 ```
@@ -355,13 +355,13 @@ Tests cover:
 
 **Performance issues:**
 - Increase window sizes (reduces computation)
+- Disable periodic noise detection (use `detect_periodic_noise=False`, which is the default)
 - Process data in chunks
 - Use only necessary channels
 
 ## Future Enhancements
 
 Potential improvements:
-- Per-channel QC reporting (currently aggregated)
 - Adaptive thresholds based on signal statistics
 - Machine learning-based artifact detection
 - Real-time QC during recording

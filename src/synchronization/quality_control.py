@@ -227,7 +227,6 @@ def _build_cycle_metadata_context(
                 audio_qc_bad_intervals_per_mic = {}
                 if log.audio_record:
                     try:
-                        import ast
                         for mic_num in [1, 2, 3, 4]:
                             field_name = f"QC_not_passed_mic_{mic_num}"
                             field_value = getattr(log.audio_record, field_name, None)
@@ -235,8 +234,14 @@ def _build_cycle_metadata_context(
                                 try:
                                     intervals = ast.literal_eval(field_value)
                                     audio_qc_bad_intervals_per_mic[mic_num] = intervals
-                                except Exception:
-                                    pass
+                                except Exception as exc:
+                                    # Malformed data in log, skip this mic
+                                    logger.debug(
+                                        "Failed to parse %s for mic %d: %s",
+                                        field_name,
+                                        mic_num,
+                                        exc,
+                                    )
                     except Exception as exc:
                         logger.debug("Failed to parse per-mic QC_not_passed: %s", exc)
                 
@@ -876,7 +881,6 @@ def perform_sync_qc(
     _save_qc_results(
         final_clean_cycles,
         final_outlier_cycles,
-        outlier_cycles,
         output_dir,
         synced_pkl_path.stem,
         create_plots=create_plots,

@@ -274,7 +274,7 @@ def run_raw_audio_qc(
     min_dropout_duration_s: float = 0.1,
     min_artifact_duration_s: float = 0.01,
     periodic_noise_threshold: float = 0.3,
-    detect_periodic_noise: bool = True,
+    detect_periodic_noise: bool = False,
 ) -> Tuple[List[Tuple[float, float]], List[Tuple[float, float]]]:
     """Run comprehensive raw audio QC checks.
 
@@ -491,7 +491,7 @@ def run_raw_audio_qc_per_mic(
     min_dropout_duration_s: float = 0.1,
     min_artifact_duration_s: float = 0.01,
     periodic_noise_threshold: float = 0.3,
-    detect_periodic_noise: bool = True,
+    detect_periodic_noise: bool = False,
 ) -> dict[str, List[Tuple[float, float]]]:
     """Run comprehensive raw audio QC checks per microphone.
 

@@ -1431,12 +1431,12 @@ def _process_bin_stage(participant_dir: Path) -> list[Path]:
                 # Load metadata for processing log
                 metadata = {}
                 if meta_json.exists():
-                    import json
                     try:
                         with open(meta_json, "r") as f:
                             metadata = json.load(f)
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        # Proceed with empty metadata but log the failure for visibility
+                        logging.warning("Failed to load metadata from %s: %s", meta_json, exc)
                 
                 fs = _determine_fs_from_df_or_meta(df, meta_json)
                 from src.audio.instantaneous_frequency import (

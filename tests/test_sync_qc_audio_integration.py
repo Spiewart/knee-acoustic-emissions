@@ -1,9 +1,6 @@
 """Tests for integration of raw audio QC with sync_qc workflow."""
 
-import pandas as pd
 import pytest
-from pathlib import Path
-from datetime import timedelta
 
 from src.audio.raw_qc import (
     adjust_bad_intervals_for_sync,
@@ -47,8 +44,7 @@ def test_check_cycle_overlap_with_multiple_bad_intervals():
     assert check_cycle_in_bad_interval(2.5, 3.5, bad_intervals, overlap_threshold=0.6) == False
     
     # Cycle spanning multiple bad intervals
-    # Cycle: 4.5 to 11.0 (duration 6.5s), overlap: (4.5-5.0: 0.5s) + (5.0-6.0: 1.0s) + (10.0-11.0: 1.0s) = 2.5s
-    overlap_fraction = 2.5 / 6.5  # ~0.38
+    # Cycle: 4.5 to 11.0 (duration 6.5s), overlap: (5.0-6.0: 1.0s) + (10.0-11.0: 1.0s) = 2.0s (~0.31 fraction)
     assert check_cycle_in_bad_interval(4.5, 11.0, bad_intervals, overlap_threshold=0.3) == True
     assert check_cycle_in_bad_interval(4.5, 11.0, bad_intervals, overlap_threshold=0.5) == False
 
