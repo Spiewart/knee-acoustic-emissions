@@ -41,9 +41,13 @@ Quality Control Criteria
 
 **Artifact Detection:**
 - One-off spikes: Values exceeding mean + N*std in local window (default: 5 sigma)
-- Periodic noise: Consistent background noise at specific frequencies (e.g., fan)
 - Window size: 0.01 seconds (default)
 - Minimum duration: 0.01 seconds (default)
+
+Note: Periodic noise detection (for consistent background noise at specific frequencies,
+e.g., fans) has been moved to src/audio/cycle_qc.py for future implementation during
+sync_qc. This avoids performance issues during bin processing while preserving the
+capability for cycle-specific analysis.
 
 Thresholds can be adjusted based on signal characteristics and recording conditions.
 
@@ -187,16 +191,15 @@ def detect_artifactual_noise(
     spike_threshold_sigma: float = 5.0,
     spike_window_s: float = 0.01,
     min_artifact_duration_s: float = 0.01,
-    periodic_noise_threshold: float = 0.3,
-    detect_periodic_noise: bool = True,
 ) -> List[Tuple[float, float]]:
     """Detect artifactual noise (spikes, outliers) in audio channels.
 
-    Detects two types of artifacts:
-    1. One-off or time-limited spikes: Intermittent background noise (e.g., 
-       someone talking, glass falling) detected via local statistical thresholds
-    2. Consistent periodic background noise: Noise at specific frequencies 
-       (e.g., fan running) detected via spectral analysis
+    Detects one-off or time-limited spikes: Intermittent background noise (e.g., 
+    someone talking, glass falling) detected via local statistical thresholds.
+    
+    Note: Periodic noise detection (for consistent background noise at specific
+    frequencies) has been moved to src/audio/cycle_qc.py for future implementation
+    during movement cycle analysis in sync_qc.
 
     Args:
         df: Audio DataFrame with time and channel data
@@ -205,8 +208,6 @@ def detect_artifactual_noise(
         spike_threshold_sigma: Number of standard deviations for spike detection
         spike_window_s: Window size for computing local statistics (seconds)
         min_artifact_duration_s: Minimum continuous artifact duration to report
-        periodic_noise_threshold: Threshold for detecting periodic noise (0-1)
-        detect_periodic_noise: Whether to detect periodic background noise
 
     Returns:
         List of (start_time, end_time) tuples indicating artifact periods
@@ -239,7 +240,7 @@ def detect_artifactual_noise(
     for ch in available_channels:
         ch_data = pd.to_numeric(df[ch], errors="coerce").to_numpy()
 
-        # Type 1: Detect one-off spikes via local statistics
+        # Detect one-off spikes via local statistics
         local_mean = _sliding_window_mean(ch_data, window_samples)
         local_std = _sliding_window_std(ch_data, window_samples)
 
@@ -247,11 +248,6 @@ def detect_artifactual_noise(
         threshold = local_mean + spike_threshold_sigma * local_std
         ch_artifacts = np.abs(ch_data) > threshold
         artifact_mask |= ch_artifacts
-
-        # Type 2: Detect periodic background noise via spectral analysis
-        if detect_periodic_noise:
-            periodic_mask = _detect_periodic_noise(ch_data, fs, periodic_noise_threshold)
-            artifact_mask |= periodic_mask
 
     # Convert artifact mask to time intervals
     artifact_intervals = _mask_to_intervals(
@@ -273,8 +269,6 @@ def run_raw_audio_qc(
     spike_window_s: float = 0.01,
     min_dropout_duration_s: float = 0.1,
     min_artifact_duration_s: float = 0.01,
-    periodic_noise_threshold: float = 0.3,
-    detect_periodic_noise: bool = False,
 ) -> Tuple[List[Tuple[float, float]], List[Tuple[float, float]]]:
     """Run comprehensive raw audio QC checks.
 
@@ -282,7 +276,9 @@ def run_raw_audio_qc(
     
     Artifactual noise detection includes:
     - One-off or time-limited spikes (intermittent background noise)
-    - Consistent periodic background noise at specific frequencies
+    
+    Note: Periodic noise detection has been moved to src/audio/cycle_qc.py for
+    future implementation during movement cycle analysis in sync_qc.
 
     Args:
         df: Audio DataFrame with time and channel data
@@ -295,8 +291,6 @@ def run_raw_audio_qc(
         spike_window_s: Window size for spike detection (seconds)
         min_dropout_duration_s: Minimum dropout duration to report
         min_artifact_duration_s: Minimum artifact duration to report
-        periodic_noise_threshold: Threshold for periodic noise detection (0-1)
-        detect_periodic_noise: Whether to detect periodic background noise
 
     Returns:
         Tuple of (dropout_intervals, artifact_intervals) where each is a list
@@ -319,8 +313,6 @@ def run_raw_audio_qc(
         spike_threshold_sigma=spike_threshold_sigma,
         spike_window_s=spike_window_s,
         min_artifact_duration_s=min_artifact_duration_s,
-        periodic_noise_threshold=periodic_noise_threshold,
-        detect_periodic_noise=detect_periodic_noise,
     )
 
     return dropout_intervals, artifact_intervals
@@ -405,12 +397,13 @@ def detect_artifactual_noise_per_mic(
     spike_threshold_sigma: float = 5.0,
     spike_window_s: float = 0.01,
     min_artifact_duration_s: float = 0.01,
-    periodic_noise_threshold: float = 0.3,
-    detect_periodic_noise: bool = True,
 ) -> dict[str, List[Tuple[float, float]]]:
     """Detect artifactual noise per microphone channel.
 
     Returns bad intervals for each channel separately, allowing per-mic QC assessment.
+    
+    Note: Periodic noise detection has been moved to src/audio/cycle_qc.py for
+    future implementation during movement cycle analysis in sync_qc.
 
     Args:
         df: Audio DataFrame with time and channel data
@@ -419,8 +412,6 @@ def detect_artifactual_noise_per_mic(
         spike_threshold_sigma: Number of standard deviations for spike detection
         spike_window_s: Window size for computing local statistics (seconds)
         min_artifact_duration_s: Minimum continuous artifact duration to report
-        periodic_noise_threshold: Threshold for detecting periodic noise (0-1)
-        detect_periodic_noise: Whether to detect periodic background noise
 
     Returns:
         Dictionary mapping channel name to list of (start_time, end_time) tuples
@@ -454,7 +445,7 @@ def detect_artifactual_noise_per_mic(
         ch_data = pd.to_numeric(df[ch], errors="coerce").to_numpy()
         artifact_mask = np.zeros(len(df), dtype=bool)
 
-        # Type 1: Detect one-off spikes via local statistics
+        # Detect one-off spikes via local statistics
         local_mean = _sliding_window_mean(ch_data, window_samples)
         local_std = _sliding_window_std(ch_data, window_samples)
 
@@ -462,11 +453,6 @@ def detect_artifactual_noise_per_mic(
         threshold = local_mean + spike_threshold_sigma * local_std
         ch_artifacts = np.abs(ch_data) > threshold
         artifact_mask |= ch_artifacts
-
-        # Type 2: Detect periodic background noise via spectral analysis
-        if detect_periodic_noise:
-            periodic_mask = _detect_periodic_noise(ch_data, fs, periodic_noise_threshold)
-            artifact_mask |= periodic_mask
 
         # Convert artifact mask to time intervals for this channel
         intervals = _mask_to_intervals(
@@ -490,13 +476,14 @@ def run_raw_audio_qc_per_mic(
     spike_window_s: float = 0.01,
     min_dropout_duration_s: float = 0.1,
     min_artifact_duration_s: float = 0.01,
-    periodic_noise_threshold: float = 0.3,
-    detect_periodic_noise: bool = False,
 ) -> dict[str, List[Tuple[float, float]]]:
     """Run comprehensive raw audio QC checks per microphone.
 
     Detects both signal dropout and artifactual noise in raw audio recordings,
     returning results separately for each microphone channel.
+    
+    Note: Periodic noise detection has been moved to src/audio/cycle_qc.py for
+    future implementation during movement cycle analysis in sync_qc.
 
     Args:
         df: Audio DataFrame with time and channel data
@@ -509,8 +496,6 @@ def run_raw_audio_qc_per_mic(
         spike_window_s: Window size for spike detection (seconds)
         min_dropout_duration_s: Minimum dropout duration to report
         min_artifact_duration_s: Minimum artifact duration to report
-        periodic_noise_threshold: Threshold for periodic noise detection (0-1)
-        detect_periodic_noise: Whether to detect periodic background noise
 
     Returns:
         Dictionary mapping channel name to list of (start_time, end_time) tuples
@@ -533,8 +518,6 @@ def run_raw_audio_qc_per_mic(
         spike_threshold_sigma=spike_threshold_sigma,
         spike_window_s=spike_window_s,
         min_artifact_duration_s=min_artifact_duration_s,
-        periodic_noise_threshold=periodic_noise_threshold,
-        detect_periodic_noise=detect_periodic_noise,
     )
 
     # Merge dropout and artifact intervals per channel
@@ -829,12 +812,24 @@ def _mask_to_intervals(
     return intervals
 
 
+# NOTE: The _detect_periodic_noise function below has been deprecated in raw_qc.py
+# and moved to src/audio/cycle_qc.py for future cycle-level QC implementation.
+# It is preserved here for reference but is no longer called during bin processing.
+# See cycle_qc._detect_periodic_noise_in_cycle() for the updated version.
+
+
 def _detect_periodic_noise(
     data: np.ndarray,
     fs: float,
     threshold: float = 0.3,
 ) -> np.ndarray:
-    """Detect periodic background noise using spectral analysis.
+    """DEPRECATED: Moved to src/audio/cycle_qc.py for future cycle-level QC.
+    
+    This function is preserved but no longer called from raw_qc.py.
+    It will be integrated into movement cycle QC during sync_qc in a future
+    enhancement to avoid performance issues during bin processing.
+    
+    Detect periodic background noise using spectral analysis.
     
     Identifies consistent periodic noise (e.g., fan running) by analyzing
     the power spectral density. Periods with elevated power at specific
