@@ -24,9 +24,9 @@ except ImportError:
 
 from src.biomechanics.cycle_parsing import extract_movement_cycles
 from src.biomechanics.quality_control import (
+    MIN_VALID_DATA_FRACTION,
     get_default_min_rom,
     validate_knee_angle_waveform,
-    MIN_VALID_DATA_FRACTION,
 )
 from src.models import MicrophonePosition, MovementCycleMetadata
 
@@ -222,7 +222,7 @@ def _build_cycle_metadata_context(
                         audio_qc_bad_intervals = ast.literal_eval(log.audio_record.QC_not_passed)
                     except Exception as exc:
                         logger.debug("Failed to parse QC_not_passed: %s", exc)
-                
+
                 # Load per-mic audio QC bad intervals
                 audio_qc_bad_intervals_per_mic = {}
                 if log.audio_record:
@@ -244,7 +244,7 @@ def _build_cycle_metadata_context(
                                     )
                     except Exception as exc:
                         logger.debug("Failed to parse per-mic QC_not_passed: %s", exc)
-                
+
                 # Load sync times
                 sync_file_stem = synced_pkl_path.stem
                 for rec in log.synchronization_records:
@@ -389,7 +389,7 @@ class MovementCycleQC:
         self.speed = speed
         self.acoustic_threshold = acoustic_threshold
         self.acoustic_channel = acoustic_channel
-        
+
         # Set default biomechanics ROM thresholds based on maneuver
         if biomech_min_rom is None:
             self.biomech_min_rom = get_default_min_rom(maneuver)
@@ -578,10 +578,10 @@ class MovementCycleQC:
             return 0.0
 
         knee_angle = cycle_df["Knee Angle Z"].values
-        
+
         # Remove any NaN values before computing ROM
         knee_angle_clean = knee_angle[~np.isnan(knee_angle)]
-        
+
         if len(knee_angle_clean) == 0:
             logger.warning("Cycle has only NaN values in 'Knee Angle Z'")
             return 0.0
@@ -608,23 +608,23 @@ class MovementCycleQC:
             return False, "insufficient data points"
 
         knee_angle = cycle_df["Knee Angle Z"].values
-        
+
         # Remove any NaN values
         valid_mask = ~np.isnan(knee_angle)
         if not valid_mask.any():
             return False, "all values are NaN"
-        
+
         total_points = len(knee_angle)
         valid_points = int(valid_mask.sum())
-        
+
         # If too many NaNs are present, the temporal structure of the cycle
         # is no longer reliable for waveform analysis.
         valid_fraction = valid_points / float(total_points)
         if valid_fraction < MIN_VALID_DATA_FRACTION:
             return False, f"too many NaN values in cycle (valid={valid_fraction:.0%})"
-        
+
         knee_angle_clean = knee_angle[valid_mask]
-        
+
         if len(knee_angle_clean) < 10:
             return False, "insufficient valid data points after NaN removal"
 
@@ -726,7 +726,7 @@ def perform_sync_qc(
         maneuver=maneuver,
         speed=speed,
     )
-    
+
     # Check cycles against raw audio QC bad intervals
     # Use provided bad_audio_segments or load from processing log
     if bad_audio_segments is not None:
@@ -738,14 +738,17 @@ def perform_sync_qc(
         audio_qc_bad_intervals = metadata_context.get("audio_qc_bad_intervals", [])
         if audio_qc_bad_intervals:
             logger.debug("Loaded bad audio segments from processing log")
-    
+
     # Get per-mic bad intervals from metadata context
     audio_qc_bad_intervals_per_mic = metadata_context.get("audio_qc_bad_intervals_per_mic", {})
-    
+
     # Adjust bad intervals from audio coordinates to synchronized coordinates
     if audio_qc_bad_intervals or audio_qc_bad_intervals_per_mic:
-        from src.audio.raw_qc import adjust_bad_intervals_for_sync, check_cycle_in_bad_interval
-        
+        from src.audio.raw_qc import (
+            adjust_bad_intervals_for_sync,
+            check_cycle_in_bad_interval,
+        )
+
         audio_sync_time = metadata_context["audio_sync_time"].total_seconds()
         # Use the appropriate biomech stomp time (left or right based on knee)
         knee = metadata_context.get("knee", "left")
@@ -753,7 +756,7 @@ def perform_sync_qc(
             bio_sync_time = metadata_context["biomech_sync_left_time"].total_seconds()
         else:
             bio_sync_time = metadata_context["biomech_sync_right_time"].total_seconds()
-        
+
         # Adjust overall bad intervals to synchronized coordinates
         synced_bad_intervals = []
         if audio_qc_bad_intervals:
@@ -762,7 +765,7 @@ def perform_sync_qc(
                 audio_sync_time,
                 bio_sync_time,
             )
-        
+
         # Adjust per-mic bad intervals to synchronized coordinates
         synced_bad_intervals_per_mic = {}
         for mic_num, intervals in audio_qc_bad_intervals_per_mic.items():
@@ -773,19 +776,19 @@ def perform_sync_qc(
                     bio_sync_time,
                 )
                 synced_bad_intervals_per_mic[mic_num] = synced_intervals
-        
+
         if synced_bad_intervals:
             logger.info(
                 f"Checking {len(cycles)} cycles against {len(synced_bad_intervals)} "
                 f"raw audio QC bad intervals (adjusted for sync)"
             )
-        
+
         if synced_bad_intervals_per_mic:
             logger.info(
                 f"Checking {len(cycles)} cycles against per-microphone bad intervals: "
                 f"{', '.join(f'mic {k}: {len(v)} intervals' for k, v in synced_bad_intervals_per_mic.items())}"
             )
-        
+
         # Check each cycle and update results
         updated_results = []
         for result in cycle_results:
@@ -795,7 +798,7 @@ def perform_sync_qc(
             audio_qc_mic_2_pass = True
             audio_qc_mic_3_pass = True
             audio_qc_mic_4_pass = True
-            
+
             if "tt" in cycle_df.columns:
                 # Get cycle time bounds
                 if isinstance(cycle_df["tt"].iloc[0], pd.Timedelta):
@@ -804,7 +807,7 @@ def perform_sync_qc(
                 else:
                     cycle_start = float(cycle_df["tt"].iloc[0])
                     cycle_end = float(cycle_df["tt"].iloc[-1])
-                
+
                 # Check if cycle overlaps with overall bad intervals
                 if synced_bad_intervals:
                     fails_audio_qc = check_cycle_in_bad_interval(
@@ -813,14 +816,14 @@ def perform_sync_qc(
                         synced_bad_intervals,
                         overlap_threshold=0.1,  # 10% overlap threshold
                     )
-                    
+
                     if fails_audio_qc:
                         logger.debug(
                             f"Cycle {result.index} failed overall audio QC "
                             f"(time range: {cycle_start:.2f}-{cycle_end:.2f}s)"
                         )
                         audio_qc_pass = False
-                
+
                 # Check if cycle overlaps with per-mic bad intervals
                 for mic_num, mic_bad_intervals in synced_bad_intervals_per_mic.items():
                     if mic_bad_intervals:
@@ -830,7 +833,7 @@ def perform_sync_qc(
                             mic_bad_intervals,
                             overlap_threshold=0.1,  # 10% overlap threshold
                         )
-                        
+
                         if fails_mic_qc:
                             logger.debug(
                                 f"Cycle {result.index} failed mic {mic_num} audio QC "
@@ -845,7 +848,7 @@ def perform_sync_qc(
                                 audio_qc_mic_3_pass = False
                             elif mic_num == 4:
                                 audio_qc_mic_4_pass = False
-            
+
             # Create updated result with audio_qc_pass and per-mic results set
             updated_results.append(
                 _CycleResult(
@@ -860,13 +863,13 @@ def perform_sync_qc(
                     audio_qc_mic_4_pass=audio_qc_mic_4_pass,
                 )
             )
-        
+
         cycle_results = updated_results
-    
+
     # Update clean/outlier lists based on final QC results
     final_clean_cycles = [r.cycle for r in cycle_results if r.qc_pass]
     final_outlier_cycles = [r.cycle for r in cycle_results if not r.qc_pass]
-    
+
     logger.info(
         f"Final QC: {len(final_clean_cycles)} clean cycles, "
         f"{len(final_outlier_cycles)} outliers (after raw audio QC check)"
