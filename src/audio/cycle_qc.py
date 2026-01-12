@@ -60,11 +60,12 @@ def _detect_periodic_noise_in_cycle(
 ) -> bool:
     """Detect periodic background noise in a movement cycle using spectral analysis.
     
-    IMPLEMENTATION STATUS: PRESERVED BUT NOT YET INTEGRATED
+    IMPLEMENTATION STATUS: CODE PRESERVED, READY FOR INTEGRATION
     
     This function was moved from raw_qc.py to avoid performance issues during
-    bin processing. It will be integrated into sync_qc workflow for per-cycle
-    analysis in a future enhancement.
+    bin processing. The code is complete and functional, but not yet called
+    from any production workflow. It will be integrated into sync_qc for
+    per-cycle analysis in a future enhancement.
     
     Identifies consistent periodic noise (e.g., fan running) by analyzing
     the power spectral density. This is computationally expensive (uses Welch's
@@ -140,6 +141,11 @@ def check_cycle_periodic_noise(
     it will analyze audio data from a specific movement cycle to detect periodic
     background noise on a per-channel basis.
     
+    The detection code (_detect_periodic_noise_in_cycle) is available and
+    functional, but the integration logic needs to be completed to extract
+    channels from the cycle DataFrame, compute sampling rates, and call the
+    detection function for each channel.
+    
     Args:
         cycle_df: DataFrame containing audio data for a single movement cycle
         time_col: Name of time column
@@ -148,6 +154,7 @@ def check_cycle_periodic_noise(
         
     Returns:
         Dictionary mapping channel name to boolean (True = periodic noise detected)
+        Currently returns False for all channels (placeholder implementation).
         
     Example (Future Use):
         ```python
@@ -174,7 +181,7 @@ def check_cycle_periodic_noise(
     # Filter to available channels
     available_channels = [ch for ch in audio_channels if ch in cycle_df.columns]
     
-    # TODO: Implement actual detection logic
+    # TODO: Implement actual detection logic by calling _detect_periodic_noise_in_cycle()
     # For now, return False (no periodic noise detected) for all channels
     return {ch: False for ch in available_channels}
 
@@ -212,7 +219,7 @@ def run_cycle_audio_qc(
         5. Integrate into sync_qc workflow
         6. Document performance characteristics
     """
-    results = {
+    results: dict[str, any] = {
         'periodic_noise': {},
         'qc_pass': True,  # Default to passing
     }
