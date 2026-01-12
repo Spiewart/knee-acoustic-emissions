@@ -1370,9 +1370,12 @@ def _process_bin_stage(participant_dir: Path) -> list[Path]:
             outputs_dir.mkdir(parents=True, exist_ok=True)
 
             # Read raw .bin -> base pkl + meta (import locally to avoid circular imports)
+            # Returns the DataFrame directly to avoid re-loading from disk
             try:
+                from src.audio.raw_qc import run_raw_audio_qc, run_raw_audio_qc_per_mic, merge_bad_intervals
                 from src.audio.readers import read_audio_board_file
-                read_audio_board_file(str(bin_path), str(outputs_dir))
+                
+                df = read_audio_board_file(str(bin_path), str(outputs_dir))
             except Exception as e:  # pylint: disable=broad-except
                 logging.error("Failed reading audio board file %s: %s", bin_path, e)
                 continue
@@ -1384,10 +1387,8 @@ def _process_bin_stage(participant_dir: Path) -> list[Path]:
                 continue
 
             try:
-                df = pd.read_pickle(base_pkl)
-                
                 # Run raw audio QC before frequency augmentation (per-microphone)
-                from src.audio.raw_qc import run_raw_audio_qc, run_raw_audio_qc_per_mic, merge_bad_intervals
+                # Use the already-loaded DataFrame from read_audio_board_file
                 
                 # Run overall QC (any mic fails)
                 dropout_intervals, artifact_intervals = run_raw_audio_qc(df)
