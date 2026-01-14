@@ -110,7 +110,7 @@ def _filter_synced_files(synced_files: list[Path], knee: Optional[str] = None, m
     return filtered
 
 
-def parse_participant_directory(participant_dir: Path) -> None:
+def parse_participant_directory(participant_dir: Path, knee: Optional[str] = None, maneuver: Optional[str] = None) -> None:
     """Parse and process a complete participant study directory.
 
     Orchestrates the full processing pipeline for a single participant:
@@ -1677,8 +1677,8 @@ def process_participant(participant_dir: Path, entrypoint: Literal["bin", "sync"
                 return False
 
         # SYNC stage: synchronize audio with biomechanics and save Synced files
-        if entrypoint in ("bin", "sync"):
-            parse_participant_directory(participant_dir)
+        if entrypoint == "sync":
+            parse_participant_directory(participant_dir, knee=knee, maneuver=maneuver)
             logging.info(
                 "Synchronization completed for participant #%s", study_id
             )
