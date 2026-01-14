@@ -89,6 +89,18 @@ def main() -> None:
             "'sync' to synchronize audio with biomechanics & QC, 'cycles' to run movement cycle QC only."
         ),
     )
+    parser.add_argument(
+        "--knee",
+        type=str,
+        choices=["left", "right"],
+        help="Specify which knee to process: 'left' or 'right'.",
+    )
+    parser.add_argument(
+        "--maneuver",
+        type=str,
+        choices=["walk", "fe", "sts"],
+        help="Specify which maneuver to process: 'walk', 'fe', or 'sts'.",
+    )
 
     args = parser.parse_args()
 
@@ -151,12 +163,17 @@ def main() -> None:
         "Found %d participant directory(ies) to process", len(participants)
     )
 
-    # Process each participant
+    # Process each participant with additional filtering for knee and maneuver
     success_count = 0
     failure_count = 0
 
     for participant_dir in participants:
-        if process_participant(participant_dir, entrypoint=args.entrypoint):
+        if process_participant(
+            participant_dir,
+            entrypoint=args.entrypoint,
+            knee=args.knee,
+            maneuver=args.maneuver,
+        ):
             success_count += 1
         else:
             failure_count += 1

@@ -31,9 +31,9 @@ Data Models
 - **AcousticsFileMetadata / AcousticsRecording**: Audio-specific fields (`audio_file_name`, microphones 1-4, optional QC/timestamps/notes) layered on top of scripted maneuver + knee metadata.
 - **BiomechanicsFileMetadata / BiomechanicsRecording**: Biomechanics file metadata (`biomech_file_name`, system, sync times, QC) with required walk details.
 - **SynchronizedRecording**: Combines acoustics + biomechanics metadata and data after alignment.
-- **MovementCycleMetadata / MovementCycle**: Per-cycle metadata (cycle IDs, energy, QC, notes) plus the synchronized data slice used for aggregation/DB export.
+- **MovementCycleMetadata / MovementCycle**: Per-cycle metadata (cycle IDs, energy, QC, notes, periodic noise detection, sync quality) plus the synchronized data slice used for aggregation/DB export.
 
-See [MIGRATION.md](MIGRATION.md) for detailed module mappings and [QC_VERSIONING.md](docs/QC_VERSIONING.md) for QA/QC version tracking.
+See [MIGRATION.md](MIGRATION.md) for detailed module mappings, [QC_VERSIONING.md](docs/QC_VERSIONING.md) for QA/QC version tracking, and [CYCLE_QC.md](docs/CYCLE_QC.md) for movement cycle quality control details.
 
 Prerequisites
 -----------
@@ -409,3 +409,29 @@ Troubleshooting
 - Missing sampling frequency (`fs`): scripts fall back to `tt` or metadata JSON; if absent, some analyses fail.
 - Hilbert instantaneous frequency is sensitive to filtering; adjust `--lowcut/--highcut` as needed.
 - Large spectrograms may need `nperseg`/`noverlap` tweaks to manage memory.
+
+### Updated CLI Usage
+
+#### `ae-process-directory`
+
+Process participant directories with additional filtering options:
+
+```bash
+# Process all participants under a root path
+$ ae-process-directory /path/to/studies
+
+# Process specific participants
+$ ae-process-directory /path/to/studies --participant 1011 2024
+
+# Limit the number of participants
+$ ae-process-directory /path/to/studies --limit 5
+
+# Specify knee side (left or right)
+$ ae-process-directory /path/to/studies --knee left
+
+# Specify maneuver type (walk, fe, sts)
+$ ae-process-directory /path/to/studies --maneuver walk
+
+# Combine filters
+$ ae-process-directory /path/to/studies --knee right --maneuver fe
+```
