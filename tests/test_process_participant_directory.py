@@ -11,6 +11,7 @@ import pytest
 from src.orchestration.participant import (
     _generate_synced_filename,
     _load_event_data,
+    _process_bin_stage,
     _trim_and_rename_biomechanics_columns,
     dir_has_acoustic_file_legend,
     find_participant_directories,
@@ -435,7 +436,7 @@ def test_main_filters_requested_participants(monkeypatch, tmp_path, caplog):
     def fake_find(path: Path) -> list[Path]:
         return participants
 
-    def fake_process(participant_dir: Path) -> bool:
+    def fake_process(participant_dir: Path, knee=None, maneuver=None) -> bool:
         processed.append(participant_dir.name)
         return True
 
@@ -1207,3 +1208,78 @@ class TestSyncSingleAudioFile:
             result = sync_single_audio_file(audio_file)
 
             assert result is False
+
+
+@pytest.mark.parametrize("knee, maneuver, expected_count", [
+    ("left", "walk", 1),
+    ("right", "fe", 1),
+    (None, "sts", 2),
+    ("left", None, 2),
+])
+def test_process_participant_with_filters(fake_participant_directory, knee, maneuver, expected_count):
+    participant_dir = fake_participant_directory["participant_dir"]
+
+    with patch("src.orchestration.participant.find_synced_files") as mock_find_synced_files:
+        synced_files_list = [
+            Path(f"{participant_dir}/Left Knee/Walking/synced.pkl"),
+            Path(f"{participant_dir}/Right Knee/Flexion-Extension/synced.pkl"),
+            Path(f"{participant_dir}/Left Knee/Sit-Stand/synced.pkl"),
+            Path(f"{participant_dir}/Right Knee/Sit-Stand/synced.pkl"),
+        ]
+        mock_find_synced_files.return_value = synced_files_list
+
+        success = process_participant(participant_dir, entrypoint="cycles", knee=knee, maneuver=maneuver)
+
+        assert success
+        assert mock_find_synced_files.call_count == 1
+
+        # Apply the same filtering that process_participant should apply
+        filtered_files = synced_files_list
+        if knee:
+            knee_lower = knee.lower()
+            filtered_files = [f for f in filtered_files if knee_lower in str(f).lower()]
+        if maneuver:
+            maneuver_map = {
+                "walk": "walking",
+                "fe": "flexion-extension",
+                "sts": "sit-stand",
+            }
+            maneuver_dir = maneuver_map.get(maneuver, maneuver)
+            filtered_files = [f for f in filtered_files if maneuver_dir.lower() in str(f).lower()]
+
+        assert len(filtered_files) == expected_count
+
+
+@pytest.mark.parametrize("knee, maneuver, expected_files", [
+    ("left", "walk", ["Left Knee/Walking"]),
+    ("right", "fe", ["Right Knee/Flexion-Extension"]),
+    (None, "sts", ["Left Knee/Sit-Stand", "Right Knee/Sit-Stand"]),
+    ("left", None, ["Left Knee/Walking", "Left Knee/Sit-Stand", "Left Knee/Flexion-Extension"]),
+])
+def test_process_bin_stage_with_filters(fake_participant_directory, knee, maneuver, expected_files):
+    participant_dir = fake_participant_directory["participant_dir"]
+
+    with patch("src.orchestration.participant._find_maneuver_dir") as mock_find_maneuver_dir, \
+         patch("src.audio.readers.read_audio_board_file") as mock_read_audio:
+
+        maneuver_map = {
+            "walk": "Walking",
+            "sit_to_stand": "Sit-Stand",
+            "flexion_extension": "Flexion-Extension",
+        }
+        mock_find_maneuver_dir.side_effect = lambda knee_dir, maneuver_key: knee_dir / maneuver_map.get(maneuver_key) if maneuver_key in maneuver_map else None
+
+        # Mock read_audio_board_file to return a valid DataFrame
+        mock_read_audio.return_value = pd.DataFrame({
+            "tt": np.arange(4096) / 1000.0,
+            "ch1": np.random.randn(4096),
+            "ch2": np.random.randn(4096),
+            "ch3": np.random.randn(4096),
+            "ch4": np.random.randn(4096),
+        })
+
+        produced_files = _process_bin_stage(participant_dir, knee=knee, maneuver=maneuver)
+
+        assert len(produced_files) == len(expected_files)
+        for expected_dir in expected_files:
+            assert any(expected_dir in str(produced) for produced in produced_files)

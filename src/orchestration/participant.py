@@ -52,6 +52,64 @@ if TYPE_CHECKING:
     from src.models import BiomechanicsRecording
 
 
+def _normalize_maneuver(maneuver: Optional[str]) -> Optional[str]:
+    """Normalize maneuver shorthand to internal format.
+
+    Converts CLI shorthand (walk, fe, sts) to internal format (walk, flexion_extension, sit_to_stand).
+    Returns None if input is None.
+
+    Args:
+        maneuver: CLI maneuver shorthand or internal format
+
+    Returns:
+        Internal maneuver format or None
+    """
+    if maneuver is None:
+        return None
+    maneuver_lower = maneuver.lower()
+    if maneuver_lower == "fe":
+        return "flexion_extension"
+    if maneuver_lower == "sts":
+        return "sit_to_stand"
+    if maneuver_lower == "walk":
+        return "walk"
+    # If it's already in internal format, return as-is
+    if maneuver_lower in ("flexion_extension", "sit_to_stand"):
+        return maneuver_lower
+    # Unrecognized format, return as-is for error handling upstream
+    return maneuver_lower
+
+
+def _filter_synced_files(synced_files: list[Path], knee: Optional[str] = None, maneuver: Optional[str] = None) -> list[Path]:
+    """Filter synced files by knee and/or maneuver.
+
+    Args:
+        synced_files: List of synced file paths
+        knee: Optional knee filter ('left' or 'right')
+        maneuver: Optional maneuver filter (internal format: 'walk', 'flexion_extension', 'sit_to_stand')
+
+    Returns:
+        Filtered list of synced files
+    """
+    filtered = synced_files
+
+    if knee:
+        knee_lower = knee.lower()
+        filtered = [f for f in filtered if knee_lower in str(f).lower()]
+
+    if maneuver:
+        # Map internal maneuver names to directory names
+        maneuver_map = {
+            "walk": "walking",
+            "flexion_extension": "flexion-extension",
+            "sit_to_stand": "sit-stand",
+        }
+        maneuver_dir = maneuver_map.get(maneuver, maneuver)
+        filtered = [f for f in filtered if maneuver_dir.lower() in str(f).lower()]
+
+    return filtered
+
+
 def parse_participant_directory(participant_dir: Path) -> None:
     """Parse and process a complete participant study directory.
 
@@ -1071,7 +1129,9 @@ def _find_maneuver_dir(knee_dir: Path, maneuver_key: str) -> Optional[Path]:
             continue
         norm = _normalize_folder_name(child.name)
         if norm in aliases:
+            logging.debug("Matched maneuver directory: %s for key: %s", child, maneuver_key)
             return child
+    logging.debug("No match found for maneuver key: %s in %s", maneuver_key, knee_dir)
     return None
 
 
@@ -1292,26 +1352,34 @@ def _determine_fs_from_df_or_meta(df: pd.DataFrame, meta_json_path: Path) -> flo
     raise RuntimeError("Cannot determine sampling frequency for audio")
 
 
-def _process_bin_stage(participant_dir: Path) -> list[Path]:
-    """Process all .bin files to frequency-augmented pickles.
+def _process_bin_stage(participant_dir: Path, knee: Optional[str] = None, maneuver: Optional[str] = None) -> list[Path]:
+    """Process all .bin files to frequency-augmented pickles with filtering options.
 
-    For each knee and maneuver, reads the .bin, writes base pickle + meta
-    into `<audio_base>_outputs`, then adds instantaneous frequency and saves
-    `<audio_base>_with_freq.pkl`. Removes base `.pkl` after frequency save
-    to keep only the resultant dataframe, as requested.
+    Args:
+        participant_dir: Path to the participant directory
+        knee: Specify which knee to process ('left' or 'right')
+        maneuver: Specify which maneuver to process ('walk', 'fe', or 'sts')
 
     Returns:
         List of paths to `_with_freq.pkl` files produced.
     """
+    # Normalize maneuver shorthand to internal format
+    maneuver = _normalize_maneuver(maneuver)
     file_name_map = _load_acoustics_file_names(participant_dir)
     if file_name_map:
         logging.info("Legend-derived audio base names: %s", {k: v for k, v in file_name_map.items()})
     produced: list[Path] = []
     for knee_side in ["Left", "Right"]:
+        if knee and knee_side.lower() != knee.lower():
+            logging.debug("Skipping knee %s due to filter: %s", knee_side, knee)
+            continue
         knee_dir = participant_dir / f"{knee_side} Knee"
         if not knee_dir.exists():
             continue
         for maneuver_key in ["walk", "sit_to_stand", "flexion_extension"]:
+            if maneuver and maneuver_key != maneuver:
+                logging.debug("Skipping maneuver %s due to filter: %s", maneuver_key, maneuver)
+                continue
             maneuver_dir = _find_maneuver_dir(knee_dir, maneuver_key)
             if maneuver_dir is None:
                 continue
@@ -1372,9 +1440,13 @@ def _process_bin_stage(participant_dir: Path) -> list[Path]:
             # Read raw .bin -> base pkl + meta (import locally to avoid circular imports)
             # Returns the DataFrame directly to avoid re-loading from disk
             try:
-                from src.audio.raw_qc import run_raw_audio_qc, run_raw_audio_qc_per_mic, merge_bad_intervals
+                from src.audio.raw_qc import (
+                    merge_bad_intervals,
+                    run_raw_audio_qc,
+                    run_raw_audio_qc_per_mic,
+                )
                 from src.audio.readers import read_audio_board_file
-                
+
                 df = read_audio_board_file(str(bin_path), str(outputs_dir))
             except Exception as e:  # pylint: disable=broad-except
                 logging.error("Failed reading audio board file %s: %s", bin_path, e)
@@ -1389,14 +1461,14 @@ def _process_bin_stage(participant_dir: Path) -> list[Path]:
             try:
                 # Run raw audio QC before frequency augmentation (per-microphone)
                 # Use the already-loaded DataFrame from read_audio_board_file
-                
+
                 # Run overall QC (any mic fails)
                 dropout_intervals, artifact_intervals = run_raw_audio_qc(df)
                 bad_intervals = merge_bad_intervals(dropout_intervals, artifact_intervals)
-                
+
                 # Run per-microphone QC
                 per_mic_bad_intervals = run_raw_audio_qc_per_mic(df)
-                
+
                 if dropout_intervals:
                     logging.info(
                         "Detected %d dropout interval(s) in %s",
@@ -1409,7 +1481,7 @@ def _process_bin_stage(participant_dir: Path) -> list[Path]:
                         len(artifact_intervals),
                         bin_path.name,
                     )
-                
+
                 # Log per-mic results if any failures detected
                 for ch, intervals in per_mic_bad_intervals.items():
                     if intervals:
@@ -1418,16 +1490,16 @@ def _process_bin_stage(participant_dir: Path) -> list[Path]:
                             ch,
                             len(intervals),
                         )
-                
+
                 # Store QC results for logging
                 qc_not_passed = str(bad_intervals) if bad_intervals else None
-                
+
                 # Store per-mic QC results (map channel names to mic numbers)
                 qc_not_passed_mic_1 = str(per_mic_bad_intervals.get("ch1", [])) if per_mic_bad_intervals.get("ch1") else None
                 qc_not_passed_mic_2 = str(per_mic_bad_intervals.get("ch2", [])) if per_mic_bad_intervals.get("ch2") else None
                 qc_not_passed_mic_3 = str(per_mic_bad_intervals.get("ch3", [])) if per_mic_bad_intervals.get("ch3") else None
                 qc_not_passed_mic_4 = str(per_mic_bad_intervals.get("ch4", [])) if per_mic_bad_intervals.get("ch4") else None
-                
+
                 # Load metadata for processing log
                 metadata = {}
                 if meta_json.exists():
@@ -1437,7 +1509,7 @@ def _process_bin_stage(participant_dir: Path) -> list[Path]:
                     except Exception as exc:
                         # Proceed with empty metadata but log the failure for visibility
                         logging.warning("Failed to load metadata from %s: %s", meta_json, exc)
-                
+
                 fs = _determine_fs_from_df_or_meta(df, meta_json)
                 from src.audio.instantaneous_frequency import (
                     add_instantaneous_frequency,
@@ -1446,7 +1518,9 @@ def _process_bin_stage(participant_dir: Path) -> list[Path]:
                 out_with_freq = outputs_dir / f"{audio_base_path.name}_with_freq.pkl"
                 df_with_freq.to_pickle(out_with_freq)
                 produced.append(out_with_freq)
-                
+                logging.debug("QC completed for %s/%s", knee_side, maneuver_key)
+                logging.debug("Produced file: %s", out_with_freq)
+
                 # Update processing log with QC results
                 _save_or_update_processing_log(
                     study_id=participant_dir.name.lstrip("#"),
@@ -1462,7 +1536,7 @@ def _process_bin_stage(participant_dir: Path) -> list[Path]:
                     qc_not_passed_mic_3=qc_not_passed_mic_3,
                     qc_not_passed_mic_4=qc_not_passed_mic_4,
                 )
-                
+
                 # Remove base pkl to keep only resultant dataframe
                 try:
                     base_pkl.unlink(missing_ok=True)
@@ -1471,6 +1545,7 @@ def _process_bin_stage(participant_dir: Path) -> list[Path]:
             except Exception as e:  # pylint: disable=broad-except
                 logging.error("Failed frequency augmentation for %s: %s", base_pkl, e)
                 continue
+    logging.debug("Produced files: %s", produced)
     return produced
 
 
@@ -1520,16 +1595,21 @@ def _run_audio_qc_for_maneuver(df: pd.DataFrame, maneuver_key: str, biomech_file
         logging.warning("Audio QC failed (%s): %s", maneuver_key, e)
 
 
-def process_participant(participant_dir: Path, entrypoint: Literal["bin", "sync", "cycles"] = "sync") -> bool:
+def process_participant(participant_dir: Path, entrypoint: Literal["bin", "sync", "cycles"] = "sync", knee: Optional[str] = None, maneuver: Optional[str] = None) -> bool:
     """Process a single participant directory.
 
     Args:
         participant_dir: Path to the participant directory
         entrypoint: Stage to start from: 'bin' | 'sync' | 'cycles'
+        knee: Specify which knee to process ('left' or 'right')
+        maneuver: Specify which maneuver to process ('walk', 'fe', or 'sts')
 
     Returns:
         True if processing succeeded, False otherwise
     """
+    # Normalize maneuver shorthand to internal format
+    maneuver = _normalize_maneuver(maneuver)
+
     try:
         study_id = participant_dir.name.lstrip("#")
         logging.info("Processing participant #%s", study_id)
@@ -1559,7 +1639,7 @@ def process_participant(participant_dir: Path, entrypoint: Literal["bin", "sync"
 
         # BIN stage: process raw audio to frequency DF + audio QC
         if entrypoint == "bin":
-            produced = _process_bin_stage(participant_dir)
+            produced = _process_bin_stage(participant_dir, knee=knee, maneuver=maneuver)
             logging.info("Bin stage produced %d frequency pickle(s)", len(produced))
             # Run audio QC per maneuver using produced files
             for pkl in produced:
@@ -1605,6 +1685,8 @@ def process_participant(participant_dir: Path, entrypoint: Literal["bin", "sync"
 
         # CYCLES stage: run movement cycle QC on all Synced files and save outputs
         synced_files = find_synced_files(participant_dir)
+        # Apply knee and maneuver filters to synced files
+        synced_files = _filter_synced_files(synced_files, knee=knee, maneuver=maneuver)
         if entrypoint == "cycles" and not synced_files:
             logging.warning("No synced files found to run cycle QC")
         for synced_file in synced_files:
@@ -1999,6 +2081,19 @@ def main() -> None:
         default=None,
         help="Optional path to write detailed log file",
     )
+    parser.add_argument(
+        "--knee",
+        type=str,
+        choices=["left", "right"],
+        help="Specify which knee to process (for filtering synced files)",
+    )
+    parser.add_argument(
+        "--maneuver",
+        type=str,
+ choices=["walk", "fe", "sts"],
+
+        help="Specify which maneuver to process (for filtering synced files)",
+    )
 
     args = parser.parse_args()
 
@@ -2010,7 +2105,8 @@ def main() -> None:
     if args.sync_single:
         if not args.path:
             logging.error(
-                "--sync-single requires PATH argument (audio file path)"
+
+                               "--sync-single requires PATH argument (audio file path)"
             )
             return
         success = sync_single_audio_file(args.path)
@@ -2066,7 +2162,7 @@ def main() -> None:
     failure_count = 0
 
     for participant_dir in participants:
-        if process_participant(participant_dir):
+        if process_participant(participant_dir, knee=args.knee, maneuver=args.maneuver):
             success_count += 1
         else:
             failure_count += 1

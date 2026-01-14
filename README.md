@@ -409,3 +409,29 @@ Troubleshooting
 - Missing sampling frequency (`fs`): scripts fall back to `tt` or metadata JSON; if absent, some analyses fail.
 - Hilbert instantaneous frequency is sensitive to filtering; adjust `--lowcut/--highcut` as needed.
 - Large spectrograms may need `nperseg`/`noverlap` tweaks to manage memory.
+
+### Updated CLI Usage
+
+#### `ae-process-directory`
+
+Process participant directories with additional filtering options:
+
+```bash
+# Process all participants under a root path
+$ ae-process-directory /path/to/studies
+
+# Process specific participants
+$ ae-process-directory /path/to/studies --participant 1011 2024
+
+# Limit the number of participants
+$ ae-process-directory /path/to/studies --limit 5
+
+# Specify knee side (left or right)
+$ ae-process-directory /path/to/studies --knee left
+
+# Specify maneuver type (walk, fe, sts)
+$ ae-process-directory /path/to/studies --maneuver walk
+
+# Combine filters
+$ ae-process-directory /path/to/studies --knee right --maneuver fe
+```
