@@ -149,9 +149,10 @@ class TestCycleAudioQC:
         )
         
         # With strong periodic noise, at least one channel should detect it
-        # and if fail_on_periodic_noise=True, qc_pass should potentially be False
-        # (depends on detection threshold and noise strength)
-        assert "qc_pass" in results
+        if results['has_periodic_noise']:
+            # If periodic noise is detected and fail_on_periodic_noise=True, QC should fail
+            assert results['qc_pass'] is False, "QC should fail when periodic noise is detected with fail_on_periodic_noise=True"
+        # Note: If no periodic noise detected, qc_pass can be True
     
     def test_run_cycle_audio_qc_skip_periodic_noise(self):
         """Should skip periodic noise check when disabled."""

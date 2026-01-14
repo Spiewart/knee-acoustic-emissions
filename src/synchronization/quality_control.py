@@ -721,6 +721,8 @@ def perform_sync_qc(
     cycle_results: list[_CycleResult] = []
     
     # Import cycle QC functions locally to avoid circular imports
+    # TODO: Consider refactoring module structure to avoid this pattern
+    # (e.g., moving shared types to a separate module)
     from src.audio.cycle_qc import check_cycle_periodic_noise, check_sync_quality_by_phase
     
     for idx, cycle_df in enumerate(cycles):

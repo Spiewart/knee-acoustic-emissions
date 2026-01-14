@@ -53,14 +53,17 @@ import numpy as np
 import pandas as pd
 
 
-# Reference range constants for acoustic RMS energy by phase (in arbitrary units)
+# Reference range constants for acoustic RMS energy by phase
+# Units: RMS amplitude (same units as raw audio signal data)
 # These are conservative ranges based on expected acoustic patterns
 # NOTE: In production, these should be calibrated from a reference dataset
-DEFAULT_MIN_RMS_ENERGY = 0.001  # Minimum detectable RMS energy
-DEFAULT_MAX_RMS_ENERGY = 10.0   # Maximum expected RMS energy
-DEFAULT_LOW_ENERGY_MAX = 5.0    # Maximum for low-energy phases (e.g., swing in gait)
-DEFAULT_MID_ENERGY_MIN = 0.01   # Minimum for moderate-energy phases
-DEFAULT_HIGH_ENERGY_MIN = 0.005 # Minimum for phases with expected activity
+DEFAULT_MIN_RMS_ENERGY = 0.001  # Minimum detectable RMS energy (baseline/quiet)
+DEFAULT_MAX_RMS_ENERGY = 10.0   # Maximum expected RMS energy (loud events)
+DEFAULT_LOW_ENERGY_MAX = 5.0    # Maximum for low-energy phases (e.g., swing phase in gait)
+DEFAULT_MID_ENERGY_MIN = 0.01   # Minimum for moderate-energy phases (e.g., stance phase)
+# HIGH_ENERGY_MIN is intentionally lower than MID_ENERGY_MIN to be permissive
+# for phases where energy may vary (e.g., flexion/extension transitions)
+DEFAULT_VARIABLE_ENERGY_MIN = 0.005  # Minimum for phases with variable acoustic activity
 
 
 def _detect_periodic_noise_in_cycle(
@@ -321,8 +324,11 @@ def check_sync_quality_by_phase(
             'error': 'Insufficient valid knee angle data',
         }
     
+    # Filter knee angle to valid values only
+    knee_angle_valid = knee_angle[valid_mask]
+    
     # Define phases based on knee angle percentiles
-    phases = _define_movement_phases(knee_angle[valid_mask], maneuver)
+    phases = _define_movement_phases(knee_angle_valid, maneuver)
     
     # Get reference ranges for this maneuver
     if reference_ranges is None:
@@ -333,19 +339,23 @@ def check_sync_quality_by_phase(
     phase_in_range = {}
     
     for phase_name, (angle_min, angle_max) in phases.items():
-        # Find indices within this phase
-        phase_mask = valid_mask & (knee_angle >= angle_min) & (knee_angle <= angle_max)
+        # Find indices within this phase (working with valid data only)
+        phase_mask_valid = (knee_angle_valid >= angle_min) & (knee_angle_valid <= angle_max)
         
-        if phase_mask.sum() < 5:
+        if phase_mask_valid.sum() < 5:
             # Not enough data in this phase
             phase_features[phase_name] = None
             phase_in_range[phase_name] = False
             continue
         
+        # Map back to original indices for data extraction
+        valid_indices = np.where(valid_mask)[0]
+        phase_indices = valid_indices[phase_mask_valid]
+        
         # Compute RMS acoustic energy for this phase across all channels
         phase_rms = 0.0
         for ch in available_channels:
-            ch_data = cycle_df[ch].values[phase_mask]
+            ch_data = cycle_df[ch].values[phase_indices]
             ch_rms = np.sqrt(np.mean(ch_data ** 2))
             phase_rms += ch_rms
         
@@ -361,7 +371,7 @@ def check_sync_quality_by_phase(
             phase_in_range[phase_name] = True
     
     # Calculate sync quality score (fraction of phases in range)
-    if phase_in_range:
+    if len(phase_in_range) > 0:
         sync_quality_score = sum(phase_in_range.values()) / len(phase_in_range)
     else:
         sync_quality_score = 0.0
@@ -462,9 +472,9 @@ def _get_default_reference_ranges(
     elif maneuver == "flexion_extension":
         # Flexion-extension: Energy throughout movement, peaks during transitions
         return {
-            'extension': (DEFAULT_HIGH_ENERGY_MIN, DEFAULT_MAX_RMS_ENERGY),
+            'extension': (DEFAULT_VARIABLE_ENERGY_MIN, DEFAULT_MAX_RMS_ENERGY),
             'mid_phase': (DEFAULT_MID_ENERGY_MIN, DEFAULT_MAX_RMS_ENERGY),
-            'flexion': (DEFAULT_HIGH_ENERGY_MIN, DEFAULT_MAX_RMS_ENERGY),
+            'flexion': (DEFAULT_VARIABLE_ENERGY_MIN, DEFAULT_MAX_RMS_ENERGY),
         }
     else:
         # Default: permissive ranges
