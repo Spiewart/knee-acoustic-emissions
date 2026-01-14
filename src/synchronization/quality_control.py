@@ -43,6 +43,13 @@ class _CycleResult(NamedTuple):
     audio_qc_mic_2_pass: bool = True
     audio_qc_mic_3_pass: bool = True
     audio_qc_mic_4_pass: bool = True
+    periodic_noise_detected: bool = False  # Overall periodic noise detection
+    periodic_noise_ch1: bool = False  # Per-channel periodic noise
+    periodic_noise_ch2: bool = False
+    periodic_noise_ch3: bool = False
+    periodic_noise_ch4: bool = False
+    sync_quality_score: float = 0.0  # Cross-modal sync quality score
+    sync_qc_pass: bool = True  # Cross-modal sync QC pass/fail
 
 
 def _find_participant_dir(path: Path) -> Optional[Path]:
@@ -297,6 +304,13 @@ def _build_cycle_metadata_for_cycle(
         audio_qc_mic_2_pass=result.audio_qc_mic_2_pass,
         audio_qc_mic_3_pass=result.audio_qc_mic_3_pass,
         audio_qc_mic_4_pass=result.audio_qc_mic_4_pass,
+        periodic_noise_detected=result.periodic_noise_detected,
+        periodic_noise_ch1=result.periodic_noise_ch1,
+        periodic_noise_ch2=result.periodic_noise_ch2,
+        periodic_noise_ch3=result.periodic_noise_ch3,
+        periodic_noise_ch4=result.periodic_noise_ch4,
+        sync_quality_score=result.sync_quality_score,
+        sync_qc_pass=result.sync_qc_pass,
         scripted_maneuver=context["maneuver"],
         speed=context["speed"],
         pass_number=context["pass_number"],
@@ -705,8 +719,22 @@ def perform_sync_qc(
     # Compute per-cycle metadata (retain original ordering)
     clean_ids = {id(cycle) for cycle in clean_cycles}
     cycle_results: list[_CycleResult] = []
+    
+    # Import cycle QC functions
+    from src.audio.cycle_qc import check_cycle_periodic_noise, check_sync_quality_by_phase
+    
     for idx, cycle_df in enumerate(cycles):
         energy = qc._compute_cycle_acoustic_energy(cycle_df)
+        
+        # Run cycle-level audio QC (periodic noise detection)
+        periodic_noise_results = check_cycle_periodic_noise(cycle_df)
+        periodic_noise_detected = any(periodic_noise_results.values())
+        
+        # Run cross-modal sync quality checks
+        sync_quality_results = check_sync_quality_by_phase(cycle_df, maneuver=maneuver)
+        sync_quality_score = sync_quality_results.get('sync_quality_score', 0.0)
+        sync_qc_pass = sync_quality_results.get('sync_qc_pass', True)
+        
         cycle_results.append(
             _CycleResult(
                 cycle=cycle_df,
@@ -718,6 +746,13 @@ def perform_sync_qc(
                 audio_qc_mic_2_pass=True,
                 audio_qc_mic_3_pass=True,
                 audio_qc_mic_4_pass=True,
+                periodic_noise_detected=periodic_noise_detected,
+                periodic_noise_ch1=periodic_noise_results.get('ch1', False),
+                periodic_noise_ch2=periodic_noise_results.get('ch2', False),
+                periodic_noise_ch3=periodic_noise_results.get('ch3', False),
+                periodic_noise_ch4=periodic_noise_results.get('ch4', False),
+                sync_quality_score=sync_quality_score,
+                sync_qc_pass=sync_qc_pass,
             )
         )
 

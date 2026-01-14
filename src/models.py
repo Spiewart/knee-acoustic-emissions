@@ -363,6 +363,18 @@ class MovementCycleMetadata(
     cycle_qc_pass: bool
     cycle_qc_version: int = Field(default_factory=get_cycle_qc_version)
     cycle_notes: Optional[str] = None
+    
+    # Periodic noise detection results (per-channel)
+    periodic_noise_detected: bool = False
+    periodic_noise_ch1: bool = False
+    periodic_noise_ch2: bool = False
+    periodic_noise_ch3: bool = False
+    periodic_noise_ch4: bool = False
+    
+    # Sync quality results (cross-modal validation)
+    sync_quality_score: Optional[float] = None
+    sync_qc_pass: Optional[bool] = None
+    
     require_walk_details: ClassVar[bool] = True
 
     @field_validator("cycle_index")
