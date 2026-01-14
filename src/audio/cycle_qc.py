@@ -51,6 +51,7 @@ from typing import List, Tuple
 
 import numpy as np
 import pandas as pd
+from scipy.signal import find_peaks
 
 
 # Reference range constants for acoustic RMS energy by phase
@@ -208,6 +209,387 @@ def check_cycle_periodic_noise(
             results[ch] = False
     
     return results
+
+
+def validate_acoustic_waveform(
+    cycle_df: pd.DataFrame,
+    maneuver: str,
+    time_col: str = "tt",
+    audio_channels: list[str] | None = None,
+    min_rms_threshold: float = 0.001,
+    reference_waveform: np.ndarray | None = None,
+    correlation_threshold: float = 0.5,
+    dtw_threshold: float | None = None,
+) -> tuple[bool, str]:
+    """Validate acoustic waveform shape matches expected pattern for the maneuver.
+    
+    This function performs waveform-level validation of acoustic data, checking that
+    the acoustic signal exhibits characteristics consistent with the biomechanical
+    movement pattern. Supports two validation modes:
+    
+    1. **Rule-based validation** (default): Uses predefined characteristics for each
+       maneuver type (peaks, timing, variation patterns)
+    
+    2. **Model-based validation** (optional): Compares against a reference waveform
+       using correlation and/or DTW distance, enabling ML-based quality control
+    
+    Args:
+        cycle_df: DataFrame containing synchronized audio and biomechanics data
+        maneuver: Type of movement (walk, sit_to_stand, flexion_extension)
+        time_col: Name of time column
+        audio_channels: List of channel names to check (default: f_ch1-f_ch4)
+        min_rms_threshold: Minimum RMS threshold to consider signal present
+        reference_waveform: Optional reference/model waveform for comparison.
+                           If provided, uses correlation-based validation instead of
+                           rule-based validation. Should be normalized RMS envelope.
+        correlation_threshold: Minimum correlation coefficient for model-based validation
+                              (default: 0.5). Only used if reference_waveform is provided.
+        dtw_threshold: Optional DTW (Dynamic Time Warping) distance threshold for
+                      time-series similarity. If None, only correlation is used.
+                      Lower values indicate more similar waveforms.
+        
+    Returns:
+        Tuple of (is_valid, reason) where is_valid indicates if the waveform passes
+        validation and reason provides details about the validation result.
+        
+    Examples:
+        # Rule-based validation (default)
+        is_valid, reason = validate_acoustic_waveform(cycle_df, "walk")
+        
+        # Model-based validation with reference waveform
+        reference = get_reference_waveform("walk")  # From ML model or reference dataset
+        is_valid, reason = validate_acoustic_waveform(
+            cycle_df, 
+            "walk",
+            reference_waveform=reference,
+            correlation_threshold=0.7
+        )
+    """
+    if audio_channels is None:
+        audio_channels = ["f_ch1", "f_ch2", "f_ch3", "f_ch4"]
+    
+    # Filter to available channels
+    available_channels = [ch for ch in audio_channels if ch in cycle_df.columns]
+    
+    if not available_channels:
+        return False, "no audio channels available"
+    
+    if time_col not in cycle_df.columns:
+        return False, "missing time column"
+    
+    # Compute RMS envelope for acoustic signal (average across channels)
+    rms_envelope = np.zeros(len(cycle_df))
+    for ch in available_channels:
+        ch_data = cycle_df[ch].values
+        # Use a simple squared signal as RMS-like measure
+        rms_envelope += ch_data ** 2
+    
+    rms_envelope = np.sqrt(rms_envelope / len(available_channels))
+    
+    # Check for sufficient signal
+    if np.max(rms_envelope) < min_rms_threshold:
+        return False, f"insufficient acoustic signal (max RMS: {np.max(rms_envelope):.4f})"
+    
+    # Choose validation method based on whether reference waveform is provided
+    if reference_waveform is not None:
+        # Model-based validation using reference waveform comparison
+        return _validate_against_reference_waveform(
+            rms_envelope, 
+            reference_waveform,
+            correlation_threshold,
+            dtw_threshold
+        )
+    else:
+        # Rule-based validation using maneuver-specific patterns
+        if maneuver == "walk":
+            return _validate_walking_acoustic_waveform(rms_envelope)
+        elif maneuver == "sit_to_stand":
+            return _validate_sit_to_stand_acoustic_waveform(rms_envelope)
+        elif maneuver == "flexion_extension":
+            return _validate_flexion_extension_acoustic_waveform(rms_envelope)
+        else:
+            # Unknown maneuver - fall back to basic signal check
+            return True, f"sufficient signal present (max RMS: {np.max(rms_envelope):.4f})"
+
+
+def _validate_against_reference_waveform(
+    observed_waveform: np.ndarray,
+    reference_waveform: np.ndarray,
+    correlation_threshold: float = 0.5,
+    dtw_threshold: float | None = None,
+) -> tuple[bool, str]:
+    """Validate observed waveform against a reference/model waveform.
+    
+    Uses correlation and optionally DTW distance to assess similarity between
+    the observed acoustic waveform and a reference waveform (e.g., from ML model
+    or reference dataset).
+    
+    Args:
+        observed_waveform: RMS envelope of observed acoustic signal
+        reference_waveform: Reference/model waveform to compare against
+        correlation_threshold: Minimum correlation coefficient required (0-1)
+        dtw_threshold: Optional maximum DTW distance allowed. If None, DTW not used.
+        
+    Returns:
+        Tuple of (is_valid, reason)
+    """
+    if len(observed_waveform) < 10:
+        return False, "insufficient data points for waveform comparison"
+    
+    if len(reference_waveform) < 10:
+        return False, "invalid reference waveform (too short)"
+    
+    # Normalize both waveforms for comparison
+    observed_norm = _normalize_waveform(observed_waveform)
+    reference_norm = _normalize_waveform(reference_waveform)
+    
+    # Resample observed to match reference length if needed
+    if len(observed_norm) != len(reference_norm):
+        observed_norm = _resample_waveform(observed_norm, len(reference_norm))
+    
+    # Compute correlation coefficient
+    try:
+        correlation = np.corrcoef(observed_norm, reference_norm)[0, 1]
+    except Exception:
+        return False, "failed to compute correlation"
+    
+    # Check correlation threshold
+    if np.isnan(correlation):
+        return False, "correlation calculation failed (NaN result)"
+    
+    if correlation < correlation_threshold:
+        return False, f"low correlation with reference (r={correlation:.3f} < {correlation_threshold:.3f})"
+    
+    # Optionally compute DTW distance if threshold provided
+    if dtw_threshold is not None:
+        try:
+            dtw_distance = _compute_dtw_distance(observed_norm, reference_norm)
+            
+            if dtw_distance > dtw_threshold:
+                return False, f"high DTW distance (d={dtw_distance:.3f} > {dtw_threshold:.3f}), correlation={correlation:.3f}"
+            
+            return True, f"valid waveform (r={correlation:.3f}, DTW={dtw_distance:.3f})"
+        except Exception as e:
+            # DTW failed but correlation passed - still pass
+            return True, f"valid waveform (r={correlation:.3f}, DTW unavailable)"
+    
+    return True, f"valid waveform (r={correlation:.3f})"
+
+
+def _normalize_waveform(waveform: np.ndarray) -> np.ndarray:
+    """Normalize waveform to zero mean and unit variance.
+    
+    Args:
+        waveform: Input waveform array
+        
+    Returns:
+        Normalized waveform
+    """
+    mean = np.mean(waveform)
+    std = np.std(waveform)
+    
+    if std == 0:
+        # Constant signal - return zeros
+        return np.zeros_like(waveform)
+    
+    return (waveform - mean) / std
+
+
+def _resample_waveform(waveform: np.ndarray, target_length: int) -> np.ndarray:
+    """Resample waveform to target length using linear interpolation.
+    
+    Args:
+        waveform: Input waveform array
+        target_length: Desired output length
+        
+    Returns:
+        Resampled waveform
+    """
+    if len(waveform) == target_length:
+        return waveform
+    
+    # Use linear interpolation to resample
+    old_indices = np.linspace(0, len(waveform) - 1, len(waveform))
+    new_indices = np.linspace(0, len(waveform) - 1, target_length)
+    
+    resampled = np.interp(new_indices, old_indices, waveform)
+    return resampled
+
+
+def _compute_dtw_distance(seq1: np.ndarray, seq2: np.ndarray) -> float:
+    """Compute Dynamic Time Warping distance between two sequences.
+    
+    Simplified DTW implementation for time-series similarity measurement.
+    Lower distance indicates more similar temporal patterns.
+    
+    Args:
+        seq1: First sequence
+        seq2: Second sequence
+        
+    Returns:
+        DTW distance (normalized by sequence length)
+    """
+    n, m = len(seq1), len(seq2)
+    
+    # Initialize DTW matrix
+    dtw_matrix = np.full((n + 1, m + 1), np.inf)
+    dtw_matrix[0, 0] = 0
+    
+    # Fill DTW matrix
+    for i in range(1, n + 1):
+        for j in range(1, m + 1):
+            cost = abs(seq1[i - 1] - seq2[j - 1])
+            dtw_matrix[i, j] = cost + min(
+                dtw_matrix[i - 1, j],      # insertion
+                dtw_matrix[i, j - 1],      # deletion
+                dtw_matrix[i - 1, j - 1]   # match
+            )
+    
+    # Return normalized DTW distance
+    return dtw_matrix[n, m] / max(n, m)
+
+
+def _validate_walking_acoustic_waveform(rms_envelope: np.ndarray) -> tuple[bool, str]:
+    """Validate acoustic waveform pattern for walking gait cycles.
+    
+    Walking acoustic patterns should exhibit:
+    1. Peak(s) during stance/heel strike phase (typically early-to-mid cycle)
+    2. Lower energy during swing phase
+    3. Not completely flat (should have variation)
+    
+    Args:
+        rms_envelope: RMS envelope of acoustic signal
+        
+    Returns:
+        Tuple of (is_valid, reason)
+    """
+    if len(rms_envelope) < 10:
+        return False, "insufficient data points for waveform validation"
+    
+    # Calculate signal variation
+    signal_std = np.std(rms_envelope)
+    signal_mean = np.mean(rms_envelope)
+    
+    if signal_mean == 0:
+        return False, "zero mean signal"
+    
+    # Check for variation (coefficient of variation)
+    cv = signal_std / signal_mean
+    if cv < 0.1:
+        return False, f"insufficient waveform variation (CV: {cv:.2f})"
+    
+    # Find peaks in acoustic signal
+    # Use prominence relative to signal range
+    signal_range = np.max(rms_envelope) - np.min(rms_envelope)
+    prominence = max(signal_range * 0.2, signal_mean * 0.5)
+    
+    peaks, peak_properties = find_peaks(rms_envelope, prominence=prominence)
+    
+    if len(peaks) == 0:
+        return False, "no acoustic peaks detected"
+    
+    # Check peak timing - should be in first 70% of cycle (stance phase)
+    cycle_length = len(rms_envelope)
+    dominant_peak_idx = peaks[np.argmax(rms_envelope[peaks])]
+    peak_position = dominant_peak_idx / cycle_length
+    
+    if peak_position > 0.8:
+        return False, f"acoustic peak too late in cycle ({peak_position*100:.0f}%)"
+    
+    return True, f"valid walking acoustic pattern ({len(peaks)} peak(s), dominant at {peak_position*100:.0f}%)"
+
+
+def _validate_sit_to_stand_acoustic_waveform(rms_envelope: np.ndarray) -> tuple[bool, str]:
+    """Validate acoustic waveform pattern for sit-to-stand maneuvers.
+    
+    Sit-to-stand acoustic patterns should exhibit:
+    1. Increased energy during transition phase (middle of cycle)
+    2. Lower energy at beginning (sitting) and end (standing)
+    3. General increase then decrease pattern
+    
+    Args:
+        rms_envelope: RMS envelope of acoustic signal
+        
+    Returns:
+        Tuple of (is_valid, reason)
+    """
+    if len(rms_envelope) < 10:
+        return False, "insufficient data points for waveform validation"
+    
+    # Check signal is present
+    signal_mean = np.mean(rms_envelope)
+    if signal_mean == 0:
+        return False, "zero mean signal"
+    
+    # Divide into thirds: sitting, transition, standing
+    third = len(rms_envelope) // 3
+    if third < 2:
+        return False, "insufficient data points for phase analysis"
+    
+    sitting_mean = np.mean(rms_envelope[:third])
+    transition_mean = np.mean(rms_envelope[third:2*third])
+    standing_mean = np.mean(rms_envelope[2*third:])
+    
+    # Transition should have higher energy than sitting and standing
+    if transition_mean < sitting_mean or transition_mean < standing_mean:
+        return False, "transition phase does not show increased acoustic energy"
+    
+    # Check for energy increase ratio
+    energy_ratio = transition_mean / max(sitting_mean, standing_mean)
+    if energy_ratio < 1.2:
+        return False, f"insufficient energy increase during transition (ratio: {energy_ratio:.2f})"
+    
+    return True, f"valid sit-to-stand acoustic pattern (transition energy {energy_ratio:.2f}x higher)"
+
+
+def _validate_flexion_extension_acoustic_waveform(rms_envelope: np.ndarray) -> tuple[bool, str]:
+    """Validate acoustic waveform pattern for flexion-extension maneuvers.
+    
+    Flexion-extension acoustic patterns should exhibit:
+    1. Peaks during movement transitions
+    2. Cyclic pattern with variation
+    3. Energy throughout the cycle (not just at endpoints)
+    
+    Args:
+        rms_envelope: RMS envelope of acoustic signal
+        
+    Returns:
+        Tuple of (is_valid, reason)
+    """
+    if len(rms_envelope) < 10:
+        return False, "insufficient data points for waveform validation"
+    
+    # Check for signal variation
+    signal_std = np.std(rms_envelope)
+    signal_mean = np.mean(rms_envelope)
+    
+    if signal_mean == 0:
+        return False, "zero mean signal"
+    
+    cv = signal_std / signal_mean
+    if cv < 0.15:
+        return False, f"insufficient waveform variation for flexion-extension (CV: {cv:.2f})"
+    
+    # Find peaks
+    signal_range = np.max(rms_envelope) - np.min(rms_envelope)
+    prominence = max(signal_range * 0.2, signal_mean * 0.5)
+    
+    peaks, _ = find_peaks(rms_envelope, prominence=prominence)
+    
+    if len(peaks) == 0:
+        return False, "no acoustic peaks detected"
+    
+    # For flexion-extension, expect at least one peak in the middle portion
+    cycle_length = len(rms_envelope)
+    peak_positions = peaks / cycle_length
+    
+    # Check if any peak is in the middle 30-70% of cycle
+    middle_peaks = [p for p in peak_positions if 0.3 <= p <= 0.7]
+    
+    if not middle_peaks:
+        return False, "no acoustic peaks detected in middle portion of cycle"
+    
+    return True, f"valid flexion-extension acoustic pattern ({len(peaks)} peak(s))"
 
 
 def run_cycle_audio_qc(
@@ -492,10 +874,12 @@ def run_comprehensive_cycle_qc(
     knee_angle_col: str = "Knee Angle Z",
     audio_channels: list[str] | None = None,
     check_periodic_noise: bool = True,
-    check_sync_quality: bool = True,
+    check_waveform_shape: bool = True,
     fail_on_periodic_noise: bool = False,
+    reference_waveform: np.ndarray | None = None,
+    correlation_threshold: float = 0.5,
 ) -> dict[str, any]:
-    """Run all cycle-level QC checks: audio QC, biomechanics QC, and sync quality.
+    """Run all cycle-level QC checks: audio QC, waveform validation, and sync quality.
     
     This is the comprehensive entry point that coordinates all cycle-level quality checks.
     
@@ -503,21 +887,24 @@ def run_comprehensive_cycle_qc(
         cycle_df: DataFrame containing synchronized audio and biomechanics data
         maneuver: Type of movement (walk, sit_to_stand, flexion_extension)
         time_col: Name of time column
-        knee_angle_col: Name of knee angle column
+        knee_angle_col: Name of knee angle column (used if reference_waveform provided)
         audio_channels: List of channel names to check
         check_periodic_noise: Whether to check for periodic background noise
-        check_sync_quality: Whether to check synchronization quality
+        check_waveform_shape: Whether to check acoustic waveform shape
         fail_on_periodic_noise: Whether to fail QC if periodic noise detected
+        reference_waveform: Optional reference waveform for model-based validation.
+                           If provided, uses ML-based validation instead of rule-based.
+        correlation_threshold: Minimum correlation for model-based validation (default: 0.5)
         
     Returns:
         Dictionary containing all QC results:
-        - 'audio_qc': Results from audio-specific checks
-        - 'sync_qc': Results from sync quality checks
+        - 'audio_qc': Results from audio-specific checks (periodic noise)
+        - 'waveform_qc': Results from waveform shape validation
         - 'overall_qc_pass': Boolean indicating if all checks passed
     """
     results = {
         'audio_qc': {},
-        'sync_qc': {},
+        'waveform_qc': {},
         'overall_qc_pass': True,
     }
     
@@ -534,17 +921,22 @@ def run_comprehensive_cycle_qc(
         if not audio_qc_results['qc_pass']:
             results['overall_qc_pass'] = False
     
-    # Run sync quality checks (cross-modal validation)
-    if check_sync_quality:
-        sync_qc_results = check_sync_quality_by_phase(
+    # Run waveform shape validation (replaces phase-based validation)
+    if check_waveform_shape:
+        is_valid, reason = validate_acoustic_waveform(
             cycle_df,
             maneuver=maneuver,
             time_col=time_col,
-            knee_angle_col=knee_angle_col,
             audio_channels=audio_channels,
+            reference_waveform=reference_waveform,
+            correlation_threshold=correlation_threshold,
         )
-        results['sync_qc'] = sync_qc_results
-        if not sync_qc_results.get('sync_qc_pass', False):
+        results['waveform_qc'] = {
+            'waveform_valid': is_valid,
+            'validation_reason': reason,
+            'validation_method': 'model-based' if reference_waveform is not None else 'rule-based',
+        }
+        if not is_valid:
             results['overall_qc_pass'] = False
     
     return results

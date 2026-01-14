@@ -723,7 +723,7 @@ def perform_sync_qc(
     # Import cycle QC functions locally to avoid circular imports
     # TODO: Consider refactoring module structure to avoid this pattern
     # (e.g., moving shared types to a separate module)
-    from src.audio.cycle_qc import check_cycle_periodic_noise, check_sync_quality_by_phase
+    from src.audio.cycle_qc import check_cycle_periodic_noise, validate_acoustic_waveform
     
     for idx, cycle_df in enumerate(cycles):
         energy = qc._compute_cycle_acoustic_energy(cycle_df)
@@ -732,10 +732,14 @@ def perform_sync_qc(
         periodic_noise_results = check_cycle_periodic_noise(cycle_df)
         periodic_noise_detected = any(periodic_noise_results.values())
         
-        # Run cross-modal sync quality checks
-        sync_quality_results = check_sync_quality_by_phase(cycle_df, maneuver=maneuver)
-        sync_quality_score = sync_quality_results.get('sync_quality_score', 0.0)
-        sync_qc_pass = sync_quality_results.get('sync_qc_pass', True)
+        # Run waveform-based sync quality validation (replaces phase-based)
+        waveform_valid, validation_reason = validate_acoustic_waveform(
+            cycle_df, 
+            maneuver=maneuver
+        )
+        # Convert waveform validation to sync quality score (1.0 if valid, 0.0 if not)
+        sync_quality_score = 1.0 if waveform_valid else 0.0
+        sync_qc_pass = waveform_valid
         
         cycle_results.append(
             _CycleResult(

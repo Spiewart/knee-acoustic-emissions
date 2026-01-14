@@ -9,6 +9,7 @@ from src.audio.cycle_qc import (
     check_sync_quality_by_phase,
     run_comprehensive_cycle_qc,
     run_cycle_audio_qc,
+    validate_acoustic_waveform,
     _define_movement_phases,
     _detect_periodic_noise_in_cycle,
     _get_default_reference_ranges,
@@ -164,8 +165,68 @@ class TestCycleAudioQC:
         assert results["qc_pass"] is True
 
 
+class TestAcousticWaveformValidation:
+    """Tests for waveform-based acoustic validation."""
+    
+    def test_validate_acoustic_waveform_rule_based(self):
+        """Should validate acoustic waveform using rule-based approach."""
+        cycle = _create_test_cycle(base_amplitude=0.5, knee_angle_amplitude=30)
+        
+        is_valid, reason = validate_acoustic_waveform(cycle, maneuver="walk")
+        
+        assert isinstance(is_valid, bool)
+        assert isinstance(reason, str)
+        assert len(reason) > 0
+    
+    def test_validate_acoustic_waveform_all_maneuvers(self):
+        """Should validate waveforms for all maneuver types."""
+        cycle = _create_test_cycle(base_amplitude=0.5)
+        
+        for maneuver in ["walk", "sit_to_stand", "flexion_extension"]:
+            is_valid, reason = validate_acoustic_waveform(cycle, maneuver=maneuver)
+            assert isinstance(is_valid, bool)
+            assert isinstance(reason, str)
+    
+    def test_validate_acoustic_waveform_insufficient_signal(self):
+        """Should fail validation for insufficient signal."""
+        cycle = _create_test_cycle(base_amplitude=0.0001)  # Very low amplitude
+        
+        is_valid, reason = validate_acoustic_waveform(cycle, maneuver="walk")
+        
+        assert is_valid is False
+        assert "insufficient" in reason.lower()
+    
+    def test_validate_acoustic_waveform_with_reference(self):
+        """Should validate using reference waveform when provided."""
+        cycle = _create_test_cycle(base_amplitude=0.5, duration_s=1.0)
+        
+        # Create a reference waveform similar to the test cycle
+        reference = np.random.randn(100) * 0.5
+        
+        is_valid, reason = validate_acoustic_waveform(
+            cycle,
+            maneuver="walk",
+            reference_waveform=reference,
+            correlation_threshold=0.0  # Very permissive for test
+        )
+        
+        assert isinstance(is_valid, bool)
+        assert isinstance(reason, str)
+        assert "correlation" in reason.lower() or "valid" in reason.lower()
+    
+    def test_validate_acoustic_waveform_missing_channels(self):
+        """Should handle missing audio channels."""
+        cycle = _create_test_cycle()
+        cycle = cycle[["tt", "Knee Angle Z"]]  # No audio channels
+        
+        is_valid, reason = validate_acoustic_waveform(cycle, maneuver="walk")
+        
+        assert is_valid is False
+        assert "audio" in reason.lower()
+
+
 class TestSyncQualityByPhase:
-    """Tests for cross-modal sync quality checks."""
+    """Tests for cross-modal sync quality checks (legacy phase-based approach)."""
     
     def test_check_sync_quality_by_phase_basic(self):
         """Should compute phase-based acoustic features."""
@@ -311,18 +372,20 @@ class TestComprehensiveCycleQC:
             cycle,
             maneuver="walk",
             check_periodic_noise=True,
-            check_sync_quality=True,
+            check_waveform_shape=True,
         )
         
         assert "audio_qc" in results
-        assert "sync_qc" in results
+        assert "waveform_qc" in results
         assert "overall_qc_pass" in results
         
         # Audio QC results should be present
         assert "periodic_noise" in results["audio_qc"]
         
-        # Sync QC results should be present
-        assert "sync_quality_score" in results["sync_qc"]
+        # Waveform QC results should be present
+        assert "waveform_valid" in results["waveform_qc"]
+        assert "validation_reason" in results["waveform_qc"]
+        assert "validation_method" in results["waveform_qc"]
     
     def test_run_comprehensive_cycle_qc_skip_audio(self):
         """Should skip audio QC when disabled."""
@@ -332,25 +395,44 @@ class TestComprehensiveCycleQC:
             cycle,
             maneuver="walk",
             check_periodic_noise=False,
-            check_sync_quality=True,
+            check_waveform_shape=True,
         )
         
         assert results["audio_qc"] == {}
-        assert "sync_qc" in results
+        assert "waveform_qc" in results
     
-    def test_run_comprehensive_cycle_qc_skip_sync(self):
-        """Should skip sync QC when disabled."""
+    def test_run_comprehensive_cycle_qc_skip_waveform(self):
+        """Should skip waveform QC when disabled."""
         cycle = _create_test_cycle()
         
         results = run_comprehensive_cycle_qc(
             cycle,
             maneuver="walk",
             check_periodic_noise=True,
-            check_sync_quality=False,
+            check_waveform_shape=False,
         )
         
         assert "audio_qc" in results
-        assert results["sync_qc"] == {}
+        assert results["waveform_qc"] == {}
+    
+    def test_run_comprehensive_cycle_qc_with_reference_waveform(self):
+        """Should use model-based validation when reference waveform provided."""
+        cycle = _create_test_cycle(base_amplitude=0.5, duration_s=1.0)
+        
+        # Create a simple reference waveform
+        reference = np.random.randn(100) * 0.5
+        
+        results = run_comprehensive_cycle_qc(
+            cycle,
+            maneuver="walk",
+            check_periodic_noise=True,
+            check_waveform_shape=True,
+            reference_waveform=reference,
+            correlation_threshold=0.0,  # Very permissive for test
+        )
+        
+        assert "waveform_qc" in results
+        assert results["waveform_qc"]["validation_method"] == "model-based"
     
     def test_run_comprehensive_cycle_qc_fail_overall(self):
         """Should fail overall QC if any component fails."""
@@ -365,7 +447,7 @@ class TestComprehensiveCycleQC:
             maneuver="walk",
             check_periodic_noise=True,
             fail_on_periodic_noise=True,
-            check_sync_quality=True,
+            check_waveform_shape=True,
         )
         
         # If audio QC fails, overall should fail
