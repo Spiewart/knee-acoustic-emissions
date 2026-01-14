@@ -720,7 +720,7 @@ def perform_sync_qc(
     clean_ids = {id(cycle) for cycle in clean_cycles}
     cycle_results: list[_CycleResult] = []
     
-    # Import cycle QC functions
+    # Import cycle QC functions locally to avoid circular imports
     from src.audio.cycle_qc import check_cycle_periodic_noise, check_sync_quality_by_phase
     
     for idx, cycle_df in enumerate(cycles):

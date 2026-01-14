@@ -53,6 +53,16 @@ import numpy as np
 import pandas as pd
 
 
+# Reference range constants for acoustic RMS energy by phase (in arbitrary units)
+# These are conservative ranges based on expected acoustic patterns
+# NOTE: In production, these should be calibrated from a reference dataset
+DEFAULT_MIN_RMS_ENERGY = 0.001  # Minimum detectable RMS energy
+DEFAULT_MAX_RMS_ENERGY = 10.0   # Maximum expected RMS energy
+DEFAULT_LOW_ENERGY_MAX = 5.0    # Maximum for low-energy phases (e.g., swing in gait)
+DEFAULT_MID_ENERGY_MIN = 0.01   # Minimum for moderate-energy phases
+DEFAULT_HIGH_ENERGY_MIN = 0.005 # Minimum for phases with expected activity
+
+
 def _detect_periodic_noise_in_cycle(
     data: np.ndarray,
     fs: float,
@@ -122,9 +132,7 @@ def _detect_periodic_noise_in_cycle(
     
     # If relative power is high, we have a strong periodic component
     # This indicates consistent background noise at a specific frequency
-    has_periodic_noise = relative_power > (1.0 / threshold)
-    
-    return bool(has_periodic_noise)
+    return bool(relative_power > (1.0 / threshold))
 
 
 def check_cycle_periodic_noise(
@@ -353,9 +361,8 @@ def check_sync_quality_by_phase(
             phase_in_range[phase_name] = True
     
     # Calculate sync quality score (fraction of phases in range)
-    valid_phases = [p for p in phase_in_range.values() if p is not None]
-    if valid_phases:
-        sync_quality_score = sum(valid_phases) / len(valid_phases)
+    if phase_in_range:
+        sync_quality_score = sum(phase_in_range.values()) / len(phase_in_range)
     else:
         sync_quality_score = 0.0
     
@@ -441,30 +448,30 @@ def _get_default_reference_ranges(
         # Walking: Higher acoustic energy during heel strike/stance (extension/mid)
         # Lower energy during swing (flexion)
         return {
-            'extension': (0.01, 10.0),    # Heel strike - expect higher energy
-            'mid_phase': (0.01, 10.0),    # Stance - moderate to high energy
-            'flexion': (0.001, 5.0),      # Swing - lower energy acceptable
+            'extension': (DEFAULT_MID_ENERGY_MIN, DEFAULT_MAX_RMS_ENERGY),
+            'mid_phase': (DEFAULT_MID_ENERGY_MIN, DEFAULT_MAX_RMS_ENERGY),
+            'flexion': (DEFAULT_MIN_RMS_ENERGY, DEFAULT_LOW_ENERGY_MAX),
         }
     elif maneuver == "sit_to_stand":
         # Sit-to-stand: Energy increases during transition as muscles engage
         return {
-            'sitting': (0.001, 5.0),      # Initial sitting - lower energy
-            'transition': (0.01, 10.0),   # Transition - higher energy expected
-            'standing': (0.001, 5.0),     # Final standing - lower energy
+            'sitting': (DEFAULT_MIN_RMS_ENERGY, DEFAULT_LOW_ENERGY_MAX),
+            'transition': (DEFAULT_MID_ENERGY_MIN, DEFAULT_MAX_RMS_ENERGY),
+            'standing': (DEFAULT_MIN_RMS_ENERGY, DEFAULT_LOW_ENERGY_MAX),
         }
     elif maneuver == "flexion_extension":
         # Flexion-extension: Energy throughout movement, peaks during transitions
         return {
-            'extension': (0.005, 10.0),   # Extension position - moderate energy
-            'mid_phase': (0.01, 10.0),    # Mid-movement - higher energy expected
-            'flexion': (0.005, 10.0),     # Flexion position - moderate energy
+            'extension': (DEFAULT_HIGH_ENERGY_MIN, DEFAULT_MAX_RMS_ENERGY),
+            'mid_phase': (DEFAULT_MID_ENERGY_MIN, DEFAULT_MAX_RMS_ENERGY),
+            'flexion': (DEFAULT_HIGH_ENERGY_MIN, DEFAULT_MAX_RMS_ENERGY),
         }
     else:
         # Default: permissive ranges
         return {
-            'low_angle': (0.001, 10.0),
-            'mid_angle': (0.001, 10.0),
-            'high_angle': (0.001, 10.0),
+            'low_angle': (DEFAULT_MIN_RMS_ENERGY, DEFAULT_MAX_RMS_ENERGY),
+            'mid_angle': (DEFAULT_MIN_RMS_ENERGY, DEFAULT_MAX_RMS_ENERGY),
+            'high_angle': (DEFAULT_MIN_RMS_ENERGY, DEFAULT_MAX_RMS_ENERGY),
         }
 
 
