@@ -472,7 +472,7 @@ def _sync_maneuver_data(
             "fast",
         )
         for speed in walk_speeds:
-            speed_synced_data, speed_recordings = _process_walk_speed(
+            speed_synced_data, speed_viz_data, speed_recordings = _process_walk_speed(
                 speed=speed,
                 biomechanics_file=biomechanics_file,
                 audio_df=audio_df,
@@ -481,6 +481,7 @@ def _sync_maneuver_data(
                 knee_side=knee_side,
             )
             synced_data.extend(speed_synced_data)
+            viz_data.extend(speed_viz_data)
             all_recordings.extend(speed_recordings)
     else:
         # For sit-to-stand and flexion-extension, single recording
@@ -552,7 +553,7 @@ def _process_walk_speed(
     maneuver_dir: Path,
     synced_dir: Path,
     knee_side: str,
-) -> tuple[list[tuple[Path, pd.DataFrame]], list]:
+) -> tuple[list[tuple[Path, pd.DataFrame]], list[tuple[Path, pd.DataFrame, pd.DataFrame, pd.DataFrame, tuple]], list]:
     """Process walking data for a specific speed.
 
     Processes and synchronizes data but does NOT write files.
@@ -569,9 +570,11 @@ def _process_walk_speed(
     Returns:
         Tuple of:
         - List of (output_path, synchronized_dataframe) tuples
+        - List of (output_path, audio_df, bio_df, synced_df, stomp_times) tuples for visualization
         - List of biomechanics recordings
     """
     synced_data: list[tuple[Path, pd.DataFrame]] = []
+    viz_data: list[tuple[Path, pd.DataFrame, pd.DataFrame, pd.DataFrame, tuple]] = []
 
     try:
         recordings = import_biomechanics_recordings(
@@ -586,7 +589,7 @@ def _process_walk_speed(
                 "walk",
                 speed,
             )
-            return synced_data, []
+            return synced_data, viz_data, []
 
         # Process each pass/recording at this speed
         for recording in recordings:
@@ -606,6 +609,7 @@ def _process_walk_speed(
             # Generate visualization immediately to avoid accumulating DataFrames in memory
             audio_stomp, bio_left, bio_right, detection_results = stomp_times
             plot_stomp_detection(audio_df, bio_df, synced_df, audio_stomp, bio_left, bio_right, output_path, detection_results)
+            viz_data.append((output_path, audio_df, bio_df, synced_df, stomp_times))
             # Explicitly delete large intermediate DataFrames to free memory
             del bio_df, synced_df
 
@@ -618,7 +622,7 @@ def _process_walk_speed(
         )
         raise
 
-    return synced_data, recordings
+    return synced_data, viz_data, recordings
 
 
 def _sync_and_save_recording(
