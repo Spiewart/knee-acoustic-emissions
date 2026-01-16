@@ -6,7 +6,7 @@ a threshold defined by the overall signal statistics."""
 import logging
 from datetime import timedelta
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Literal, Optional, Union
 
 import numpy as np
 import pandas as pd
@@ -351,7 +351,7 @@ def get_audio_stomp_time(
     right_stomp_time: Optional[timedelta] = None,
     left_stomp_time: Optional[timedelta] = None,
     return_details: bool = False,
-) -> timedelta | tuple[timedelta, dict]:
+) -> Union[timedelta, tuple[timedelta, dict]]:
     """Detect the audio stomp time using multi-method approach.
 
     Identifies stomp events in the first 20 seconds of recording using three
@@ -1134,12 +1134,18 @@ def plot_stomp_detection(
             ax_left.tick_params(axis="y", labelcolor="black")
 
         # Add stomp markers with clear labels
-        # Use consensus from detection_results if available, otherwise use selected stomp time
-        consensus_label = f"Consensus\n{detection_results.get('consensus_time', audio_stomp_s):.2f}s" if detection_results else f"Stomp\n{audio_stomp_s:.2f}s"
-        ax_left.axvline(
-            audio_stomp_s, color="red", linestyle="--", linewidth=2.5,
-            label=consensus_label, zorder=10
-        )
+        # Draw consensus time (median of three methods) as red dashed line
+        if detection_results:
+            consensus_time = detection_results.get('consensus_time', audio_stomp_s)
+            ax_left.axvline(
+                consensus_time, color="red", linestyle="--", linewidth=2.5,
+                label=f"Consensus\n{consensus_time:.2f}s", zorder=10
+            )
+        else:
+            ax_left.axvline(
+                audio_stomp_s, color="red", linestyle="--", linewidth=2.5,
+                label=f"Stomp\n{audio_stomp_s:.2f}s", zorder=10
+            )
         # Add detection method lines if available
         if detection_results:
             ax_left.axvline(
@@ -1174,15 +1180,21 @@ def plot_stomp_detection(
         ax_left.legend(lines1 + lines2, labels1 + labels2, fontsize=8, loc="upper left")
 
         # ===== TOP RIGHT PLOT: Zoomed RMS around detected stomp =====
+        # Zoom around consensus time if available, otherwise around selected stomp
+        zoom_center = detection_results.get('consensus_time', audio_stomp_s) if detection_results else audio_stomp_s
         zoom_window = 1.5  # seconds around detected stomp
-        zoom_mask = (rms_times >= audio_stomp_s - zoom_window) & (rms_times <= audio_stomp_s + zoom_window)
+        zoom_mask = (rms_times >= zoom_center - zoom_window) & (rms_times <= zoom_center + zoom_window)
         if np.any(zoom_mask):
             ax_zoom.plot(rms_times[zoom_mask], rms_energies[zoom_mask], 'b-', linewidth=1.5, alpha=0.9, label="RMS Energy (zoom)")
             ax_zoom.fill_between(rms_times[zoom_mask], 0, rms_energies[zoom_mask], alpha=0.2, color='blue')
-        # Show consensus detection time (or selected stomp time if no detection results)
-        consensus_time_display = detection_results.get('consensus_time', audio_stomp_s) if detection_results else audio_stomp_s
-        ax_zoom.axvline(audio_stomp_s, color="red", linestyle="--", linewidth=2,
-                       label=f"Selected Stomp ({audio_stomp_s:.2f}s)")
+        # Draw consensus time as red dashed line
+        if detection_results:
+            consensus_time = detection_results.get('consensus_time', audio_stomp_s)
+            ax_zoom.axvline(consensus_time, color="red", linestyle="--", linewidth=2,
+                           label=f"Consensus ({consensus_time:.2f}s)")
+        else:
+            ax_zoom.axvline(audio_stomp_s, color="red", linestyle="--", linewidth=2,
+                           label=f"Stomp ({audio_stomp_s:.2f}s)")
         # Add detection method lines if available
         if detection_results:
             ax_zoom.axvline(rms_time_s, color="darkred", linestyle="-", linewidth=1.5, alpha=0.6,
@@ -1340,8 +1352,10 @@ def plot_stomp_detection(
 
         # Define zoom window around detected stomp for bottom plots
         zoom_window = 1.5
-        zoom_start = max(tt_synced.min(), audio_stomp_s - zoom_window)
-        zoom_end = audio_stomp_s + zoom_window
+        # Zoom around consensus time if available, otherwise around selected stomp
+        zoom_center = detection_results.get('consensus_time', audio_stomp_s) if detection_results else audio_stomp_s
+        zoom_start = max(tt_synced.min(), zoom_center - zoom_window)
+        zoom_end = zoom_center + zoom_window
 
         # ===== BOTTOM ROW: Per-channel voltage and RMS =====
         channel_colors = ["#1f77b4", "#2ca02c", "#d62728", "#9467bd"]
@@ -1395,9 +1409,14 @@ def plot_stomp_detection(
                 ax_ch_rms.set_ylabel("RMS Energy", fontsize=9, color=channel_colors[idx], alpha=0.7)
                 ax_ch_rms.tick_params(axis="y", labelcolor=channel_colors[idx], labelsize=8)
 
-            # Show consensus detection time from detection_results
-            ax_ch.axvline(audio_stomp_s, color="red", linestyle="--", linewidth=1.0, alpha=0.6,
-                         label=f"Selected ({audio_stomp_s:.2f}s)")
+            # Draw consensus time as red dashed line
+            if detection_results:
+                consensus_time = detection_results.get('consensus_time', audio_stomp_s)
+                ax_ch.axvline(consensus_time, color="red", linestyle="--", linewidth=1.0, alpha=0.6,
+                             label=f"Consensus ({consensus_time:.2f}s)")
+            else:
+                ax_ch.axvline(audio_stomp_s, color="red", linestyle="--", linewidth=1.0, alpha=0.6,
+                             label=f"Stomp ({audio_stomp_s:.2f}s)")
             # Add detection method lines if available
             if detection_results:
                 ax_ch.axvline(rms_time_s, color="darkred", linestyle="-", linewidth=0.8, alpha=0.5,
