@@ -927,7 +927,7 @@ class TestSyncSingleAudioFile:
             mock_sync.return_value = (
                 tmp_path / "output.pkl",
                 synced_df,
-                (10.0, 5.0, 5.0),  # stomp times
+                (10.0, 5.0, 5.0, {}),  # stomp times + detection_results dict
                 pd.DataFrame(),
             )
 
@@ -996,7 +996,7 @@ class TestSyncSingleAudioFile:
             mock_sync.return_value = (
                 tmp_path / "output.pkl",
                 synced_df,
-                (10.0, 5.0, 5.0),
+                (10.0, 5.0, 5.0, {}),
                 pd.DataFrame(),
             )
 
@@ -1070,7 +1070,7 @@ class TestSyncSingleAudioFile:
                 return (
                     tmp_path / "output.pkl",
                     synced_df,
-                    (10.0, 5.0, 5.0),
+                    (10.0, 5.0, 5.0, {}),
                     pd.DataFrame(),
                 )
 
@@ -1140,7 +1140,7 @@ class TestSyncSingleAudioFile:
             mock_sync.return_value = (
                 tmp_path / "output.pkl",
                 synced_df,
-                (10.0, 5.0, 5.0),
+                (10.0, 5.0, 5.0, {}),
                 pd.DataFrame(),
             )
 

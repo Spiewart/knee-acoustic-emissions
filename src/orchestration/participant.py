@@ -273,7 +273,14 @@ def _save_or_update_processing_log(
 
         # Update synchronization records if data provided
         if synced_data is not None:
-            for output_path, synced_df, (audio_stomp, bio_left, bio_right) in synced_data:
+            for item in synced_data:
+                # Support both legacy 3-tuple and new 4-tuple with detection_results
+                output_path, synced_df, stomp_tuple = item
+                detection_results = None
+                try:
+                    audio_stomp, bio_left, bio_right, detection_results = stomp_tuple  # type: ignore[misc]
+                except Exception:
+                    audio_stomp, bio_left, bio_right = stomp_tuple  # type: ignore[misc]
                 # Extract pass number and speed from filename
                 filename = output_path.stem
                 pass_number = None
@@ -299,6 +306,7 @@ def _save_or_update_processing_log(
                     knee_side=knee_side.lower(),
                     pass_number=pass_number,
                     speed=speed,
+                    detection_results=detection_results,
                 )
                 log.add_synchronization_record(sync_record)
 
@@ -502,8 +510,8 @@ def _sync_maneuver_data(
         )
         synced_data.append((output_path, synced_df))
         # Generate visualization immediately to avoid keeping large DataFrames in memory
-        audio_stomp, bio_left, bio_right = stomp_times
-        plot_stomp_detection(audio_df, bio_df, synced_df, audio_stomp, bio_left, bio_right, output_path)
+        audio_stomp, bio_left, bio_right, detection_results = stomp_times
+        plot_stomp_detection(audio_df, bio_df, synced_df, audio_stomp, bio_left, bio_right, output_path, detection_results)
         viz_data.append((output_path, audio_df, bio_df, synced_df, stomp_times))
         del bio_df, synced_df
 
@@ -596,8 +604,8 @@ def _process_walk_speed(
             synced_data.append((output_path, synced_df))
 
             # Generate visualization immediately to avoid accumulating DataFrames in memory
-            audio_stomp, bio_left, bio_right = stomp_times
-            plot_stomp_detection(audio_df, bio_df, synced_df, audio_stomp, bio_left, bio_right, output_path)
+            audio_stomp, bio_left, bio_right, detection_results = stomp_times
+            plot_stomp_detection(audio_df, bio_df, synced_df, audio_stomp, bio_left, bio_right, output_path, detection_results)
             # Explicitly delete large intermediate DataFrames to free memory
             del bio_df, synced_df
 
@@ -661,11 +669,12 @@ def _sync_and_save_recording(
     )
 
     # Get audio stomp time with dual-knee disambiguation
-    audio_stomp_time = get_audio_stomp_time(
+    audio_stomp_time, detection_results = get_audio_stomp_time(
         audio_df,
         recorded_knee=recorded_knee,
         right_stomp_time=right_stomp_time,
         left_stomp_time=left_stomp_time,
+        return_details=True,
     )
 
     # Get biomechanics stomp time for the recorded knee
@@ -765,8 +774,8 @@ def _sync_and_save_recording(
 
     output_path = synced_dir / f"{filename}.pkl"
 
-    # Return path, dataframe, stomp times, and original bio_df for visualization
-    stomp_times = (audio_stomp_time, left_stomp_time, right_stomp_time)
+    # Return path, dataframe, stomp times (with detection results), and original bio_df for visualization
+    stomp_times = (audio_stomp_time, left_stomp_time, right_stomp_time, detection_results)
 
     return output_path, trimmed_df, stomp_times, bio_df
 
@@ -2124,8 +2133,8 @@ def sync_single_audio_file(
                 logging.info("Saved synchronized data to %s", output_path)
 
                 # Generate stomp visualization
-                audio_stomp, bio_left, bio_right = stomp_times
-                plot_stomp_detection(audio_df, bio_df, synced_df, audio_stomp, bio_left, bio_right, output_path)
+                audio_stomp, bio_left, bio_right, detection_results = stomp_times
+                plot_stomp_detection(audio_df, bio_df, synced_df, audio_stomp, bio_left, bio_right, output_path, detection_results)
                 logging.info("Saved stomp detection visualization")
                 success_count += 1
             except Exception as e:  # pylint: disable=broad-except

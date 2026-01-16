@@ -350,7 +350,8 @@ def get_audio_stomp_time(
     recorded_knee: Optional[Literal["left", "right"]] = None,
     right_stomp_time: Optional[timedelta] = None,
     left_stomp_time: Optional[timedelta] = None,
-) -> timedelta:
+    return_details: bool = False,
+) -> timedelta | tuple[timedelta, dict]:
     """Detect the audio stomp time using multi-method approach.
 
     Identifies stomp events in the first 20 seconds of recording using three
@@ -370,8 +371,16 @@ def get_audio_stomp_time(
         left_stomp_time: Biomechanics left stomp as `timedelta`.
 
     Returns:
-        `timedelta` for the stomp corresponding to `recorded_knee`, or the
-        best-estimate stomp time when metadata is absent.
+        By default returns the selected stomp time as `timedelta` for backward compatibility.
+        If `return_details=True`, returns a tuple of `(selected_stomp_time, detection_results_dict)` where
+        detection_results_dict contains:
+        - 'consensus_time': Median of three methods (seconds)
+        - 'rms_time': RMS energy detection (seconds)
+        - 'rms_energy': RMS energy value
+        - 'onset_time': Impact onset detection (seconds)
+        - 'onset_magnitude': Onset magnitude value
+        - 'freq_time': Frequency domain detection (seconds)
+        - 'freq_energy': Frequency band energy value
 
     Raises:
         ValueError: Invalid parameters or inability to estimate sampling rate.
@@ -419,6 +428,17 @@ def get_audio_stomp_time(
         "Consensus stomp time: %.3fs (from RMS: %.3fs, Onset: %.3fs, Freq: %.3fs)",
         consensus_time, rms_time, onset_time, freq_time
     )
+
+    # Store detection results for visualization and logging
+    detection_results = {
+        'consensus_time': consensus_time,
+        'rms_time': rms_time,
+        'rms_energy': float(rms_energy),
+        'onset_time': onset_time,
+        'onset_magnitude': float(onset_mag),
+        'freq_time': freq_time,
+        'freq_energy': float(freq_energy),
+    }
 
     # If we have biomechanics stomp metadata, use it to refine detection
     if recorded_knee is not None and right_stomp_time is not None and left_stomp_time is not None:
@@ -526,10 +546,12 @@ def get_audio_stomp_time(
             selected_time = consensus_time
             logging.debug("No peaks found in RMS energy; using consensus stomp time: %.3fs", consensus_time)
 
-        return pd.Timedelta(seconds=selected_time).to_pytimedelta()
+        selected_td = pd.Timedelta(seconds=selected_time).to_pytimedelta()
+        return (selected_td, detection_results) if return_details else selected_td
 
     # No biomechanics metadata: return consensus stomp time
-    return pd.Timedelta(seconds=consensus_time).to_pytimedelta()
+    selected_td = pd.Timedelta(seconds=consensus_time).to_pytimedelta()
+    return (selected_td, detection_results) if return_details else selected_td
 
 
 def sync_audio_with_biomechanics(
@@ -959,11 +981,12 @@ def plot_stomp_detection(
     bio_stomp_left: timedelta,
     bio_stomp_right: timedelta,
     output_path: Path,
+    detection_results: Optional[dict] = None,
 ) -> None:
-    """Create a visualization of stomp detection with two side-by-side plots.
+    """Create a visualization of stomp detection with overview and per-channel plots.
 
-    Left plot: Full biomechanics recording showing joint angle and audio channels with stomp markers.
-    Right plot: Synchronized (clipped) audio and biomechanics data for the specific pass/maneuver.
+    Top row: Full recording RMS analysis, synchronized window, RMS zoom, and timing summary.
+    Bottom row: Per-channel voltage and RMS energy (dual y-axes).
 
     Saved to the same directory as synchronized data.
 
@@ -975,6 +998,7 @@ def plot_stomp_detection(
         bio_stomp_left: Biomechanics left stomp time
         bio_stomp_right: Biomechanics right stomp time
         output_path: Path where to save the figure (e.g., same dir as synced pickle)
+        detection_results: Dict with detection method times and metrics (rms_time, onset_time, freq_time, etc.)
     """
     if not MATPLOTLIB_AVAILABLE:
         logging.debug("Matplotlib not available; skipping stomp visualization")
@@ -983,6 +1007,11 @@ def plot_stomp_detection(
     try:
         # Convert times to seconds
         audio_stomp_s = float(audio_stomp_time.total_seconds())
+
+        # Extract detection method times if available
+        rms_time_s = detection_results.get('rms_time', audio_stomp_s) if detection_results else audio_stomp_s
+        onset_time_s = detection_results.get('onset_time', audio_stomp_s) if detection_results else audio_stomp_s
+        freq_time_s = detection_results.get('freq_time', audio_stomp_s) if detection_results else audio_stomp_s
         bio_left_s = float(bio_stomp_left.total_seconds())
         bio_right_s = float(bio_stomp_right.total_seconds())
 
@@ -1107,15 +1136,29 @@ def plot_stomp_detection(
         # Add stomp markers with clear labels
         ax_left.axvline(
             audio_stomp_s, color="red", linestyle="--", linewidth=2.5,
-            label=f"Audio Stomp (Detected)\n{audio_stomp_s:.2f}s", zorder=10
+            label=f"Consensus\n{audio_stomp_s:.2f}s", zorder=10
         )
+        # Add detection method lines if available
+        if detection_results:
+            ax_left.axvline(
+                rms_time_s, color="darkred", linestyle="-", linewidth=1.5, alpha=0.6,
+                label=f"RMS\n{rms_time_s:.2f}s", zorder=9
+            )
+            ax_left.axvline(
+                onset_time_s, color="maroon", linestyle=":", linewidth=1.5, alpha=0.6,
+                label=f"Onset\n{onset_time_s:.2f}s", zorder=9
+            )
+            ax_left.axvline(
+                freq_time_s, color="brown", linestyle="-.", linewidth=1.5, alpha=0.6,
+                label=f"Freq\n{freq_time_s:.2f}s", zorder=9
+            )
         ax_left.axvline(
             bio_left_s, color="green", linestyle=":", linewidth=2.5,
-            label=f"Bio Left Stomp\n{bio_left_s:.2f}s", zorder=10
+            label=f"Bio Left\n{bio_left_s:.2f}s", zorder=10
         )
         ax_left.axvline(
             bio_right_s, color="orange", linestyle=":", linewidth=2.5,
-            label=f"Bio Right Stomp\n{bio_right_s:.2f}s", zorder=10
+            label=f"Bio Right\n{bio_right_s:.2f}s", zorder=10
         )
 
         ax_left.set_xlabel("Time (seconds)", fontsize=11)
@@ -1134,9 +1177,18 @@ def plot_stomp_detection(
         if np.any(zoom_mask):
             ax_zoom.plot(rms_times[zoom_mask], rms_energies[zoom_mask], 'b-', linewidth=1.5, alpha=0.9, label="RMS Energy (zoom)")
             ax_zoom.fill_between(rms_times[zoom_mask], 0, rms_energies[zoom_mask], alpha=0.2, color='blue')
-        ax_zoom.axvline(audio_stomp_s, color="red", linestyle="--", linewidth=2, label="Audio Stomp")
-        ax_zoom.axvline(bio_left_s, color="green", linestyle=":", linewidth=2, label="Bio Left")
-        ax_zoom.axvline(bio_right_s, color="orange", linestyle=":", linewidth=2, label="Bio Right")
+        ax_zoom.axvline(audio_stomp_s, color="red", linestyle="--", linewidth=2,
+                       label=f"Consensus ({audio_stomp_s:.2f}s)")
+        # Add detection method lines if available
+        if detection_results:
+            ax_zoom.axvline(rms_time_s, color="darkred", linestyle="-", linewidth=1.5, alpha=0.6,
+                           label=f"RMS ({rms_time_s:.2f}s)")
+            ax_zoom.axvline(onset_time_s, color="maroon", linestyle=":", linewidth=1.5, alpha=0.6,
+                           label=f"Onset ({onset_time_s:.2f}s)")
+            ax_zoom.axvline(freq_time_s, color="brown", linestyle="-.", linewidth=1.5, alpha=0.6,
+                           label=f"Freq ({freq_time_s:.2f}s)")
+        ax_zoom.axvline(bio_left_s, color="green", linestyle=":", linewidth=2, label=f"Bio Left ({bio_left_s:.2f}s)")
+        ax_zoom.axvline(bio_right_s, color="orange", linestyle=":", linewidth=2, label=f"Bio Right ({bio_right_s:.2f}s)")
         ax_zoom.set_title("RMS Zoom (±1.5s)", fontsize=12, fontweight="bold")
         ax_zoom.set_xlabel("Time (seconds)")
         ax_zoom.set_ylabel("RMS Energy")
@@ -1246,15 +1298,27 @@ def plot_stomp_detection(
         ax_right.legend(lines3 + lines4, labels3 + labels4, fontsize=8, loc="upper left")
 
         # ===== TOP RIGHT 2: Summary info =====
+        summary_text = (
+            f"Stomp Detection Summary\n\n"
+            f"Consensus: {audio_stomp_s:.3f}s\n"
+        )
+        if detection_results:
+            summary_text += (
+                f"  RMS: {rms_time_s:.3f}s\n"
+                f"  Onset: {onset_time_s:.3f}s\n"
+                f"  Freq: {freq_time_s:.3f}s\n\n"
+            )
+        summary_text += (
+            f"Bio Left: {bio_left_s:.3f}s\n"
+            f"Bio Right: {bio_right_s:.3f}s\n\n"
+            f"Δ (Consensus - Left): {audio_stomp_s - bio_left_s:.3f}s\n"
+            f"Δ (Consensus - Right): {audio_stomp_s - bio_right_s:.3f}s"
+        )
         ax_summary.text(0.5, 0.5,
-                       f"Stomp Detection Summary\n\n"
-                       f"Audio Stomp: {audio_stomp_s:.3f}s\n"
-                       f"Bio Left: {bio_left_s:.3f}s\n"
-                       f"Bio Right: {bio_right_s:.3f}s\n\n"
-                       f"Δ (Audio - Left): {audio_stomp_s - bio_left_s:.3f}s\n"
-                       f"Δ (Audio - Right): {audio_stomp_s - bio_right_s:.3f}s",
-                       ha="center", va="center", fontsize=11,
-                       bbox=dict(boxstyle="round,pad=1", facecolor="lightgray", alpha=0.8))
+                       summary_text,
+                       ha="center", va="center", fontsize=10,
+                       bbox=dict(boxstyle="round,pad=1", facecolor="lightgray", alpha=0.8),
+                       family='monospace')
         ax_summary.set_title("Timing Summary", fontsize=12, fontweight="bold")
         ax_summary.axis("off")
 
@@ -1317,7 +1381,15 @@ def plot_stomp_detection(
 
             # Add stomp markers
             ax_ch.axvline(audio_stomp_s, color="red", linestyle="--", linewidth=1.0, alpha=0.6,
-                         label=f"Audio ({audio_stomp_s:.2f}s)")
+                         label=f"Consensus ({audio_stomp_s:.2f}s)")
+            # Add detection method lines if available
+            if detection_results:
+                ax_ch.axvline(rms_time_s, color="darkred", linestyle="-", linewidth=0.8, alpha=0.5,
+                             label=f"RMS ({rms_time_s:.2f}s)")
+                ax_ch.axvline(onset_time_s, color="maroon", linestyle=":", linewidth=0.7, alpha=0.5,
+                             label=f"Onset ({onset_time_s:.2f}s)")
+                ax_ch.axvline(freq_time_s, color="brown", linestyle="-.", linewidth=0.7, alpha=0.5,
+                             label=f"Freq ({freq_time_s:.2f}s)")
             ax_ch.axvline(bio_left_s, color="green", linestyle=":", linewidth=0.8, alpha=0.6,
                          label=f"Left ({bio_left_s:.2f}s)")
             ax_ch.axvline(bio_right_s, color="orange", linestyle=":", linewidth=0.8, alpha=0.6,
@@ -1330,7 +1402,7 @@ def plot_stomp_detection(
             ax_ch.tick_params(axis="y", labelcolor=channel_colors[idx], labelsize=8)
             ax_ch.tick_params(axis="x", labelsize=8)
             ax_ch.grid(True, alpha=0.3)
-            ax_ch.legend(fontsize=7, loc="upper right")
+            ax_ch.legend(fontsize=6, loc="upper right", ncol=1)
 
         fig.tight_layout()
         # Save figure
