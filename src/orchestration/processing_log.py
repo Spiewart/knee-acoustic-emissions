@@ -561,6 +561,17 @@ class ManeuverProcessingLog:
                             duration_seconds=row.get("Duration (s)"),
                             sync_qc_performed=bool(row.get("Sync QC Done", False)),
                             sync_qc_passed=bool(row["Sync QC Passed"]) if pd.notna(row.get("Sync QC Passed")) else None,
+                            audio_qc_version=int(row["Audio QC Version"]) if pd.notna(row.get("Audio QC Version")) else get_audio_qc_version(),
+                            biomech_qc_version=int(row["Biomech QC Version"]) if pd.notna(row.get("Biomech QC Version")) else get_biomech_qc_version(),
+                            # Load detection method details if present (backward compatible with older logs)
+                            consensus_time=row.get("Consensus (s)"),
+                            rms_time=row.get("RMS Detect (s)"),
+                            onset_time=row.get("Onset Detect (s)"),
+                            freq_time=row.get("Freq Detect (s)"),
+                            rms_energy=row.get("RMS Energy"),
+                            onset_magnitude=row.get("Onset Magnitude"),
+                            freq_energy=row.get("Freq Energy"),
+                            method_agreement_span=row.get("Method Agreement Span (s)"),
                         )
                         log.synchronization_records.append(record)
             except Exception as e:

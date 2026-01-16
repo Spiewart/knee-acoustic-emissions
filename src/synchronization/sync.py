@@ -1134,9 +1134,11 @@ def plot_stomp_detection(
             ax_left.tick_params(axis="y", labelcolor="black")
 
         # Add stomp markers with clear labels
+        # Use consensus from detection_results if available, otherwise use selected stomp time
+        consensus_label = f"Consensus\n{detection_results.get('consensus_time', audio_stomp_s):.2f}s" if detection_results else f"Stomp\n{audio_stomp_s:.2f}s"
         ax_left.axvline(
             audio_stomp_s, color="red", linestyle="--", linewidth=2.5,
-            label=f"Consensus\n{audio_stomp_s:.2f}s", zorder=10
+            label=consensus_label, zorder=10
         )
         # Add detection method lines if available
         if detection_results:
@@ -1177,8 +1179,10 @@ def plot_stomp_detection(
         if np.any(zoom_mask):
             ax_zoom.plot(rms_times[zoom_mask], rms_energies[zoom_mask], 'b-', linewidth=1.5, alpha=0.9, label="RMS Energy (zoom)")
             ax_zoom.fill_between(rms_times[zoom_mask], 0, rms_energies[zoom_mask], alpha=0.2, color='blue')
+        # Show consensus detection time (or selected stomp time if no detection results)
+        consensus_time_display = detection_results.get('consensus_time', audio_stomp_s) if detection_results else audio_stomp_s
         ax_zoom.axvline(audio_stomp_s, color="red", linestyle="--", linewidth=2,
-                       label=f"Consensus ({audio_stomp_s:.2f}s)")
+                       label=f"Selected Stomp ({audio_stomp_s:.2f}s)")
         # Add detection method lines if available
         if detection_results:
             ax_zoom.axvline(rms_time_s, color="darkred", linestyle="-", linewidth=1.5, alpha=0.6,
@@ -1300,20 +1304,32 @@ def plot_stomp_detection(
         # ===== TOP RIGHT 2: Summary info =====
         summary_text = (
             f"Stomp Detection Summary\n\n"
-            f"Consensus: {audio_stomp_s:.3f}s\n"
         )
         if detection_results:
+            consensus_time = detection_results.get('consensus_time', audio_stomp_s)
             summary_text += (
+                f"Consensus: {consensus_time:.3f}s\n"
                 f"  RMS: {rms_time_s:.3f}s\n"
                 f"  Onset: {onset_time_s:.3f}s\n"
                 f"  Freq: {freq_time_s:.3f}s\n\n"
             )
+        else:
+            summary_text += f"Selected Stomp: {audio_stomp_s:.3f}s\n\n"
         summary_text += (
             f"Bio Left: {bio_left_s:.3f}s\n"
             f"Bio Right: {bio_right_s:.3f}s\n\n"
-            f"Δ (Consensus - Left): {audio_stomp_s - bio_left_s:.3f}s\n"
-            f"Δ (Consensus - Right): {audio_stomp_s - bio_right_s:.3f}s"
         )
+        if detection_results:
+            consensus_time = detection_results.get('consensus_time', audio_stomp_s)
+            summary_text += (
+                f"Δ (Consensus - Left): {consensus_time - bio_left_s:.3f}s\n"
+                f"Δ (Consensus - Right): {consensus_time - bio_right_s:.3f}s"
+            )
+        else:
+            summary_text += (
+                f"Δ (Stomp - Left): {audio_stomp_s - bio_left_s:.3f}s\n"
+                f"Δ (Stomp - Right): {audio_stomp_s - bio_right_s:.3f}s"
+            )
         ax_summary.text(0.5, 0.5,
                        summary_text,
                        ha="center", va="center", fontsize=10,
@@ -1379,9 +1395,9 @@ def plot_stomp_detection(
                 ax_ch_rms.set_ylabel("RMS Energy", fontsize=9, color=channel_colors[idx], alpha=0.7)
                 ax_ch_rms.tick_params(axis="y", labelcolor=channel_colors[idx], labelsize=8)
 
-            # Add stomp markers
+            # Show consensus detection time from detection_results
             ax_ch.axvline(audio_stomp_s, color="red", linestyle="--", linewidth=1.0, alpha=0.6,
-                         label=f"Consensus ({audio_stomp_s:.2f}s)")
+                         label=f"Selected ({audio_stomp_s:.2f}s)")
             # Add detection method lines if available
             if detection_results:
                 ax_ch.axvline(rms_time_s, color="darkred", linestyle="-", linewidth=0.8, alpha=0.5,
@@ -1407,6 +1423,8 @@ def plot_stomp_detection(
         fig.tight_layout()
         # Save figure
         fig_path = output_path.with_suffix(".png")
+        # Ensure parent directory exists
+        fig_path.parent.mkdir(parents=True, exist_ok=True)
         fig.savefig(fig_path, dpi=100, bbox_inches="tight")
         plt.close(fig)
 
