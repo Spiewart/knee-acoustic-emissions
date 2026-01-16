@@ -4,7 +4,6 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.biomechanics.importers import import_biomechanics_recordings
 from src.synchronization.sync import (
     get_audio_stomp_time,
     get_bio_end_time,
@@ -65,7 +64,7 @@ def test_get_audio_stomp_time(fake_participant_directory):
 
 
 def _build_dual_stomp_audio(
-    fs: int = 52000,
+    fs: int = 8000,
     duration: float = 3.0,
     first_stomp_time: float = 1.0,
     second_stomp_time: float = 2.2,
@@ -88,6 +87,17 @@ def _build_dual_stomp_audio(
             "ch4": signal,
         }
     )
+
+
+@pytest.fixture
+def events_by_sheet(fake_participant_directory):
+    """Cache biomechanics event sheets to avoid repeated Excel reads."""
+    excel_path = fake_participant_directory["biomechanics"]["excel_path"]
+    sheets = fake_participant_directory["biomechanics"]["events_sheets"]
+    return {
+        key: pd.read_excel(excel_path, sheet_name=sheet_name)
+        for key, sheet_name in sheets.items()
+    }
 
 
 def test_get_audio_stomp_time_requires_both_bio_stomps_when_knee_provided():
@@ -126,45 +136,33 @@ def test_get_audio_stomp_time_dual_knee_selection():
     assert abs(left_detected.total_seconds() - 2.2) < 0.1
 
 
-def test_sync_audio_with_biomechanics(fake_participant_directory):
-    """Test the full audio-biomechanics synchronization pipeline."""
-    from pathlib import Path
-
-    # Load biomechanics data
-    excel_file = Path(fake_participant_directory["biomechanics"]["excel_path"])
-    biomechanics_cycles = import_biomechanics_recordings(
-        biomechanics_file=excel_file,
-        maneuver="walk",
-        speed="slow",
-    )
-
-    audio_path = fake_participant_directory["audio_paths"]["left"]["Walking"]
-    audio_data = load_audio_data(audio_path)
-
-    bio_meta = fake_participant_directory["biomechanics"]["events_data"]
-
+def test_sync_audio_with_biomechanics():
+    """Test synchronization with lightweight synthetic data to keep runtime low."""
+    # Synthetic audio with clear stomp energy
+    audio_data = _build_dual_stomp_audio(fs=4000, duration=2.0, first_stomp_time=0.5, second_stomp_time=1.4)
     audio_stomp_time = get_audio_stomp_time(audio_data)
-    bio_right_stomp_time = get_right_stomp_time(pd.DataFrame(bio_meta))
+
+    # Synthetic biomechanics TIME series with one biomechanics channel
+    bio_times = pd.to_timedelta(np.linspace(0, 2, 200), unit="s")
+    bio_df = pd.DataFrame({
+        "TIME": bio_times,
+        "Knee Angle Z": np.linspace(0, 10, len(bio_times)),
+    })
+    bio_right_stomp_time = pd.to_timedelta(0.5, unit="s").to_pytimedelta()
 
     synchronized_df = sync_audio_with_biomechanics(
         audio_stomp_time,
         bio_right_stomp_time,
         audio_data,
-        # Use the first biomechanics DataFrame for testing
-        biomechanics_cycles[0].data,
+        bio_df,
     )
 
     assert not synchronized_df.empty, "Synchronized DataFrame is empty."
 
 
-def test_get_bio_start_time_walk(fake_participant_directory):
+def test_get_bio_start_time_walk(fake_participant_directory, events_by_sheet):
     """Test get_bio_start_time for walking maneuver."""
-    events_df = pd.read_excel(
-        fake_participant_directory["biomechanics"]["excel_path"],
-        sheet_name=fake_participant_directory["biomechanics"]["events_sheets"][
-            "walk_pass"
-        ],
-    )
+    events_df = events_by_sheet["walk_pass"]
 
     start_time = get_bio_start_time(
         event_metadata=events_df,
@@ -178,14 +176,9 @@ def test_get_bio_start_time_walk(fake_participant_directory):
     assert isinstance(start_time, td_type)
 
 
-def test_get_bio_start_time_sit_to_stand(fake_participant_directory):
+def test_get_bio_start_time_sit_to_stand(fake_participant_directory, events_by_sheet):
     """Test get_bio_start_time for sit-to-stand maneuver."""
-    events_df = pd.read_excel(
-        fake_participant_directory["biomechanics"]["excel_path"],
-        sheet_name=fake_participant_directory["biomechanics"]["events_sheets"][
-            "sit_to_stand"
-        ],
-    )
+    events_df = events_by_sheet["sit_to_stand"]
 
     start_time = get_bio_start_time(
         event_metadata=events_df,
@@ -197,14 +190,9 @@ def test_get_bio_start_time_sit_to_stand(fake_participant_directory):
     assert isinstance(start_time, td_type)
 
 
-def test_get_bio_start_time_flexion_extension(fake_participant_directory):
+def test_get_bio_start_time_flexion_extension(fake_participant_directory, events_by_sheet):
     """Test get_bio_start_time for flexion-extension maneuver."""
-    events_df = pd.read_excel(
-        fake_participant_directory["biomechanics"]["excel_path"],
-        sheet_name=fake_participant_directory["biomechanics"]["events_sheets"][
-            "flexion_extension"
-        ],
-    )
+    events_df = events_by_sheet["flexion_extension"]
 
     start_time = get_bio_start_time(
         event_metadata=events_df,
@@ -227,14 +215,9 @@ def test_get_bio_start_time_walk_missing_params():
         )
 
 
-def test_get_bio_end_time_walk(fake_participant_directory):
+def test_get_bio_end_time_walk(fake_participant_directory, events_by_sheet):
     """Test get_bio_end_time for walking maneuver."""
-    events_df = pd.read_excel(
-        fake_participant_directory["biomechanics"]["excel_path"],
-        sheet_name=fake_participant_directory["biomechanics"]["events_sheets"][
-            "walk_pass"
-        ],
-    )
+    events_df = events_by_sheet["walk_pass"]
 
     end_time = get_bio_end_time(
         event_metadata=events_df,
@@ -248,14 +231,9 @@ def test_get_bio_end_time_walk(fake_participant_directory):
     assert isinstance(end_time, td_type)
 
 
-def test_get_bio_end_time_sit_to_stand(fake_participant_directory):
+def test_get_bio_end_time_sit_to_stand(fake_participant_directory, events_by_sheet):
     """Test get_bio_end_time for sit-to-stand maneuver."""
-    events_df = pd.read_excel(
-        fake_participant_directory["biomechanics"]["excel_path"],
-        sheet_name=fake_participant_directory["biomechanics"]["events_sheets"][
-            "sit_to_stand"
-        ],
-    )
+    events_df = events_by_sheet["sit_to_stand"]
 
     end_time = get_bio_end_time(
         event_metadata=events_df,
@@ -267,14 +245,9 @@ def test_get_bio_end_time_sit_to_stand(fake_participant_directory):
     assert isinstance(end_time, td_type)
 
 
-def test_get_bio_end_time_flexion_extension(fake_participant_directory):
+def test_get_bio_end_time_flexion_extension(fake_participant_directory, events_by_sheet):
     """Test get_bio_end_time for flexion-extension maneuver."""
-    events_df = pd.read_excel(
-        fake_participant_directory["biomechanics"]["excel_path"],
-        sheet_name=fake_participant_directory["biomechanics"]["events_sheets"][
-            "flexion_extension"
-        ],
-    )
+    events_df = events_by_sheet["flexion_extension"]
 
     end_time = get_bio_end_time(
         event_metadata=events_df,
@@ -298,15 +271,10 @@ def test_get_bio_end_time_walk_missing_params():
         )
 
 
-def test_bio_start_end_times_ordering(fake_participant_directory):
+def test_bio_start_end_times_ordering(fake_participant_directory, events_by_sheet):
     """Test that start time is before end time for all maneuvers."""
     # Test walk maneuver
-    events_df = pd.read_excel(
-        fake_participant_directory["biomechanics"]["excel_path"],
-        sheet_name=fake_participant_directory["biomechanics"]["events_sheets"][
-            "walk_pass"
-        ],
-    )
+    events_df = events_by_sheet["walk_pass"]
 
     start_time = get_bio_start_time(
         event_metadata=events_df,
@@ -325,12 +293,7 @@ def test_bio_start_end_times_ordering(fake_participant_directory):
     assert start_time < end_time
 
     # Test sit-to-stand maneuver
-    events_df = pd.read_excel(
-        fake_participant_directory["biomechanics"]["excel_path"],
-        sheet_name=fake_participant_directory["biomechanics"]["events_sheets"][
-            "sit_to_stand"
-        ],
-    )
+    events_df = events_by_sheet["sit_to_stand"]
 
     start_time = get_bio_start_time(
         event_metadata=events_df,

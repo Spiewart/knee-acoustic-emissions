@@ -1278,8 +1278,9 @@ def test_process_bin_stage_with_filters(fake_participant_directory, knee, maneuv
             "ch4": np.random.randn(4096),
         })
 
-        produced_files = _process_bin_stage(participant_dir, knee=knee, maneuver=maneuver)
+        produced_files, produced_dfs = _process_bin_stage(participant_dir, knee=knee, maneuver=maneuver)
 
         assert len(produced_files) == len(expected_files)
+        assert len(produced_dfs) == len(expected_files)  # Should have one DF per file
         for expected_dir in expected_files:
             assert any(expected_dir in str(produced) for produced in produced_files)
