@@ -287,6 +287,43 @@ Currently, only "walk" maneuvers are fully supported. To extend:
 
 ---
 
+## Change Documentation & Changelog
+
+### Overview
+All change documentation should be organized in `/docs/changelog/` with type-specific subfolders rather than cluttering the root directory.
+
+### Folder Structure
+```
+docs/changelog/
+├── patch/           # Bug fixes, minor improvements
+├── feature/         # New features, significant additions
+├── bugfix/          # Critical bug fixes
+├── refactor/        # Code refactoring without behavior changes
+└── README.md        # Detailed instructions and index
+```
+
+### Naming Convention
+Use format: `YYYYMMDD_descriptive_name.md`
+
+Example: `20260115_entrypoint_filter_processing.md`
+
+### For AI Assistants
+When creating change documentation:
+1. **Always** save to `/docs/changelog/{type}/` subdirectories
+2. **Never** save to root directory
+3. Include: problem, solution, affected files, test results, backward compatibility
+4. Use precise line numbers and file paths
+5. Make documents self-contained for future reference
+
+### For Users
+- Review changes in `/docs/changelog/` organized by type and date
+- Check `docs/changelog/README.md` for detailed guidelines
+- Filter by change type based on your interest
+
+**Full details**: See `/docs/changelog/README.md`
+
+---
+
 ## Contact & Questions
 
 For questions about the project structure, data models, or implementation details, refer to the existing code, docstrings, and tests. The codebase is self-documenting with comprehensive type hints and validation.

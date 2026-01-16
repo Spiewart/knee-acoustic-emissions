@@ -51,6 +51,20 @@ Each log includes:
 - Sample count and duration
 - Sync QC status
 
+##### Stomp detection method details (new)
+
+For each synchronized file, detection method results are captured to aid comparison:
+- Consensus (s): Median of method times
+- RMS Detect (s): Rolling RMS energy method time
+- Onset Detect (s): Impact/onset method time
+- Freq Detect (s): Frequency-band energy method time
+- RMS Energy: Energy value at RMS-detected stomp
+- Onset Magnitude: Magnitude at onset-detected stomp
+- Freq Energy: Band energy at frequency-detected stomp
+- Method Agreement Span (s): Max–min across method times
+
+These fields complement the primary stomp times, allowing assessment of method agreement and confidence.
+
 #### Movement Cycles Sheet
 - One row per cycle extraction analysis
 - Total cycles extracted
@@ -185,6 +199,23 @@ The processing log system is integrated into:
 1. **`_sync_maneuver_data()`**: Captures audio, biomechanics, and sync data
 2. **`process_participant()`**: Captures movement cycles data
 3. **`_save_or_update_processing_log()`**: Updates log with new data
+
+## Knee-level Log
+
+In addition to per-file synchronization details, a knee-level log aggregates results across synchronized files for each maneuver. This summary includes medians to provide robust estimates:
+
+- Audio Stomp (s) – median across sync records
+- Bio Stomp (s) – median across sync records
+- Stomp Offset (s) – median across sync records
+- Aligned Audio Stomp (s) – median across sync records
+- Aligned Bio Stomp (s) – median across sync records
+- Consensus (s) – median across sync records
+- RMS Detect (s) – median across sync records
+- Onset Detect (s) – median across sync records
+- Freq Detect (s) – median across sync records
+- Method Agreement Span (s) – median across sync records
+
+These aggregates support quick review of detection consistency across files and help flag potential divergence when the agreement span is large.
 
 ### Error Handling
 

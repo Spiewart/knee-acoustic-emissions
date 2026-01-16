@@ -69,7 +69,7 @@ class AudioProcessingRecord:
 
     # Raw audio QC results (dropout and artifacts)
     QC_not_passed: Optional[str] = None  # String representation of list of (start, end) tuples (any mic)
-    
+
     # Per-microphone QC results
     QC_not_passed_mic_1: Optional[str] = None  # Bad intervals for microphone 1
     QC_not_passed_mic_2: Optional[str] = None  # Bad intervals for microphone 2
@@ -198,6 +198,16 @@ class SynchronizationRecord:
     audio_qc_version: int = field(default_factory=get_audio_qc_version)
     biomech_qc_version: int = field(default_factory=get_biomech_qc_version)
 
+    # Detection methods (optional)
+    consensus_time: Optional[float] = None
+    rms_time: Optional[float] = None
+    onset_time: Optional[float] = None
+    freq_time: Optional[float] = None
+    rms_energy: Optional[float] = None
+    onset_magnitude: Optional[float] = None
+    freq_energy: Optional[float] = None
+    method_agreement_span: Optional[float] = None  # max(method_times) - min(method_times)
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for Excel export."""
         return {
@@ -220,6 +230,15 @@ class SynchronizationRecord:
             "Sync QC Passed": self.sync_qc_passed,
             "Audio QC Version": self.audio_qc_version,
             "Biomech QC Version": self.biomech_qc_version,
+            # Detection method details
+            "Consensus (s)": self.consensus_time,
+            "RMS Detect (s)": self.rms_time,
+            "Onset Detect (s)": self.onset_time,
+            "Freq Detect (s)": self.freq_time,
+            "RMS Energy": self.rms_energy,
+            "Onset Magnitude": self.onset_magnitude,
+            "Freq Energy": self.freq_energy,
+            "Method Agreement Span (s)": self.method_agreement_span,
         }
 
 
@@ -542,6 +561,17 @@ class ManeuverProcessingLog:
                             duration_seconds=row.get("Duration (s)"),
                             sync_qc_performed=bool(row.get("Sync QC Done", False)),
                             sync_qc_passed=bool(row["Sync QC Passed"]) if pd.notna(row.get("Sync QC Passed")) else None,
+                            audio_qc_version=int(row["Audio QC Version"]) if pd.notna(row.get("Audio QC Version")) else get_audio_qc_version(),
+                            biomech_qc_version=int(row["Biomech QC Version"]) if pd.notna(row.get("Biomech QC Version")) else get_biomech_qc_version(),
+                            # Load detection method details if present (backward compatible with older logs)
+                            consensus_time=row.get("Consensus (s)"),
+                            rms_time=row.get("RMS Detect (s)"),
+                            onset_time=row.get("Onset Detect (s)"),
+                            freq_time=row.get("Freq Detect (s)"),
+                            rms_energy=row.get("RMS Energy"),
+                            onset_magnitude=row.get("Onset Magnitude"),
+                            freq_energy=row.get("Freq Energy"),
+                            method_agreement_span=row.get("Method Agreement Span (s)"),
                         )
                         log.synchronization_records.append(record)
             except Exception as e:
@@ -692,13 +722,26 @@ class KneeProcessingLog:
             aligned_audio = [r.aligned_audio_stomp_time for r in maneuver_log.synchronization_records if r.aligned_audio_stomp_time is not None]
             aligned_bio = [r.aligned_bio_stomp_time for r in maneuver_log.synchronization_records if r.aligned_bio_stomp_time is not None]
 
+            # Detection method aggregates
+            consensus_times = [r.consensus_time for r in maneuver_log.synchronization_records if r.consensus_time is not None]
+            rms_times = [r.rms_time for r in maneuver_log.synchronization_records if r.rms_time is not None]
+            onset_times = [r.onset_time for r in maneuver_log.synchronization_records if r.onset_time is not None]
+            freq_times = [r.freq_time for r in maneuver_log.synchronization_records if r.freq_time is not None]
+            agreement_spans = [r.method_agreement_span for r in maneuver_log.synchronization_records if r.method_agreement_span is not None]
+
             summary.update({
                 # Representative stomp metrics (aggregated across sync records)
-                "Audio Stomp (s)": float(np.mean(audio_stomps)) if audio_stomps else None,
-                "Bio Stomp (s)": float(np.mean(bio_stomps)) if bio_stomps else None,
-                "Stomp Offset (s)": float(np.mean(offsets)) if offsets else None,
-                "Aligned Audio Stomp (s)": float(np.mean(aligned_audio)) if aligned_audio else None,
-                "Aligned Bio Stomp (s)": float(np.mean(aligned_bio)) if aligned_bio else None,
+                "Audio Stomp (s)": float(np.median(audio_stomps)) if audio_stomps else None,
+                "Bio Stomp (s)": float(np.median(bio_stomps)) if bio_stomps else None,
+                "Stomp Offset (s)": float(np.median(offsets)) if offsets else None,
+                "Aligned Audio Stomp (s)": float(np.median(aligned_audio)) if aligned_audio else None,
+                "Aligned Bio Stomp (s)": float(np.median(aligned_bio)) if aligned_bio else None,
+                # Detection method aggregates (median for robustness)
+                "Consensus (s)": float(np.median(consensus_times)) if consensus_times else None,
+                "RMS Detect (s)": float(np.median(rms_times)) if rms_times else None,
+                "Onset Detect (s)": float(np.median(onset_times)) if onset_times else None,
+                "Freq Detect (s)": float(np.median(freq_times)) if freq_times else None,
+                "Method Agreement Span (s)": float(np.median(agreement_spans)) if agreement_spans else None,
             })
 
         self.maneuver_summaries.append(summary)
@@ -795,6 +838,12 @@ class KneeProcessingLog:
                             "Stomp Offset (s)": float(row["Stomp Offset (s)"]) if pd.notna(row.get("Stomp Offset (s)")) else None,
                             "Aligned Audio Stomp (s)": float(row["Aligned Audio Stomp (s)"]) if pd.notna(row.get("Aligned Audio Stomp (s)")) else None,
                             "Aligned Bio Stomp (s)": float(row["Aligned Bio Stomp (s)"]) if pd.notna(row.get("Aligned Bio Stomp (s)")) else None,
+                            # Detection method aggregates
+                            "Consensus (s)": float(row["Consensus (s)"]) if pd.notna(row.get("Consensus (s)")) else None,
+                            "RMS Detect (s)": float(row["RMS Detect (s)"]) if pd.notna(row.get("RMS Detect (s)")) else None,
+                            "Onset Detect (s)": float(row["Onset Detect (s)"]) if pd.notna(row.get("Onset Detect (s)")) else None,
+                            "Freq Detect (s)": float(row["Freq Detect (s)"]) if pd.notna(row.get("Freq Detect (s)")) else None,
+                            "Method Agreement Span (s)": float(row["Method Agreement Span (s)"]) if pd.notna(row.get("Method Agreement Span (s)")) else None,
                         }
                         log.maneuver_summaries.append(summary)
             except Exception as e:
@@ -1067,6 +1116,7 @@ def create_sync_record_from_data(
     knee_side: Optional[str] = None,
     pass_number: Optional[int] = None,
     speed: Optional[str] = None,
+    detection_results: Optional[Dict[str, Any]] = None,
     error: Optional[Exception] = None,
 ) -> SynchronizationRecord:
     """Create a SynchronizationRecord from sync data.
@@ -1144,6 +1194,36 @@ def create_sync_record_from_data(
         aligned_audio_stomp_time=aligned_audio_stomp,
         aligned_bio_stomp_time=aligned_bio_stomp,
     )
+
+    # Populate detection method details if provided
+    if detection_results:
+        try:
+            record.consensus_time = _to_seconds(detection_results.get("consensus_time"))
+            record.rms_time = _to_seconds(detection_results.get("rms_time"))
+            record.onset_time = _to_seconds(detection_results.get("onset_time"))
+            record.freq_time = _to_seconds(detection_results.get("freq_time"))
+            # Energies/magnitudes may already be floats
+            record.rms_energy = (
+                float(detection_results.get("rms_energy"))
+                if detection_results.get("rms_energy") is not None else None
+            )
+            record.onset_magnitude = (
+                float(detection_results.get("onset_magnitude"))
+                if detection_results.get("onset_magnitude") is not None else None
+            )
+            record.freq_energy = (
+                float(detection_results.get("freq_energy"))
+                if detection_results.get("freq_energy") is not None else None
+            )
+            # Method agreement span across available method times
+            method_times = [
+                t for t in [record.rms_time, record.onset_time, record.freq_time]
+                if t is not None
+            ]
+            if method_times:
+                record.method_agreement_span = float(max(method_times) - min(method_times))
+        except Exception as e:
+            logger.debug(f"Failed to populate detection_results in sync record: {e}")
 
     if error:
         record.processing_status = "error"

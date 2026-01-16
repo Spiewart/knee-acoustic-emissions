@@ -6,10 +6,16 @@ a threshold defined by the overall signal statistics."""
 import logging
 from datetime import timedelta
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Literal, Optional, Union
 
 import numpy as np
 import pandas as pd
+
+try:
+    from scipy.signal import find_peaks
+    SCIPY_AVAILABLE = True
+except ImportError:
+    SCIPY_AVAILABLE = False
 
 try:
     import matplotlib.pyplot as plt
@@ -141,18 +147,222 @@ def _estimate_sampling_rate(tt_seconds: np.ndarray) -> float:
     return 1.0 / dt
 
 
+def _detect_stomp_by_rms_energy(
+    audio_channels: np.ndarray,
+    tt_seconds: np.ndarray,
+    sr: float,
+    search_duration: float = 20.0,
+) -> tuple[float, float]:
+    """Detect stomp using rolling RMS (root mean square) energy.
+
+    Identifies the highest energy event in the first N seconds of recording.
+
+    Args:
+        audio_channels: Audio data as numpy array (samples × channels).
+        tt_seconds: Time values in seconds (1D array).
+        sr: Sampling rate in Hz.
+        search_duration: Duration in seconds to search (default 20s).
+
+    Returns:
+        Tuple of (stomp_time_seconds, max_rms_energy).
+    """
+    # Limit search to first 20 seconds
+    search_mask = tt_seconds <= search_duration
+    search_audio = audio_channels[search_mask]
+    search_tt = tt_seconds[search_mask]
+
+    if len(search_audio) == 0:
+        return float(tt_seconds[0]), 0.0
+
+    # Downsample audio for faster processing (stomps are low-frequency events)
+    # Target ~4kHz effective rate for stomp detection
+    downsample_factor = max(1, int(sr / 4000))
+    if downsample_factor > 1:
+        search_audio = search_audio[::downsample_factor]
+        search_tt = search_tt[::downsample_factor]
+        effective_sr = sr / downsample_factor
+    else:
+        effective_sr = sr
+
+    # Compute RMS energy in 50ms windows (typical stomp duration is 50-200ms)
+    window_samples = max(2, int(0.05 * effective_sr))  # 50ms window
+
+    # Use strided convolution for memory-efficient RMS computation
+    # Instead of creating all windows at once, compute RMS in strides
+    stride = max(1, window_samples // 4)  # 75% overlap for smooth detection
+    n_windows = (len(search_audio) - window_samples) // stride + 1
+
+    rms_energies = np.zeros(n_windows)
+    rms_times = np.zeros(n_windows)
+
+    for i in range(n_windows):
+        start_idx = i * stride
+        end_idx = start_idx + window_samples
+        window = search_audio[start_idx:end_idx]
+        # RMS across all channels: sqrt(mean(all_values^2))
+        rms_energies[i] = np.sqrt(np.mean(window**2))
+        mid_idx = start_idx + window_samples // 2
+        rms_times[i] = search_tt[mid_idx]
+
+    if len(rms_energies) > 0:
+        peak_idx = int(np.argmax(rms_energies))
+        return rms_times[peak_idx], rms_energies[peak_idx]
+
+    return float(search_tt[0]), 0.0
+
+
+def _detect_stomp_by_impact_onset(
+    audio_channels: np.ndarray,
+    tt_seconds: np.ndarray,
+    sr: float,
+    search_duration: float = 20.0,
+) -> tuple[float, float]:
+    """Detect stomp using impact/sudden onset detection.
+
+    Identifies the timestamp where energy rises most sharply, characteristic
+    of an impact (stomp). Uses derivative of smoothed energy envelope.
+
+    Args:
+        audio_channels: Audio data as numpy array (samples × channels).
+        tt_seconds: Time values in seconds (1D array).
+        sr: Sampling rate in Hz.
+        search_duration: Duration in seconds to search (default 20s).
+
+    Returns:
+        Tuple of (stomp_time_seconds, max_onset_magnitude).
+    """
+    # Limit search to first 20 seconds
+    search_mask = tt_seconds <= search_duration
+    search_audio = audio_channels[search_mask]
+    search_tt = tt_seconds[search_mask]
+
+    if len(search_audio) == 0:
+        return float(tt_seconds[0]), 0.0
+
+    # Compute instantaneous energy (absolute value, smoothed)
+    window_samples = max(1, int(0.01 * sr))  # 10ms smoothing window
+    energy = np.sqrt(np.mean(search_audio**2, axis=1))
+
+    # Apply smoothing to reduce noise
+    if len(energy) > window_samples:
+        smoothed_energy = np.convolve(
+            energy,
+            np.ones(window_samples) / window_samples,
+            mode='same'
+        )
+    else:
+        smoothed_energy = energy
+
+    # Compute derivative (rate of change in energy)
+    energy_derivative = np.gradient(smoothed_energy)
+
+    # Stomp has sharp onset, so look for maximum positive derivative
+    # Use absolute value to catch both rising and falling edges
+    onset_magnitude = np.abs(energy_derivative)
+
+    if len(onset_magnitude) > 0:
+        peak_idx = int(np.argmax(onset_magnitude))
+        return search_tt[peak_idx], onset_magnitude[peak_idx]
+
+    return float(search_tt[0]), 0.0
+
+
+def _detect_stomp_by_frequency_content(
+    audio_channels: np.ndarray,
+    tt_seconds: np.ndarray,
+    sr: float,
+    search_duration: float = 20.0,
+) -> tuple[float, float]:
+    """Detect stomp using frequency domain analysis.
+
+    Contact microphone stomp signals typically have dominant frequency
+    content in the 100-1000 Hz range. This method identifies the time window
+    with the highest energy in this frequency band.
+
+    Args:
+        audio_channels: Audio data as numpy array (samples × channels).
+        tt_seconds: Time values in seconds (1D array).
+        sr: Sampling rate in Hz.
+        search_duration: Duration in seconds to search (default 20s).
+
+    Returns:
+        Tuple of (stomp_time_seconds, max_frequency_energy).
+    """
+    try:
+        from scipy import signal as scipy_signal
+    except ImportError:
+        logging.warning("scipy not available; skipping frequency-based stomp detection")
+        return float(tt_seconds[0]), 0.0
+
+    # Limit search to first 20 seconds
+    search_mask = tt_seconds <= search_duration
+    search_audio = audio_channels[search_mask]
+    search_tt = tt_seconds[search_mask]
+
+    if len(search_audio) == 0:
+        return float(tt_seconds[0]), 0.0
+
+    # Use sliding window STFT to find time-frequency content
+    # Window size: 500ms (typical stomp has significant energy for ~100-300ms)
+    window_duration = 0.5
+    hop_duration = 0.1  # 100ms hop for sliding windows
+    window_samples = int(window_duration * sr)
+    hop_samples = int(hop_duration * sr)
+
+    # Compute combined signal across all channels
+    combined_signal = np.mean(np.abs(search_audio), axis=1)
+
+    # Compute STFT for time-frequency representation
+    try:
+        frequencies, times, Sxx = scipy_signal.spectrogram(
+            combined_signal,
+            sr,
+            window='hamming',
+            nperseg=window_samples,
+            noverlap=window_samples - hop_samples,
+            scaling='spectrum'
+        )
+    except Exception as e:
+        logging.warning(f"STFT computation failed: {e}")
+        return float(search_tt[0]), 0.0
+
+    # Extract energy in typical stomp frequency band (100-1000 Hz)
+    freq_mask = (frequencies >= 100) & (frequencies <= 1000)
+    if not np.any(freq_mask):
+        # Fallback to all frequencies if band is empty
+        freq_mask = np.ones(len(frequencies), dtype=bool)
+
+    # Sum energy across selected frequency band
+    band_energy = np.sum(Sxx[freq_mask, :], axis=0)
+
+    if len(band_energy) > 0:
+        peak_idx = int(np.argmax(band_energy))
+        # Map back to time in original recording
+        peak_time = search_tt[min(peak_idx * hop_samples + window_samples // 2,
+                                   len(search_tt) - 1)]
+        return peak_time, band_energy[peak_idx]
+
+    return float(search_tt[0]), 0.0
+
+
 def get_audio_stomp_time(
     audio_df: pd.DataFrame,
     recorded_knee: Optional[Literal["left", "right"]] = None,
     right_stomp_time: Optional[timedelta] = None,
     left_stomp_time: Optional[timedelta] = None,
-) -> timedelta:
-    """Detect the audio stomp time based on biomechanics stomp times using area-under-curve.
+    return_details: bool = False,
+) -> Union[timedelta, tuple[timedelta, dict]]:
+    """Detect the audio stomp time using multi-method approach.
 
-    Uses area-under-curve (AUC) integration of acoustic energy across all 4 channels
-    to identify stomp events. Searches within ±2s windows around biomechanics Sync
-    Left/Right times. Determines temporal order from acoustic energy (earlier stomp
-    typically has higher energy earlier in the recording).
+    Identifies stomp events in the first 20 seconds of recording using three
+    complementary methods:
+    1. Rolling RMS (root mean square) energy to find the loudest event
+    2. Impact/onset detection to find sharp energy transitions
+    3. Frequency domain analysis for typical stomp frequency content (100-1000 Hz)
+
+    When biomechanics metadata is available, uses it to validate the detected
+    stomp times and determine which stomp (left/right) corresponds to the
+    recorded knee.
 
     Args:
         audio_df: DataFrame with columns `tt`, `ch1`–`ch4`.
@@ -161,8 +371,16 @@ def get_audio_stomp_time(
         left_stomp_time: Biomechanics left stomp as `timedelta`.
 
     Returns:
-        `timedelta` for the stomp corresponding to `recorded_knee`, or the
-        peak energy time when metadata is absent.
+        By default returns the selected stomp time as `timedelta` for backward compatibility.
+        If `return_details=True`, returns a tuple of `(selected_stomp_time, detection_results_dict)` where
+        detection_results_dict contains:
+        - 'consensus_time': Median of three methods (seconds)
+        - 'rms_time': RMS energy detection (seconds)
+        - 'rms_energy': RMS energy value
+        - 'onset_time': Impact onset detection (seconds)
+        - 'onset_magnitude': Onset magnitude value
+        - 'freq_time': Frequency domain detection (seconds)
+        - 'freq_energy': Frequency band energy value
 
     Raises:
         ValueError: Invalid parameters or inability to estimate sampling rate.
@@ -190,121 +408,150 @@ def get_audio_stomp_time(
     tt_seconds = _tt_series_to_seconds(tt_series)
     sr = _estimate_sampling_rate(tt_seconds)
 
-    def _compute_auc_in_window(target_time_s: float, window_s: float = 0.5) -> tuple[float, float]:
-        """Compute area-under-curve in a window and return (time_of_max_auc, total_auc).
+    # Apply multi-method stomp detection on first 20 seconds
+    rms_time, rms_energy = _detect_stomp_by_rms_energy(audio_channels, tt_seconds, sr)
+    onset_time, onset_mag = _detect_stomp_by_impact_onset(audio_channels, tt_seconds, sr)
+    freq_time, freq_energy = _detect_stomp_by_frequency_content(audio_channels, tt_seconds, sr)
 
-        Args:
-            target_time_s: Center time in seconds
-            window_s: Half-window size in seconds (default 0.5s = ±500ms)
+    logging.debug(
+        "Stomp detection methods: RMS (t=%.3fs, E=%.2f), "
+        "Onset (t=%.3fs, M=%.2f), Frequency (t=%.3fs, E=%.2f)",
+        rms_time, rms_energy, onset_time, onset_mag, freq_time, freq_energy
+    )
 
-        Returns:
-            Tuple of (time_of_peak_energy, total_area_under_curve)
-        """
-        # Find indices in window
-        mask = (tt_seconds >= target_time_s - window_s) & (tt_seconds <= target_time_s + window_s)
-        if not np.any(mask):
-            return target_time_s, 0.0
+    # Consensus approach: use median of the three detected times
+    # This provides robustness against outliers from any single method
+    detected_times = [rms_time, onset_time, freq_time]
+    consensus_time = float(np.median(detected_times))
 
-        # Extract window data
-        window_indices = np.where(mask)[0]
-        window_tt = tt_seconds[window_indices]
-        window_audio = audio_channels[mask]
+    logging.debug(
+        "Consensus stomp time: %.3fs (from RMS: %.3fs, Onset: %.3fs, Freq: %.3fs)",
+        consensus_time, rms_time, onset_time, freq_time
+    )
 
-        # Compute total AUC for each channel (use absolute value to capture all energy)
-        channel_aucs = []
-        for ch_idx in range(window_audio.shape[1]):
-            ch_data = np.abs(window_audio[:, ch_idx])
-            # Use trapezoidal integration for AUC
-            try:
-                auc = np.trapezoid(ch_data, window_tt)
-            except AttributeError:
-                # Fallback for older numpy versions
-                auc = np.trapz(ch_data, window_tt)
-            channel_aucs.append(auc)
+    # Store detection results for visualization and logging
+    detection_results = {
+        'consensus_time': consensus_time,
+        'rms_time': rms_time,
+        'rms_energy': float(rms_energy),
+        'onset_time': onset_time,
+        'onset_magnitude': float(onset_mag),
+        'freq_time': freq_time,
+        'freq_energy': float(freq_energy),
+    }
 
-        # Total acoustic energy is sum across all channels
-        total_auc = sum(channel_aucs)
-
-        # Find time with maximum instantaneous energy using a 100ms rolling window
-        rolling_window_samples = max(2, int(0.1 * sr))  # 100ms, minimum 2 samples
-
-        if len(window_audio) < rolling_window_samples:
-            # Window too small, just use center
-            peak_time = target_time_s
-        else:
-            rolling_energies = []
-            rolling_times = []
-
-            for i in range(len(window_audio) - rolling_window_samples + 1):
-                frame = window_audio[i:i+rolling_window_samples]
-                # Sum absolute energy across all channels for this frame
-                frame_energy = np.sum(np.abs(frame))
-                rolling_energies.append(frame_energy)
-                mid_idx = i + rolling_window_samples // 2
-                rolling_times.append(window_tt[mid_idx])
-
-            if rolling_energies:
-                peak_idx = int(np.argmax(rolling_energies))
-                peak_time = rolling_times[peak_idx]
-            else:
-                peak_time = target_time_s
-
-        return peak_time, total_auc
-
-    # If we have biomechanics stomp metadata, search near those times
+    # If we have biomechanics stomp metadata, use it to refine detection
     if recorded_knee is not None and right_stomp_time is not None and left_stomp_time is not None:
         right_target = float(right_stomp_time.total_seconds())
         left_target = float(left_stomp_time.total_seconds())
 
-        # Compute AUC and peak times for both knees
-        right_peak_time, right_auc = _compute_auc_in_window(right_target)
-        left_peak_time, left_auc = _compute_auc_in_window(left_target)
+        # Find the two peaks closest to the biomechanics stomp times
+        # by looking for local maxima in RMS energy
 
-        logging.debug(
-            "Audio stomp detection: left_auc=%.1f (t=%.2fs), right_auc=%.1f (t=%.2fs)",
-            left_auc, left_peak_time, right_auc, right_peak_time
-        )
+        # Search in first 20 seconds
+        search_mask = tt_seconds <= 20.0
+        search_audio = audio_channels[search_mask]
+        search_tt = tt_seconds[search_mask]
 
-        # Determine which stomp occurred first based on BIOMECHANICS times
-        # This is the ground truth order
-        if right_target < left_target:
-            # Right stomp is first (temporally earlier in bio)
-            if recorded_knee == "right":
-                # We're recording right knee, so return the first peak
-                selected_time = right_peak_time
-            else:
-                # We're recording left knee, so return the second peak
-                selected_time = left_peak_time
+        # Downsample for faster processing
+        downsample_factor = max(1, int(sr / 4000))
+        if downsample_factor > 1:
+            search_audio = search_audio[::downsample_factor]
+            search_tt = search_tt[::downsample_factor]
+            effective_sr = sr / downsample_factor
         else:
-            # Left stomp is first (temporally earlier in bio)
-            if recorded_knee == "left":
-                # We're recording left knee, so return the first peak
-                selected_time = left_peak_time
+            effective_sr = sr
+
+        window_samples = max(2, int(0.1 * effective_sr))  # 100ms window
+
+        # Memory-efficient rolling energy computation with striding
+        stride = max(1, window_samples // 4)
+        n_windows = (len(search_audio) - window_samples) // stride + 1
+
+        rolling_energies = np.zeros(n_windows)
+        rolling_times = np.zeros(n_windows)
+
+        for i in range(n_windows):
+            start_idx = i * stride
+            end_idx = start_idx + window_samples
+            window = search_audio[start_idx:end_idx]
+            rolling_energies[i] = np.sqrt(np.mean(window**2))
+            mid_idx = start_idx + window_samples // 2
+            rolling_times[i] = search_tt[mid_idx]
+
+        # Find peaks in the energy signal (local maxima)
+        if SCIPY_AVAILABLE:
+            try:
+                # Distance in terms of rolling_energies indices (after striding)
+                # 0.5 seconds * effective_sr samples/sec / stride samples/window
+                min_peak_distance = int(0.5 * effective_sr / stride)
+                peaks, peak_props = find_peaks(
+                    rolling_energies,
+                    height=np.max(rolling_energies) * 0.3,  # At least 30% of max energy
+                    distance=min_peak_distance  # At least 0.5s apart
+                )
+            except Exception as e:
+                logging.debug("find_peaks failed: %s; using fallback", e)
+                # Fallback if find_peaks fails
+                peaks = np.array([np.argmax(rolling_energies)])
+                peak_props = {"peak_heights": np.array([rolling_energies[peaks[0]]])}
+        else:
+            # Fallback when scipy not available
+            peaks = np.array([np.argmax(rolling_energies)])
+            peak_props = {"peak_heights": np.array([rolling_energies[peaks[0]]])}
+
+        if len(peaks) > 0:
+            peak_times = rolling_times[peaks]
+            peak_heights = peak_props["peak_heights"]
+
+            logging.debug(
+                "Detected %d peaks in RMS energy: times=%s, heights=%s",
+                len(peaks), [f"{t:.3f}" for t in peak_times], [f"{h:.2f}" for h in peak_heights]
+            )
+
+            # If we have exactly 2 peaks, assign them to left/right based on biomechanics
+            if len(peaks) >= 2:
+                # Get the two highest peaks
+                sorted_indices = np.argsort(peak_heights)[-2:]
+                first_peak_idx, second_peak_idx = sorted(sorted_indices)
+                first_peak_time = peak_times[first_peak_idx]
+                second_peak_time = peak_times[second_peak_idx]
+
+                # Determine which stomp occurred first based on BIOMECHANICS times
+                if right_target < left_target:
+                    # Right stomp is first in biomechanics
+                    right_peak_time = first_peak_time
+                    left_peak_time = second_peak_time
+                else:
+                    # Left stomp is first in biomechanics
+                    left_peak_time = first_peak_time
+                    right_peak_time = second_peak_time
+
+                selected_time = right_peak_time if recorded_knee == "right" else left_peak_time
+
+                logging.debug(
+                    "Audio stomp detection (with biomechanics guidance): "
+                    "left=%.3fs, right=%.3fs, selected=%s=%.3fs",
+                    left_peak_time, right_peak_time, recorded_knee, selected_time
+                )
             else:
-                # We're recording right knee, so return the second peak
-                selected_time = right_peak_time
+                # Only 1 peak found; use consensus detection
+                selected_time = consensus_time
+                logging.debug(
+                    "Only %d peak(s) found; using consensus stomp time: %.3fs",
+                    len(peaks), selected_time
+                )
+        else:
+            # No peaks found; use consensus detection
+            selected_time = consensus_time
+            logging.debug("No peaks found in RMS energy; using consensus stomp time: %.3fs", consensus_time)
 
-        return pd.Timedelta(seconds=selected_time).to_pytimedelta()
+        selected_td = pd.Timedelta(seconds=selected_time).to_pytimedelta()
+        return (selected_td, detection_results) if return_details else selected_td
 
-    # No biomechanics metadata: find earliest high-energy event
-    # Scan through entire recording with rolling window
-    rolling_window_samples = max(1, int(0.1 * sr))  # 100ms
-    rolling_energies = []
-    rolling_times = []
-
-    for i in range(len(audio_channels) - rolling_window_samples + 1):
-        frame = audio_channels[i:i+rolling_window_samples]
-        frame_energy = np.sum(np.abs(frame))
-        rolling_energies.append(frame_energy)
-        rolling_times.append(tt_seconds[i + rolling_window_samples // 2])
-
-    if rolling_energies:
-        peak_idx = np.argmax(rolling_energies)
-        peak_time = rolling_times[peak_idx]
-    else:
-        peak_time = float(tt_seconds[0])
-
-    return pd.Timedelta(seconds=peak_time).to_pytimedelta()
+    # No biomechanics metadata: return consensus stomp time
+    selected_td = pd.Timedelta(seconds=consensus_time).to_pytimedelta()
+    return (selected_td, detection_results) if return_details else selected_td
 
 
 def sync_audio_with_biomechanics(
@@ -354,7 +601,8 @@ def sync_audio_with_biomechanics(
 
     # Calculate time difference between biomechanics and audio stomp times
     time_difference = bio_stomp_time - audio_stomp_time
-    # Convert the audio_df 'tt' column to timedelta
+    # Convert the audio_df 'tt' column to timedelta (copy to avoid modifying original)
+    audio_df = audio_df.copy()
     audio_df['tt'] = pd.to_timedelta(audio_df['tt'], unit='s')
 
     # Warn if audio coverage is shorter than biomechanics time span
@@ -733,11 +981,12 @@ def plot_stomp_detection(
     bio_stomp_left: timedelta,
     bio_stomp_right: timedelta,
     output_path: Path,
+    detection_results: Optional[dict] = None,
 ) -> None:
-    """Create a visualization of stomp detection with two side-by-side plots.
+    """Create a visualization of stomp detection with overview and per-channel plots.
 
-    Left plot: Full biomechanics recording showing joint angle and audio channels with stomp markers.
-    Right plot: Synchronized (clipped) audio and biomechanics data for the specific pass/maneuver.
+    Top row: Full recording RMS analysis, synchronized window, RMS zoom, and timing summary.
+    Bottom row: Per-channel voltage and RMS energy (dual y-axes).
 
     Saved to the same directory as synchronized data.
 
@@ -749,6 +998,7 @@ def plot_stomp_detection(
         bio_stomp_left: Biomechanics left stomp time
         bio_stomp_right: Biomechanics right stomp time
         output_path: Path where to save the figure (e.g., same dir as synced pickle)
+        detection_results: Dict with detection method times and metrics (rms_time, onset_time, freq_time, etc.)
     """
     if not MATPLOTLIB_AVAILABLE:
         logging.debug("Matplotlib not available; skipping stomp visualization")
@@ -757,11 +1007,29 @@ def plot_stomp_detection(
     try:
         # Convert times to seconds
         audio_stomp_s = float(audio_stomp_time.total_seconds())
+
+        # Extract detection method times if available
+        rms_time_s = detection_results.get('rms_time', audio_stomp_s) if detection_results else audio_stomp_s
+        onset_time_s = detection_results.get('onset_time', audio_stomp_s) if detection_results else audio_stomp_s
+        freq_time_s = detection_results.get('freq_time', audio_stomp_s) if detection_results else audio_stomp_s
         bio_left_s = float(bio_stomp_left.total_seconds())
         bio_right_s = float(bio_stomp_right.total_seconds())
+        
+        # Debug logging for visualization timing
+        if detection_results:
+            consensus_time_s = detection_results.get('consensus_time', audio_stomp_s)
+            logging.debug(f"Visualization timing: audio_stomp={audio_stomp_s:.3f}s, consensus={consensus_time_s:.3f}s, rms={rms_time_s:.3f}s, onset={onset_time_s:.3f}s, freq={freq_time_s:.3f}s")
 
-        # Create figure with 2 side-by-side subplots
-        fig, (ax_left, ax_right) = plt.subplots(1, 2, figsize=(20, 6))
+        # Create figure with 2x4 subplots (top row: overview, bottom row: per-channel)
+        fig, axes = plt.subplots(2, 4, figsize=(28, 10))
+        ax_left = axes[0, 0]
+        ax_right = axes[0, 1]
+        ax_zoom = axes[0, 2]
+        ax_summary = axes[0, 3]
+        ax_ch1 = axes[1, 0]
+        ax_ch2 = axes[1, 1]
+        ax_ch3 = axes[1, 2]
+        ax_ch4 = axes[1, 3]
 
         # ===== LEFT PLOT: Full biomechanics + audio with stomp markers =====
         # Extract full audio channels - prefer filtered channels if available
@@ -792,19 +1060,51 @@ def plot_stomp_detection(
         bio_time_trunc = bio_time[bio_mask]
         bio_df_trunc = bio_df[bio_mask]
 
-        # Downsample for plotting
+        # Compute RMS energy time series (same as stomp detection algorithm)
+        # This shows what the algorithm actually analyzes to find the stomp
+        audio_channels_np = audio_channels_trunc.values
+
+        # Use same parameters as stomp detection for consistency
+        sr = 52000  # Typical sampling rate
+        downsample_factor = max(1, int(sr / 4000))
+        if downsample_factor > 1:
+            audio_downsampled = audio_channels_np[::downsample_factor]
+            tt_downsampled = tt_audio_trunc[::downsample_factor]
+            effective_sr = sr / downsample_factor
+        else:
+            audio_downsampled = audio_channels_np
+            tt_downsampled = tt_audio_trunc
+            effective_sr = sr
+
+        # Compute RMS in 50ms sliding windows (same as detection algorithm)
+        window_samples = max(2, int(0.05 * effective_sr))
+        stride = max(1, window_samples // 4)
+        n_windows = max(1, (len(audio_downsampled) - window_samples) // stride + 1)
+
+        rms_energies = np.zeros(n_windows)
+        rms_times = np.zeros(n_windows)
+
+        for i in range(n_windows):
+            start_idx = i * stride
+            end_idx = start_idx + window_samples
+            window = audio_downsampled[start_idx:end_idx]
+            rms_energies[i] = np.sqrt(np.mean(window**2))
+            mid_idx = start_idx + window_samples // 2
+            if mid_idx < len(tt_downsampled):
+                rms_times[i] = tt_downsampled[mid_idx]
+
+        # Downsample RMS for plotting if needed
         max_plot_points = 10000
-        audio_downsample = max(1, len(tt_audio_trunc) // max_plot_points)
-        tt_audio_plot = tt_audio_trunc[::audio_downsample]
+        rms_downsample = max(1, len(rms_energies) // max_plot_points)
+        rms_times_plot = rms_times[::rms_downsample]
+        rms_energies_plot = rms_energies[::rms_downsample]
 
-        # Plot audio on left (secondary axis)
+        # Plot RMS energy (detection metric) on left (secondary axis)
         ax_left_audio = ax_left.twinx()
-        for i, ch in enumerate(channel_names):
-            if ch in audio_channels_trunc.columns:
-                ch_data = audio_channels_trunc[ch].values[::audio_downsample]
-                ax_left_audio.plot(tt_audio_plot, ch_data, linewidth=0.5, alpha=0.4, label=f"Audio {ch}")
+        ax_left_audio.plot(rms_times_plot, rms_energies_plot, 'b-', linewidth=1.5, alpha=0.8, label="RMS Energy (Detection Metric)")
+        ax_left_audio.fill_between(rms_times_plot, 0, rms_energies_plot, alpha=0.2, color='blue')
 
-        ax_left_audio.set_ylabel("Audio Amplitude", fontsize=11, color="blue")
+        ax_left_audio.set_ylabel("RMS Energy\n(Stomp Detection Metric)", fontsize=11, color="blue")
         ax_left_audio.tick_params(axis="y", labelcolor="blue")
 
         # Find and plot knee angle from truncated bio_df
@@ -838,22 +1138,37 @@ def plot_stomp_detection(
             ax_left.set_ylabel("Knee Angle (degrees)", fontsize=11, color="black")
             ax_left.tick_params(axis="y", labelcolor="black")
 
-        # Add stomp markers
+        # Add stomp markers with clear labels
+        # Draw the selected stomp time (after biomechanics refinement) as red dashed line
         ax_left.axvline(
-            audio_stomp_s, color="red", linestyle="--", linewidth=2,
-            label=f"Audio Stomp ({audio_stomp_s:.1f}s)"
+            audio_stomp_s, color="red", linestyle="--", linewidth=2.5,
+            label=f"Selected\n{audio_stomp_s:.2f}s", zorder=10
+        )
+        # Add detection method lines if available
+        if detection_results:
+            ax_left.axvline(
+                rms_time_s, color="darkred", linestyle="-", linewidth=1.5, alpha=0.6,
+                label=f"RMS\n{rms_time_s:.2f}s", zorder=9
+            )
+            ax_left.axvline(
+                onset_time_s, color="maroon", linestyle=":", linewidth=1.5, alpha=0.6,
+                label=f"Onset\n{onset_time_s:.2f}s", zorder=9
+            )
+            ax_left.axvline(
+                freq_time_s, color="brown", linestyle="-.", linewidth=1.5, alpha=0.6,
+                label=f"Freq\n{freq_time_s:.2f}s", zorder=9
+            )
+        ax_left.axvline(
+            bio_left_s, color="green", linestyle=":", linewidth=2.5,
+            label=f"Bio Left\n{bio_left_s:.2f}s", zorder=10
         )
         ax_left.axvline(
-            bio_left_s, color="green", linestyle=":", linewidth=2,
-            label=f"Bio Left ({bio_left_s:.1f}s)"
-        )
-        ax_left.axvline(
-            bio_right_s, color="orange", linestyle=":", linewidth=2,
-            label=f"Bio Right ({bio_right_s:.1f}s)"
+            bio_right_s, color="orange", linestyle=":", linewidth=2.5,
+            label=f"Bio Right\n{bio_right_s:.2f}s", zorder=10
         )
 
         ax_left.set_xlabel("Time (seconds)", fontsize=11)
-        ax_left.set_title(f"Stomp Detection: Start to {truncate_end:.1f}s", fontsize=12, fontweight="bold")
+        ax_left.set_title("Stomp Detection: RMS Energy Analysis", fontsize=12, fontweight="bold")
         ax_left.set_xlim(tt_audio.min(), truncate_end)
         ax_left.grid(True, alpha=0.3)
 
@@ -861,6 +1176,32 @@ def plot_stomp_detection(
         lines1, labels1 = ax_left.get_legend_handles_labels()
         lines2, labels2 = ax_left_audio.get_legend_handles_labels()
         ax_left.legend(lines1 + lines2, labels1 + labels2, fontsize=8, loc="upper left")
+
+        # ===== TOP RIGHT PLOT: Zoomed RMS around detected stomp =====
+        # Zoom around selected stomp time
+        zoom_window = 1.5  # seconds around detected stomp
+        zoom_mask = (rms_times >= audio_stomp_s - zoom_window) & (rms_times <= audio_stomp_s + zoom_window)
+        if np.any(zoom_mask):
+            ax_zoom.plot(rms_times[zoom_mask], rms_energies[zoom_mask], 'b-', linewidth=1.5, alpha=0.9, label="RMS Energy (zoom)")
+            ax_zoom.fill_between(rms_times[zoom_mask], 0, rms_energies[zoom_mask], alpha=0.2, color='blue')
+        # Draw selected stomp time as red dashed line
+        ax_zoom.axvline(audio_stomp_s, color="red", linestyle="--", linewidth=2,
+                       label=f"Selected ({audio_stomp_s:.2f}s)")
+        # Add detection method lines if available
+        if detection_results:
+            ax_zoom.axvline(rms_time_s, color="darkred", linestyle="-", linewidth=1.5, alpha=0.6,
+                           label=f"RMS ({rms_time_s:.2f}s)")
+            ax_zoom.axvline(onset_time_s, color="maroon", linestyle=":", linewidth=1.5, alpha=0.6,
+                           label=f"Onset ({onset_time_s:.2f}s)")
+            ax_zoom.axvline(freq_time_s, color="brown", linestyle="-.", linewidth=1.5, alpha=0.6,
+                           label=f"Freq ({freq_time_s:.2f}s)")
+        ax_zoom.axvline(bio_left_s, color="green", linestyle=":", linewidth=2, label=f"Bio Left ({bio_left_s:.2f}s)")
+        ax_zoom.axvline(bio_right_s, color="orange", linestyle=":", linewidth=2, label=f"Bio Right ({bio_right_s:.2f}s)")
+        ax_zoom.set_title("RMS Zoom (±1.5s)", fontsize=12, fontweight="bold")
+        ax_zoom.set_xlabel("Time (seconds)")
+        ax_zoom.set_ylabel("RMS Energy")
+        ax_zoom.grid(True, alpha=0.3)
+        ax_zoom.legend(fontsize=8, loc="upper left")
 
         # ===== RIGHT PLOT: Synchronized/clipped data =====
         # Use filtered channels if available, otherwise use raw
@@ -873,19 +1214,56 @@ def plot_stomp_detection(
             channel_names = raw_channels
 
         synced_audio_channels = synced_df.loc[:, synced_df.columns.isin(channel_names)]
+
+        # Compute RMS energy time series (same as detection algorithm)
+        synced_audio_np = synced_audio_channels.values
+
+        # Use same RMS window parameters
+        sr = 52000
+        downsample_factor = max(1, int(sr / 4000))
+        if downsample_factor > 1 and len(synced_audio_np) > downsample_factor:
+            synced_downsampled = synced_audio_np[::downsample_factor]
+            effective_sr = sr / downsample_factor
+        else:
+            synced_downsampled = synced_audio_np
+            effective_sr = sr
+
         tt_synced = _tt_series_to_seconds(synced_df["tt"])
-        synced_downsample = max(1, len(tt_synced) // max_plot_points)
-        tt_synced_plot = tt_synced[::synced_downsample]
+        if downsample_factor > 1 and len(tt_synced) > downsample_factor:
+            tt_synced_ds = tt_synced[::downsample_factor]
+        else:
+            tt_synced_ds = tt_synced
 
-        # Plot synced audio on right (secondary axis)
+        # Compute RMS in 50ms windows
+        window_samples = max(2, int(0.05 * effective_sr))
+        stride = max(1, window_samples // 4)
+        n_windows = max(1, (len(synced_downsampled) - window_samples) // stride + 1)
+
+        synced_rms = np.zeros(n_windows)
+        synced_rms_times = np.zeros(n_windows)
+
+        for i in range(n_windows):
+            start_idx = i * stride
+            end_idx = min(start_idx + window_samples, len(synced_downsampled))
+            if end_idx > start_idx:
+                window = synced_downsampled[start_idx:end_idx]
+                synced_rms[i] = np.sqrt(np.mean(window**2))
+                mid_idx = start_idx + (end_idx - start_idx) // 2
+                if mid_idx < len(tt_synced_ds):
+                    synced_rms_times[i] = tt_synced_ds[mid_idx]
+
+        # Downsample for plotting
+        max_plot_points = 10000
+        synced_downsample = max(1, len(synced_rms) // max_plot_points)
+        synced_rms_times_plot = synced_rms_times[::synced_downsample]
+        synced_rms_plot = synced_rms[::synced_downsample]
+
+        # Plot RMS energy on right (secondary axis)
         ax_right_audio = ax_right.twinx()
-        colors = ["b", "g", "r", "m"]
-        for i, ch in enumerate(channel_names):
-            if ch in synced_audio_channels.columns:
-                ch_data = synced_audio_channels[ch].values[::synced_downsample]
-                ax_right_audio.plot(tt_synced_plot, ch_data, colors[i], linewidth=0.8, alpha=0.6, label=f"{ch}")
+        ax_right_audio.plot(synced_rms_times_plot, synced_rms_plot, 'b-', linewidth=1.5, alpha=0.8, label="RMS Energy")
+        ax_right_audio.fill_between(synced_rms_times_plot, 0, synced_rms_plot, alpha=0.2, color='blue')
 
-        ax_right_audio.set_ylabel("Audio Amplitude", fontsize=11, color="blue")
+        ax_right_audio.set_ylabel("RMS Energy\n(Stomp Detection Metric)", fontsize=11, color="blue")
         ax_right_audio.tick_params(axis="y", labelcolor="blue")
 
         # Find and plot knee angle from synced data
@@ -910,8 +1288,11 @@ def plot_stomp_detection(
                     break
 
         if synced_knee_col:
-            knee_synced_plot = synced_df[synced_knee_col].values[::synced_downsample]
-            ax_right.plot(tt_synced_plot, knee_synced_plot, "k-", linewidth=2, alpha=0.8, label="Knee Angle")
+            # Use the full time array for knee angle since it's already downsampled in bio data
+            knee_downsample = max(1, len(tt_synced) // max_plot_points)
+            tt_knee_plot = tt_synced[::knee_downsample]
+            knee_synced_plot = synced_df[synced_knee_col].values[::knee_downsample]
+            ax_right.plot(tt_knee_plot, knee_synced_plot, "k-", linewidth=2, alpha=0.8, label="Knee Angle")
             ax_right.set_ylabel("Knee Angle (degrees)", fontsize=11, color="black")
             ax_right.tick_params(axis="y", labelcolor="black")
 
@@ -924,8 +1305,130 @@ def plot_stomp_detection(
         lines4, labels4 = ax_right_audio.get_legend_handles_labels()
         ax_right.legend(lines3 + lines4, labels3 + labels4, fontsize=8, loc="upper left")
 
+        # ===== TOP RIGHT 2: Summary info =====
+        summary_text = (
+            f"Stomp Detection Summary\n\n"
+        )
+        if detection_results:
+            consensus_time = detection_results.get('consensus_time', audio_stomp_s)
+            summary_text += (
+                f"Consensus: {consensus_time:.3f}s\n"
+                f"  RMS: {rms_time_s:.3f}s\n"
+                f"  Onset: {onset_time_s:.3f}s\n"
+                f"  Freq: {freq_time_s:.3f}s\n\n"
+            )
+        else:
+            summary_text += f"Selected Stomp: {audio_stomp_s:.3f}s\n\n"
+        summary_text += (
+            f"Bio Left: {bio_left_s:.3f}s\n"
+            f"Bio Right: {bio_right_s:.3f}s\n\n"
+        )
+        if detection_results:
+            consensus_time = detection_results.get('consensus_time', audio_stomp_s)
+            summary_text += (
+                f"Δ (Consensus - Left): {consensus_time - bio_left_s:.3f}s\n"
+                f"Δ (Consensus - Right): {consensus_time - bio_right_s:.3f}s"
+            )
+        else:
+            summary_text += (
+                f"Δ (Stomp - Left): {audio_stomp_s - bio_left_s:.3f}s\n"
+                f"Δ (Stomp - Right): {audio_stomp_s - bio_right_s:.3f}s"
+            )
+        ax_summary.text(0.5, 0.5,
+                       summary_text,
+                       ha="center", va="center", fontsize=10,
+                       bbox=dict(boxstyle="round,pad=1", facecolor="lightgray", alpha=0.8),
+                       family='monospace')
+        ax_summary.set_title("Timing Summary", fontsize=12, fontweight="bold")
+        ax_summary.axis("off")
+
+        # Define zoom window around detected stomp for bottom plots
+        zoom_window = 1.5
+        zoom_start = max(tt_synced.min(), audio_stomp_s - zoom_window)
+        zoom_end = audio_stomp_s + zoom_window
+
+        # ===== BOTTOM ROW: Per-channel voltage and RMS =====
+        channel_colors = ["#1f77b4", "#2ca02c", "#d62728", "#9467bd"]
+        channel_axes = [ax_ch1, ax_ch2, ax_ch3, ax_ch4]
+
+        # Prepare data
+        voltage_downsample = max(1, len(tt_audio_trunc) // max_plot_points)
+        tt_voltage_plot = tt_audio_trunc[::voltage_downsample]
+        volt_zoom_mask = (tt_voltage_plot >= zoom_start) & (tt_voltage_plot <= zoom_end)
+
+        # Compute per-channel RMS using downsampled full audio
+        per_ch_n_windows = max(1, (len(audio_downsampled) - window_samples) // stride + 1)
+        rms_times_plot_full = rms_times
+        rms_times_plot = rms_times_plot_full[::rms_downsample]
+        rms_zoom_mask = (rms_times_plot >= zoom_start) & (rms_times_plot <= zoom_end)
+
+        for idx, (ch, ax_ch) in enumerate(zip(channel_names, channel_axes)):
+            if ch not in audio_channels_trunc.columns:
+                continue
+
+            # Plot voltage on primary axis
+            ch_voltage = audio_channels_trunc[ch].values[::voltage_downsample]
+            if np.any(volt_zoom_mask):
+                ax_ch.plot(tt_voltage_plot[volt_zoom_mask], ch_voltage[volt_zoom_mask],
+                          color=channel_colors[idx], linewidth=0.8, alpha=0.7, label="Voltage")
+            else:
+                ax_ch.plot(tt_voltage_plot, ch_voltage,
+                          color=channel_colors[idx], linewidth=0.8, alpha=0.7, label="Voltage")
+
+            # Compute and plot RMS on secondary axis
+            if idx < audio_downsampled.shape[1]:
+                ax_ch_rms = ax_ch.twinx()
+                rms_ch = np.zeros(per_ch_n_windows)
+                for i in range(per_ch_n_windows):
+                    start_idx = i * stride
+                    end_idx = min(start_idx + window_samples, len(audio_downsampled))
+                    if end_idx > start_idx:
+                        window = audio_downsampled[start_idx:end_idx, idx]
+                        rms_ch[i] = np.sqrt(np.mean(window**2))
+
+                rms_ch_plot = rms_ch[::rms_downsample]
+                if np.any(rms_zoom_mask):
+                    ax_ch_rms.plot(rms_times_plot[rms_zoom_mask], rms_ch_plot[rms_zoom_mask],
+                                  color=channel_colors[idx], linewidth=1.2, alpha=0.5,
+                                  linestyle='--', label="RMS")
+                else:
+                    ax_ch_rms.plot(rms_times_plot, rms_ch_plot,
+                                  color=channel_colors[idx], linewidth=1.2, alpha=0.5,
+                                  linestyle='--', label="RMS")
+
+                ax_ch_rms.set_ylabel("RMS Energy", fontsize=9, color=channel_colors[idx], alpha=0.7)
+                ax_ch_rms.tick_params(axis="y", labelcolor=channel_colors[idx], labelsize=8)
+
+            # Draw selected stomp time as red dashed line
+            ax_ch.axvline(audio_stomp_s, color="red", linestyle="--", linewidth=1.0, alpha=0.6,
+                         label=f"Selected ({audio_stomp_s:.2f}s)")
+            # Add detection method lines if available
+            if detection_results:
+                ax_ch.axvline(rms_time_s, color="darkred", linestyle="-", linewidth=0.8, alpha=0.5,
+                             label=f"RMS ({rms_time_s:.2f}s)")
+                ax_ch.axvline(onset_time_s, color="maroon", linestyle=":", linewidth=0.7, alpha=0.5,
+                             label=f"Onset ({onset_time_s:.2f}s)")
+                ax_ch.axvline(freq_time_s, color="brown", linestyle="-.", linewidth=0.7, alpha=0.5,
+                             label=f"Freq ({freq_time_s:.2f}s)")
+            ax_ch.axvline(bio_left_s, color="green", linestyle=":", linewidth=0.8, alpha=0.6,
+                         label=f"Left ({bio_left_s:.2f}s)")
+            ax_ch.axvline(bio_right_s, color="orange", linestyle=":", linewidth=0.8, alpha=0.6,
+                         label=f"Right ({bio_right_s:.2f}s)")
+
+            # Formatting
+            ax_ch.set_title(f"{ch.upper()}", fontsize=11, fontweight="bold")
+            ax_ch.set_xlabel("Time (seconds)", fontsize=9)
+            ax_ch.set_ylabel("Amplitude", fontsize=9, color=channel_colors[idx])
+            ax_ch.tick_params(axis="y", labelcolor=channel_colors[idx], labelsize=8)
+            ax_ch.tick_params(axis="x", labelsize=8)
+            ax_ch.grid(True, alpha=0.3)
+            ax_ch.legend(fontsize=6, loc="upper right", ncol=1)
+
+        fig.tight_layout()
         # Save figure
         fig_path = output_path.with_suffix(".png")
+        # Ensure parent directory exists
+        fig_path.parent.mkdir(parents=True, exist_ok=True)
         fig.savefig(fig_path, dpi=100, bbox_inches="tight")
         plt.close(fig)
 
