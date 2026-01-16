@@ -445,8 +445,9 @@ def get_audio_stomp_time(
         right_target = float(right_stomp_time.total_seconds())
         left_target = float(left_stomp_time.total_seconds())
 
-        # Find the two peaks closest to the biomechanics stomp times
-        # by looking for local maxima in RMS energy
+        # Find a pair of audio peaks separated by the expected time delta between stomps
+        # Uses biomechanics stomp timing to identify the correct peak pair when multiple
+        # stomps or artifacts are present in the audio signal
 
         # Search in first 20 seconds
         search_mask = tt_seconds <= 20.0
@@ -525,7 +526,7 @@ def get_audio_stomp_time(
                             score = peak_rms_energies[i] + peak_rms_energies[j]
                             gap_penalty = abs(dt - expected_delta)
                             candidates.append((score, -gap_penalty, i, j))
-                
+
                 if candidates:
                     # Pick best by energy score, then tightest gap to expected delta
                     candidates.sort(reverse=True)
@@ -536,7 +537,7 @@ def get_audio_stomp_time(
                         tol, i_best, j_best
                     )
                     break
-            
+
             if selected_pair is not None:
                 i_best, j_best = selected_pair
                 t1, t2 = peak_times[i_best], peak_times[j_best]
