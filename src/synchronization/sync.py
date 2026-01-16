@@ -502,44 +502,79 @@ def get_audio_stomp_time(
 
         if len(peaks) > 0:
             peak_times = rolling_times[peaks]
-            peak_heights = peak_props["peak_heights"]
+            peak_rms_energies = peak_props["peak_heights"]  # These are RMS energy values at peak locations
 
             logging.debug(
-                "Detected %d peaks in RMS energy: times=%s, heights=%s",
-                len(peaks), [f"{t:.3f}" for t in peak_times], [f"{h:.2f}" for h in peak_heights]
+                "Detected %d peaks in RMS energy: times=%s, energies=%s",
+                len(peaks), [f"{t:.3f}" for t in peak_times], [f"{e:.2f}" for e in peak_rms_energies]
             )
 
-            # If we have exactly 2 peaks, assign them to left/right based on biomechanics
-            if len(peaks) >= 2:
-                # Get the two highest peaks
-                sorted_indices = np.argsort(peak_heights)[-2:]
-                first_peak_idx, second_peak_idx = sorted(sorted_indices)
-                first_peak_time = peak_times[first_peak_idx]
-                second_peak_time = peak_times[second_peak_idx]
+            # Compute expected time separation between stomps from biomechanics
+            expected_delta = abs(left_target - right_target)
+            delta_tolerances = [0.20, 0.30]  # seconds; try tighter tolerance first, then relaxed
 
-                # Determine which stomp occurred first based on BIOMECHANICS times
-                if right_target < left_target:
-                    # Right stomp is first in biomechanics
-                    right_peak_time = first_peak_time
-                    left_peak_time = second_peak_time
+            # Search for peak pairs separated by expected_delta ± tolerance
+            selected_pair = None
+            for tol in delta_tolerances:
+                candidates = []
+                for i in range(len(peak_times)):
+                    for j in range(i + 1, len(peak_times)):
+                        dt = abs(peak_times[j] - peak_times[i])
+                        if abs(dt - expected_delta) <= tol:
+                            # Score by summed RMS energy (maximize total stomp energy)
+                            score = peak_rms_energies[i] + peak_rms_energies[j]
+                            gap_penalty = abs(dt - expected_delta)
+                            candidates.append((score, -gap_penalty, i, j))
+                
+                if candidates:
+                    # Pick best by energy score, then tightest gap to expected delta
+                    candidates.sort(reverse=True)
+                    _, _, i_best, j_best = candidates[0]
+                    selected_pair = (i_best, j_best)
+                    logging.debug(
+                        "Found peak pair within Δt tolerance %.2fs: peaks at indices %d, %d",
+                        tol, i_best, j_best
+                    )
+                    break
+            
+            if selected_pair is not None:
+                i_best, j_best = selected_pair
+                t1, t2 = peak_times[i_best], peak_times[j_best]
+                e1, e2 = peak_rms_energies[i_best], peak_rms_energies[j_best]
+
+                # Order by time (earlier peak first)
+                if t1 < t2:
+                    earlier_time, earlier_energy = t1, e1
+                    later_time, later_energy = t2, e2
                 else:
-                    # Left stomp is first in biomechanics
-                    left_peak_time = first_peak_time
-                    right_peak_time = second_peak_time
+                    earlier_time, earlier_energy = t2, e2
+                    later_time, later_energy = t1, e1
+
+                # Assign to left/right based on biomechanics order
+                if right_target < left_target:
+                    right_peak_time, right_peak_energy = earlier_time, earlier_energy
+                    left_peak_time, left_peak_energy = later_time, later_energy
+                else:
+                    left_peak_time, left_peak_energy = earlier_time, earlier_energy
+                    right_peak_time, right_peak_energy = later_time, later_energy
 
                 selected_time = right_peak_time if recorded_knee == "right" else left_peak_time
 
                 logging.debug(
-                    "Audio stomp detection (with biomechanics guidance): "
-                    "left=%.3fs, right=%.3fs, selected=%s=%.3fs",
-                    left_peak_time, right_peak_time, recorded_knee, selected_time
+                    "Biomech-guided peak pair found: Δt_expected=%.3fs, tolerance=[%.2f,%.2f]s, "
+                    "right=%.3fs (RMS=%.2f), left=%.3fs (RMS=%.2f), selected=%s=%.3fs",
+                    expected_delta, delta_tolerances[0], delta_tolerances[-1],
+                    right_peak_time, right_peak_energy,
+                    left_peak_time, left_peak_energy,
+                    recorded_knee, selected_time
                 )
             else:
-                # Only 1 peak found; use consensus detection
+                # Fallback to consensus if no valid pair within tolerance
                 selected_time = consensus_time
                 logging.debug(
-                    "Only %d peak(s) found; using consensus stomp time: %.3fs",
-                    len(peaks), selected_time
+                    "No peak pair within Δt tolerance (expected %.3fs ± [%.2f,%.2f]s); "
+                    "falling back to consensus=%.3fs",
+                    expected_delta, delta_tolerances[0], delta_tolerances[-1], consensus_time
                 )
         else:
             # No peaks found; use consensus detection
