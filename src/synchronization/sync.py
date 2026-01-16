@@ -1014,7 +1014,7 @@ def plot_stomp_detection(
         freq_time_s = detection_results.get('freq_time', audio_stomp_s) if detection_results else audio_stomp_s
         bio_left_s = float(bio_stomp_left.total_seconds())
         bio_right_s = float(bio_stomp_right.total_seconds())
-        
+
         # Debug logging for visualization timing
         if detection_results:
             consensus_time_s = detection_results.get('consensus_time', audio_stomp_s)
