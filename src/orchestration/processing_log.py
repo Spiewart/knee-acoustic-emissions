@@ -200,13 +200,19 @@ class SynchronizationRecord:
 
     # Detection methods (optional)
     consensus_time: Optional[float] = None
+    consensus_methods: Optional[str] = None  # Methods used for consensus: "rms", "rms, onset", "rms, freq", etc.
     rms_time: Optional[float] = None
     onset_time: Optional[float] = None
     freq_time: Optional[float] = None
     rms_energy: Optional[float] = None
     onset_magnitude: Optional[float] = None
     freq_energy: Optional[float] = None
-    method_agreement_span: Optional[float] = None  # max(method_times) - min(method_times)
+    method_agreement_span: Optional[float] = None  # max(method_times) - min(method_times) for methods in consensus
+
+    # Biomechanics-guided detection metadata
+    audio_stomp_method: Optional[str] = None  # "consensus" or "biomechanics-guided"
+    selected_time: Optional[float] = None  # Selected peak time (seconds) when biomechanics-guided
+    contra_selected_time: Optional[float] = None  # Contralateral peak time (seconds) when biomechanics-guided
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for Excel export."""
@@ -232,6 +238,7 @@ class SynchronizationRecord:
             "Biomech QC Version": self.biomech_qc_version,
             # Detection method details
             "Consensus (s)": self.consensus_time,
+            "Consensus Methods": self.consensus_methods,
             "RMS Detect (s)": self.rms_time,
             "Onset Detect (s)": self.onset_time,
             "Freq Detect (s)": self.freq_time,
@@ -239,6 +246,10 @@ class SynchronizationRecord:
             "Onset Magnitude": self.onset_magnitude,
             "Freq Energy": self.freq_energy,
             "Method Agreement Span (s)": self.method_agreement_span,
+            # Biomechanics-guided detection metadata
+            "Detection Method": self.audio_stomp_method,
+            "Selected Time (s)": self.selected_time,
+            "Contra Selected Time (s)": self.contra_selected_time,
         }
 
 
@@ -565,6 +576,7 @@ class ManeuverProcessingLog:
                             biomech_qc_version=int(row["Biomech QC Version"]) if pd.notna(row.get("Biomech QC Version")) else get_biomech_qc_version(),
                             # Load detection method details if present (backward compatible with older logs)
                             consensus_time=row.get("Consensus (s)"),
+                            consensus_methods=row.get("Consensus Methods"),
                             rms_time=row.get("RMS Detect (s)"),
                             onset_time=row.get("Onset Detect (s)"),
                             freq_time=row.get("Freq Detect (s)"),
@@ -1199,6 +1211,11 @@ def create_sync_record_from_data(
     if detection_results:
         try:
             record.consensus_time = _to_seconds(detection_results.get("consensus_time"))
+            # Extract which methods contributed to consensus
+            consensus_methods_list = detection_results.get("consensus_methods", [])
+            if consensus_methods_list:
+                record.consensus_methods = ", ".join(consensus_methods_list)
+
             record.rms_time = _to_seconds(detection_results.get("rms_time"))
             record.onset_time = _to_seconds(detection_results.get("onset_time"))
             record.freq_time = _to_seconds(detection_results.get("freq_time"))
@@ -1215,13 +1232,25 @@ def create_sync_record_from_data(
                 float(detection_results.get("freq_energy"))
                 if detection_results.get("freq_energy") is not None else None
             )
-            # Method agreement span across available method times
-            method_times = [
-                t for t in [record.rms_time, record.onset_time, record.freq_time]
-                if t is not None
-            ]
-            if method_times:
-                record.method_agreement_span = float(max(method_times) - min(method_times))
+
+            # Method agreement span: only for methods that contributed to consensus
+            # Get times for methods that contributed
+            method_times_used = []
+            if consensus_methods_list:
+                if "rms" in consensus_methods_list and record.rms_time is not None:
+                    method_times_used.append(record.rms_time)
+                if "onset" in consensus_methods_list and record.onset_time is not None:
+                    method_times_used.append(record.onset_time)
+                if "freq" in consensus_methods_list and record.freq_time is not None:
+                    method_times_used.append(record.freq_time)
+
+            if method_times_used:
+                record.method_agreement_span = float(max(method_times_used) - min(method_times_used))
+
+            # Biomechanics-guided detection metadata
+            record.audio_stomp_method = detection_results.get("audio_stomp_method")
+            record.selected_time = _to_seconds(detection_results.get("selected_time"))
+            record.contra_selected_time = _to_seconds(detection_results.get("contra_selected_time"))
         except Exception as e:
             logger.debug(f"Failed to populate detection_results in sync record: {e}")
 

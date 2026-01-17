@@ -352,38 +352,103 @@ def get_audio_stomp_time(
     left_stomp_time: Optional[timedelta] = None,
     return_details: bool = False,
 ) -> Union[timedelta, tuple[timedelta, dict]]:
-    """Detect the audio stomp time using multi-method approach.
+    """Detect the audio stomp time using multi-method approach with optional biomechanics refinement.
 
-    Identifies stomp events in the first 20 seconds of recording using three
-    complementary methods:
-    1. Rolling RMS (root mean square) energy to find the loudest event
-    2. Impact/onset detection to find sharp energy transitions
-    3. Frequency domain analysis for typical stomp frequency content (100-1000 Hz)
+    **Overview**:
+    Identifies stomp events in the first 20 seconds of recording using three complementary
+    detection methods, then optionally refines the result using biomechanics data:
 
-    When biomechanics metadata is available, uses it to validate the detected
-    stomp times and determine which stomp (left/right) corresponds to the
-    recorded knee.
+    **Detection Methods** (Consensus Approach):
+    1. **RMS Energy**: Detects the highest energy event (loudest stomp)
+       - Window: 50ms sliding windows with 75% overlap
+       - Effective sampling: ~4kHz (downsampled)
+    2. **Impact Onset**: Detects sharp energy transitions (characteristic of foot impact)
+       - Uses derivative of smoothed energy envelope
+       - Captures the initial contact moment
+    3. **Frequency Domain**: Analyzes stomp-typical frequency content (100-1000 Hz)
+       - Uses STFT (short-time Fourier transform)
+       - Window: 500ms with 100ms hops
+
+    **Consensus Calculation** (clustering approach):
+    - Groups methods within ±0.5s tolerance of RMS time
+    - If >1 method in cluster: uses **mean** of clustered times
+    - If only 1 method (RMS): uses that value
+    - Avoids sampling bias from blind median; ensures only agreeing methods contribute
+
+    **Biomechanics-Guided Refinement** (when metadata available):
+    When `recorded_knee`, `right_stomp_time`, and `left_stomp_time` are provided:
+
+    1. **Expected Time Delta**: Computes time separation from biomechanics metadata
+       (e.g., right stomp at 2.5s, left at 4.0s → Δt = 1.5s)
+
+    2. **Peak Pair Search**: Finds two peaks in audio RMS energy separated by expected Δt
+       - Tries tighter tolerance first (±0.20s), then relaxed (±0.30s)
+       - Scores candidates by summed RMS energy and time delta gap
+
+    3. **Energy Ratio Validation** (Critical quality check):
+       - **Requirement**: Recorded knee peak must be ≥20% louder than contralateral
+       - **Rationale**: Contact microphone mounted on recorded knee should capture
+         that leg's stomp more loudly due to proximity
+       - **Fallback**: If ratio < 1.2, suggests:
+         * Microphone misplacement or malfunction
+         * Data collection error (wrong knee recorded)
+         * Incorrect peak pair assignment
+       - Falls back to consensus if validation fails
+
+    4. **Output**: Returns the peak time corresponding to the recorded knee's stomp
 
     Args:
-        audio_df: DataFrame with columns `tt`, `ch1`–`ch4`.
-        recorded_knee: `"left"` or `"right"` when using biomechanics data.
-        right_stomp_time: Biomechanics right stomp as `timedelta`.
-        left_stomp_time: Biomechanics left stomp as `timedelta`.
+        audio_df: DataFrame with columns `tt` (time in seconds), `ch1`–`ch4` (audio channels).
+                  Can also use filtered channels `f_ch1`–`f_ch4` if available.
+        recorded_knee: `"left"` or `"right"` specifying which knee the microphone recorded.
+                       Required to use biomechanics refinement.
+        right_stomp_time: Biomechanics-measured right foot stomp time (timedelta).
+                          Required for biomechanics refinement.
+        left_stomp_time: Biomechanics-measured left foot stomp time (timedelta).
+                         Required for biomechanics refinement.
+        return_details: If True, return tuple `(stomp_time, detection_results_dict)`.
+                       If False, return only `stomp_time` (backward compatible).
 
     Returns:
-        By default returns the selected stomp time as `timedelta` for backward compatibility.
-        If `return_details=True`, returns a tuple of `(selected_stomp_time, detection_results_dict)` where
-        detection_results_dict contains:
-        - 'consensus_time': Median of three methods (seconds)
-        - 'rms_time': RMS energy detection (seconds)
-        - 'rms_energy': RMS energy value
-        - 'onset_time': Impact onset detection (seconds)
-        - 'onset_magnitude': Onset magnitude value
-        - 'freq_time': Frequency domain detection (seconds)
-        - 'freq_energy': Frequency band energy value
+        By default: `timedelta` stomp time
+        If `return_details=True`: `tuple[timedelta, dict]` where dict contains:
+
+        **Standard Detection Method Results**:
+        - `consensus_time` (float, seconds): Mean of methods within ±0.5s of RMS, or RMS alone if isolated
+        - `consensus_methods` (list): Names of methods that contributed to consensus ('rms', 'onset', 'freq')
+        - `rms_time` (float, seconds): RMS energy peak time
+        - `rms_energy` (float): RMS energy magnitude at peak
+        - `onset_time` (float, seconds): Impact onset detection time
+        - `onset_magnitude` (float): Onset magnitude at peak
+        - `freq_time` (float, seconds): Frequency domain peak time
+        - `freq_energy` (float): Frequency band energy at peak
+
+        **Method Selection**:
+        - `audio_stomp_method` (str): Either `'consensus'` or `'biomechanics-guided'`
+
+        **Biomechanics-Guided Results** (populated only if method used):
+        - `selected_time` (float, seconds): Refined stomp time for recorded knee
+        - `contra_selected_time` (float, seconds): Contralateral peak time
 
     Raises:
-        ValueError: Invalid parameters or inability to estimate sampling rate.
+        ValueError: If parameters are invalid (e.g., `recorded_knee` specified without
+                   stomp times, or sampling rate cannot be estimated).
+
+    Example:
+        >>> # Consensus detection only
+        >>> stomp_time = get_audio_stomp_time(audio_df)
+
+        >>> # With biomechanics refinement and detailed results
+        >>> stomp_time, results = get_audio_stomp_time(
+        ...     audio_df,
+        ...     recorded_knee="right",
+        ...     right_stomp_time=timedelta(seconds=2.5),
+        ...     left_stomp_time=timedelta(seconds=4.0),
+        ...     return_details=True
+        ... )
+        >>> if results['audio_stomp_method'] == 'biomechanics-guided':
+        ...     print(f"Energy ratio: {results['energy_ratio']:.2f}")
+        ...     print(f"Contralateral peak at: {results['contra_selected_time']:.3f}s")
     """
     # Validate parameters for biomechanics-guided detection
     if recorded_knee is not None:
@@ -419,25 +484,57 @@ def get_audio_stomp_time(
         rms_time, rms_energy, onset_time, onset_mag, freq_time, freq_energy
     )
 
-    # Consensus approach: use median of the three detected times
-    # This provides robustness against outliers from any single method
-    detected_times = [rms_time, onset_time, freq_time]
-    consensus_time = float(np.median(detected_times))
+    # Consensus approach: cluster methods within 0.5s, use mean if >1, else single value
+    # This avoids sampling bias of blind median and ensures only methods that agree contribute
+    method_times = {
+        'rms': rms_time,
+        'onset': onset_time,
+        'freq': freq_time,
+    }
+
+    # Find clusters of methods within 0.5s tolerance
+    tolerance = 0.5  # seconds
+    used_methods = set()
+
+    # Start with RMS (primary method), find all methods within tolerance
+    primary = method_times['rms']
+    cluster = [('rms', rms_time)]
+    used_methods.add('rms')
+
+    for name, time_val in [('onset', onset_time), ('freq', freq_time)]:
+        if abs(time_val - primary) <= tolerance:
+            cluster.append((name, time_val))
+            used_methods.add(name)
+
+    # Calculate consensus from cluster
+    if len(cluster) > 1:
+        # Multiple methods agree: use mean
+        consensus_time = float(np.mean([t for _, t in cluster]))
+        consensus_method_names = [name for name, _ in cluster]
+    else:
+        # Only RMS agrees with itself: use RMS time
+        consensus_time = rms_time
+        consensus_method_names = ['rms']
 
     logging.debug(
-        "Consensus stomp time: %.3fs (from RMS: %.3fs, Onset: %.3fs, Freq: %.3fs)",
-        consensus_time, rms_time, onset_time, freq_time
+        "Consensus stomp time: %.3fs (from methods: %s; RMS: %.3fs, Onset: %.3fs, Freq: %.3fs)",
+        consensus_time, ', '.join(consensus_method_names), rms_time, onset_time, freq_time
     )
 
     # Store detection results for visualization and logging
     detection_results = {
         'consensus_time': consensus_time,
+        'consensus_methods': consensus_method_names,  # Methods that contributed to consensus
         'rms_time': rms_time,
         'rms_energy': float(rms_energy),
         'onset_time': onset_time,
         'onset_magnitude': float(onset_mag),
         'freq_time': freq_time,
         'freq_energy': float(freq_energy),
+        'audio_stomp_method': 'consensus',  # Will be updated if biomechanics-guided succeeds
+        'selected_time': None,  # Populated when biomechanics-guided method used
+        'contra_selected_time': None,  # Contralateral peak time when biomechanics-guided
+        'energy_ratio': None,  # Populated when biomechanics-guided method used
     }
 
     # If we have biomechanics stomp metadata, use it to refine detection
@@ -445,8 +542,9 @@ def get_audio_stomp_time(
         right_target = float(right_stomp_time.total_seconds())
         left_target = float(left_stomp_time.total_seconds())
 
-        # Find the two peaks closest to the biomechanics stomp times
-        # by looking for local maxima in RMS energy
+        # Find a pair of audio peaks separated by the expected time delta between stomps
+        # Uses biomechanics stomp timing to identify the correct peak pair when multiple
+        # stomps or artifacts are present in the audio signal
 
         # Search in first 20 seconds
         search_mask = tt_seconds <= 20.0
@@ -502,44 +600,119 @@ def get_audio_stomp_time(
 
         if len(peaks) > 0:
             peak_times = rolling_times[peaks]
-            peak_heights = peak_props["peak_heights"]
+            peak_rms_energies = peak_props["peak_heights"]  # These are RMS energy values at peak locations
 
             logging.debug(
-                "Detected %d peaks in RMS energy: times=%s, heights=%s",
-                len(peaks), [f"{t:.3f}" for t in peak_times], [f"{h:.2f}" for h in peak_heights]
+                "Detected %d peaks in RMS energy: times=%s, energies=%s",
+                len(peaks), [f"{t:.3f}" for t in peak_times], [f"{e:.2f}" for e in peak_rms_energies]
             )
 
-            # If we have exactly 2 peaks, assign them to left/right based on biomechanics
-            if len(peaks) >= 2:
-                # Get the two highest peaks
-                sorted_indices = np.argsort(peak_heights)[-2:]
-                first_peak_idx, second_peak_idx = sorted(sorted_indices)
-                first_peak_time = peak_times[first_peak_idx]
-                second_peak_time = peak_times[second_peak_idx]
+            # Compute expected time separation between stomps from biomechanics
+            expected_delta = abs(left_target - right_target)
+            delta_tolerances = [0.20, 0.30]  # seconds; try tighter tolerance first, then relaxed
 
-                # Determine which stomp occurred first based on BIOMECHANICS times
-                if right_target < left_target:
-                    # Right stomp is first in biomechanics
-                    right_peak_time = first_peak_time
-                    left_peak_time = second_peak_time
+            # Search for peak pairs separated by expected_delta ± tolerance
+            selected_pair = None
+            for tol in delta_tolerances:
+                candidates = []
+                for i in range(len(peak_times)):
+                    for j in range(i + 1, len(peak_times)):
+                        dt = abs(peak_times[j] - peak_times[i])
+                        if abs(dt - expected_delta) <= tol:
+                            # Score by summed RMS energy (maximize total stomp energy)
+                            score = peak_rms_energies[i] + peak_rms_energies[j]
+                            gap_penalty = abs(dt - expected_delta)
+                            candidates.append((score, -gap_penalty, i, j))
+
+                if candidates:
+                    # Pick best by energy score, then tightest gap to expected delta
+                    candidates.sort(reverse=True)
+                    _, _, i_best, j_best = candidates[0]
+                    selected_pair = (i_best, j_best)
+                    logging.debug(
+                        "Found peak pair within Δt tolerance %.2fs: peaks at indices %d, %d",
+                        tol, i_best, j_best
+                    )
+                    break
+
+            if selected_pair is not None:
+                i_best, j_best = selected_pair
+                t1, t2 = peak_times[i_best], peak_times[j_best]
+                e1, e2 = peak_rms_energies[i_best], peak_rms_energies[j_best]
+
+                # Order by time (earlier peak first)
+                if t1 < t2:
+                    earlier_time, earlier_energy = t1, e1
+                    later_time, later_energy = t2, e2
                 else:
-                    # Left stomp is first in biomechanics
-                    left_peak_time = first_peak_time
-                    right_peak_time = second_peak_time
+                    earlier_time, earlier_energy = t2, e2
+                    later_time, later_energy = t1, e1
 
-                selected_time = right_peak_time if recorded_knee == "right" else left_peak_time
+                # Assign to left/right based on biomechanics order
+                if right_target < left_target:
+                    right_peak_time, right_peak_energy = earlier_time, earlier_energy
+                    left_peak_time, left_peak_energy = later_time, later_energy
+                else:
+                    left_peak_time, left_peak_energy = earlier_time, earlier_energy
+                    right_peak_time, right_peak_energy = later_time, later_energy
 
-                logging.debug(
-                    "Audio stomp detection (with biomechanics guidance): "
-                    "left=%.3fs, right=%.3fs, selected=%s=%.3fs",
-                    left_peak_time, right_peak_time, recorded_knee, selected_time
+                # VALIDATION: Ensure recorded knee peak is sufficiently louder than contralateral.
+                # This is a critical sanity check: if we're recording from the right knee,
+                # the right foot's stomp should produce a louder signal than the left foot's stomp
+                # (assuming proper microphone placement). A low energy ratio suggests either:
+                # - Microphone misplacement or malfunction
+                # - Data collection error (recording wrong side)
+                # - Incorrect peak pair assignment despite time/tolerance constraints
+                #
+                # Min ratio of 1.2 = recorded knee must be ≥20% louder than contralateral
+                recorded_knee_energy = right_peak_energy if recorded_knee == "right" else left_peak_energy
+                contra_knee_energy = left_peak_energy if recorded_knee == "right" else right_peak_energy
+                min_energy_ratio = 1.2  # 20% threshold for recorded knee superiority
+                energy_ratio = (
+                    recorded_knee_energy / contra_knee_energy
+                    if contra_knee_energy > 0
+                    else float('inf')
                 )
+
+                if energy_ratio >= min_energy_ratio:
+                    selected_time = right_peak_time if recorded_knee == "right" else left_peak_time
+                    contra_time = left_peak_time if recorded_knee == "right" else right_peak_time
+
+                    # Update detection_results with biomechanics-guided method info
+                    detection_results['audio_stomp_method'] = 'biomechanics-guided'
+                    detection_results['selected_time'] = selected_time
+                    detection_results['contra_selected_time'] = contra_time
+                    detection_results['energy_ratio'] = float(energy_ratio)
+
+                    logging.debug(
+                        "Biomech-guided peak pair found: Δt_expected=%.3fs, tolerance=[%.2f,%.2f]s, "
+                        "right=%.3fs (RMS=%.2f), left=%.3fs (RMS=%.2f), energy_ratio=%.2f, "
+                        "selected=%s=%.3fs, contra=%.3fs",
+                        expected_delta, delta_tolerances[0], delta_tolerances[-1],
+                        right_peak_time, right_peak_energy,
+                        left_peak_time, left_peak_energy,
+                        energy_ratio,
+                        recorded_knee, selected_time, contra_time
+                    )
+                else:
+                    # Peak pair fails energy validation: contralateral is too loud relative to recorded knee.
+                    # This suggests the peak assignment is likely incorrect. Fall back to consensus detection.
+                    selected_time = consensus_time
+                    logging.debug(
+                        "Peak pair energy validation failed: recorded %s knee energy (%.2f) not "
+                        "sufficiently louder than contralateral (%.2f). Energy ratio=%.2f (min "
+                        "required=%.2f). Expected recorded knee to be ≥%.0f%% louder. Falling back "
+                        "to consensus=%.3fs",
+                        recorded_knee, recorded_knee_energy, contra_knee_energy, energy_ratio,
+                        min_energy_ratio, (min_energy_ratio - 1.0) * 100, consensus_time
+                    )
             else:
-                # Only 1 peak found; use consensus detection
+                # Fallback to consensus if no valid pair within tolerance
                 selected_time = consensus_time
                 logging.debug(
-                    "Only %d peak(s) found; using consensus stomp time: %.3fs",
-                    len(peaks), selected_time
+                    "No peak pair within Δt tolerance (expected %.3fs ± [%.2f,%.2f]s); "
+                    "falling back to consensus=%.3fs",
+                    expected_delta, delta_tolerances[0], delta_tolerances[-1], consensus_time
                 )
         else:
             # No peaks found; use consensus detection
@@ -568,9 +741,9 @@ def sync_audio_with_biomechanics(
 ) -> "pd.DataFrame":
     """Synchronize audio with biomechanics using stomp times.
 
-        Clips biomechanics and audio to maneuver window ±0.5s before merging to
-        reduce file size. Then interpolates biomechanics to match audio
-        sampling rate.
+        Clips biomechanics and audio to maneuver window (start-0.5s, end+0.5s)
+        before merging to reduce file size. Then interpolates biomechanics
+        to match audio sampling rate.
 
     Args:
         audio_stomp_time: Timestamp of the foot stomp event in
@@ -1014,7 +1187,12 @@ def plot_stomp_detection(
         freq_time_s = detection_results.get('freq_time', audio_stomp_s) if detection_results else audio_stomp_s
         bio_left_s = float(bio_stomp_left.total_seconds())
         bio_right_s = float(bio_stomp_right.total_seconds())
-        
+
+        # Extract biomechanics-guided metadata
+        audio_stomp_method = detection_results.get('audio_stomp_method', 'consensus') if detection_results else 'consensus'
+        selected_time_s = detection_results.get('selected_time') if detection_results else None
+        contra_selected_time_s = detection_results.get('contra_selected_time') if detection_results else None
+
         # Debug logging for visualization timing
         if detection_results:
             consensus_time_s = detection_results.get('consensus_time', audio_stomp_s)
@@ -1044,9 +1222,15 @@ def plot_stomp_detection(
         audio_channels = audio_df.loc[:, audio_df.columns.isin(channel_names)]
         tt_audio = _tt_series_to_seconds(audio_df["tt"])
 
-        # Truncate to start of recording through a few seconds after both stomps
-        last_stomp_time = max(audio_stomp_s, bio_left_s, bio_right_s)
-        time_buffer = 2.0  # Show 2 seconds after last stomp
+        # Truncate to start of recording through a few seconds after all detection times
+        # Include all detection method times plus biomechanics-guided times if available
+        all_times = [audio_stomp_s, bio_left_s, bio_right_s, rms_time_s, onset_time_s, freq_time_s]
+        if selected_time_s is not None:
+            all_times.append(selected_time_s)
+        if contra_selected_time_s is not None:
+            all_times.append(contra_selected_time_s)
+        last_stomp_time = max(all_times)
+        time_buffer = 2.0  # Show 2 seconds after last detection time
         truncate_end = last_stomp_time + time_buffer
 
         # Mask for audio data within truncated range
@@ -1139,10 +1323,17 @@ def plot_stomp_detection(
             ax_left.tick_params(axis="y", labelcolor="black")
 
         # Add stomp markers with clear labels
-        # Draw the selected stomp time (after biomechanics refinement) as red dashed line
+        # Build label to show detection method (consensus or biomechanics-guided)
+        method_label = audio_stomp_method
+        if audio_stomp_method == "consensus" and detection_results and "consensus_methods" in detection_results:
+            methods_used = detection_results.get("consensus_methods", [])
+            if methods_used:
+                method_label = f"consensus ({', '.join(methods_used)})"
+
+        # Draw the selected stomp time as red dashed line
         ax_left.axvline(
             audio_stomp_s, color="red", linestyle="--", linewidth=2.5,
-            label=f"Selected\n{audio_stomp_s:.2f}s", zorder=10
+            label=f"Selected ({method_label})\n{audio_stomp_s:.2f}s", zorder=10
         )
         # Add detection method lines if available
         if detection_results:
@@ -1157,6 +1348,12 @@ def plot_stomp_detection(
             ax_left.axvline(
                 freq_time_s, color="brown", linestyle="-.", linewidth=1.5, alpha=0.6,
                 label=f"Freq\n{freq_time_s:.2f}s", zorder=9
+            )
+        # Add contralateral peak marker if biomechanics-guided
+        if contra_selected_time_s is not None:
+            ax_left.axvline(
+                contra_selected_time_s, color="purple", linestyle="-.", linewidth=2.0,
+                label=f"Contra Selected\n{contra_selected_time_s:.2f}s", zorder=10
             )
         ax_left.axvline(
             bio_left_s, color="green", linestyle=":", linewidth=2.5,
@@ -1186,7 +1383,7 @@ def plot_stomp_detection(
             ax_zoom.fill_between(rms_times[zoom_mask], 0, rms_energies[zoom_mask], alpha=0.2, color='blue')
         # Draw selected stomp time as red dashed line
         ax_zoom.axvline(audio_stomp_s, color="red", linestyle="--", linewidth=2,
-                       label=f"Selected ({audio_stomp_s:.2f}s)")
+                       label=f"Selected ({audio_stomp_method}) ({audio_stomp_s:.2f}s)")
         # Add detection method lines if available
         if detection_results:
             ax_zoom.axvline(rms_time_s, color="darkred", linestyle="-", linewidth=1.5, alpha=0.6,
@@ -1195,6 +1392,10 @@ def plot_stomp_detection(
                            label=f"Onset ({onset_time_s:.2f}s)")
             ax_zoom.axvline(freq_time_s, color="brown", linestyle="-.", linewidth=1.5, alpha=0.6,
                            label=f"Freq ({freq_time_s:.2f}s)")
+        # Add contralateral peak marker if biomechanics-guided
+        if contra_selected_time_s is not None:
+            ax_zoom.axvline(contra_selected_time_s, color="purple", linestyle="-.", linewidth=2,
+                           label=f"Contra ({contra_selected_time_s:.2f}s)")
         ax_zoom.axvline(bio_left_s, color="green", linestyle=":", linewidth=2, label=f"Bio Left ({bio_left_s:.2f}s)")
         ax_zoom.axvline(bio_right_s, color="orange", linestyle=":", linewidth=2, label=f"Bio Right ({bio_right_s:.2f}s)")
         ax_zoom.set_title("RMS Zoom (±1.5s)", fontsize=12, fontweight="bold")
@@ -1308,6 +1509,7 @@ def plot_stomp_detection(
         # ===== TOP RIGHT 2: Summary info =====
         summary_text = (
             f"Stomp Detection Summary\n\n"
+            f"Method: {audio_stomp_method}\n\n"
         )
         if detection_results:
             consensus_time = detection_results.get('consensus_time', audio_stomp_s)
@@ -1317,6 +1519,13 @@ def plot_stomp_detection(
                 f"  Onset: {onset_time_s:.3f}s\n"
                 f"  Freq: {freq_time_s:.3f}s\n\n"
             )
+            # Add biomechanics-guided times if available
+            if selected_time_s is not None:
+                summary_text += f"Selected Time: {selected_time_s:.3f}s\n"
+            if contra_selected_time_s is not None:
+                summary_text += f"Contra Time: {contra_selected_time_s:.3f}s\n"
+            if selected_time_s is not None or contra_selected_time_s is not None:
+                summary_text += "\n"
         else:
             summary_text += f"Selected Stomp: {audio_stomp_s:.3f}s\n\n"
         summary_text += (
@@ -1350,6 +1559,27 @@ def plot_stomp_detection(
         # ===== BOTTOM ROW: Per-channel voltage and RMS =====
         channel_colors = ["#1f77b4", "#2ca02c", "#d62728", "#9467bd"]
         channel_axes = [ax_ch1, ax_ch2, ax_ch3, ax_ch4]
+
+        # Find knee angle column for biomechanics overlay (used in per-channel plots)
+        synced_knee_col = None
+        preferred_synced = [
+            col
+            for col in synced_df.columns
+            if "knee angle z" in col.lower() and "velocity" not in col.lower()
+        ]
+        if preferred_synced:
+            synced_knee_col = preferred_synced[0]
+        else:
+            for col in synced_df.columns:
+                col_lower = col.lower()
+                if (
+                    "knee angle" in col_lower
+                    and "velocity" not in col_lower
+                    and "_x" not in col_lower
+                    and "_y" not in col_lower
+                ):
+                    synced_knee_col = col
+                    break
 
         # Prepare data
         voltage_downsample = max(1, len(tt_audio_trunc) // max_plot_points)
@@ -1402,6 +1632,10 @@ def plot_stomp_detection(
             # Draw selected stomp time as red dashed line
             ax_ch.axvline(audio_stomp_s, color="red", linestyle="--", linewidth=1.0, alpha=0.6,
                          label=f"Selected ({audio_stomp_s:.2f}s)")
+            # Add contralateral peak marker if biomechanics-guided
+            if contra_selected_time_s is not None:
+                ax_ch.axvline(contra_selected_time_s, color="purple", linestyle="-.", linewidth=1.0, alpha=0.6,
+                             label=f"Contra ({contra_selected_time_s:.2f}s)")
             # Add detection method lines if available
             if detection_results:
                 ax_ch.axvline(rms_time_s, color="darkred", linestyle="-", linewidth=0.8, alpha=0.5,
@@ -1414,6 +1648,22 @@ def plot_stomp_detection(
                          label=f"Left ({bio_left_s:.2f}s)")
             ax_ch.axvline(bio_right_s, color="orange", linestyle=":", linewidth=0.8, alpha=0.6,
                          label=f"Right ({bio_right_s:.2f}s)")
+
+            # Add biomechanics overlay (tertiary y-axis) if knee angle available
+            if synced_knee_col and synced_knee_col in synced_df.columns:
+                # Extract knee angle data in zoom window
+                zoom_mask_synced = (tt_synced >= zoom_start) & (tt_synced <= zoom_end)
+                if np.any(zoom_mask_synced):
+                    tt_knee_zoom = tt_synced[zoom_mask_synced]
+                    knee_zoom = synced_df[synced_knee_col].values[zoom_mask_synced]
+
+                    # Create tertiary y-axis for biomechanics
+                    ax_ch_bio = ax_ch.twinx()
+                    # Offset the spine to avoid overlap with RMS axis
+                    ax_ch_bio.spines['right'].set_position(('outward', 60))
+                    ax_ch_bio.plot(tt_knee_zoom, knee_zoom, 'k-', linewidth=1.0, alpha=0.3, label="Knee Angle")
+                    ax_ch_bio.set_ylabel("Knee Angle (°)", fontsize=8, color="black", alpha=0.5)
+                    ax_ch_bio.tick_params(axis="y", labelcolor="black", labelsize=7, alpha=0.5)
 
             # Formatting
             ax_ch.set_title(f"{ch.upper()}", fontsize=11, fontweight="bold")

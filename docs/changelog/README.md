@@ -177,3 +177,8 @@ This ensures all change documentation is:
 - Time-tracked for version history
 - Categorized by change type
 - Kept out of the root directory
+
+## 2026-01-17
+- `feature/20260117_energy_ratio_validation.md` – Enforce recorded knee louder than contralateral
+- `feature/20260117_energy_ratio_maintenance.md` – Maintenance guide for energy ratio validation
+- `feature/20260117_consensus_clustering.md` – Replace median with clustering-based consensus method
