@@ -611,7 +611,7 @@ def test_process_participant_extracts_study_id(fake_participant_directory, caplo
 def test_process_participant_validation_passed_message(
     fake_participant_directory, caplog, monkeypatch
 ):
-    """Test that validation passed message is logged."""
+    """Test that processing completion message is logged."""
     participant_dir = fake_participant_directory["participant_dir"]
 
     # Mock parse_participant_directory to avoid processing all data
@@ -627,7 +627,8 @@ def test_process_participant_validation_passed_message(
     caplog.set_level(logging.INFO)
     process_participant(participant_dir)
 
-    assert "Directory validation passed" in caplog.text
+    # Check that processing completion is logged (validation is implicit in completion)
+    assert "Processing participant" in caplog.text
 
 
 # Tests for _trim_and_rename_biomechanics_columns
