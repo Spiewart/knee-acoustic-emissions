@@ -1040,7 +1040,10 @@ def create_audio_record_from_data(
             validated = AudioProcessingMetadata(**data)
             return AudioProcessingRecord.from_metadata(validated)
         except Exception as validation_error:
-            logger.warning(f"Validation failed for audio record: {validation_error}")
+            logger.warning(
+                "Pydantic validation failed for audio record, using unvalidated data: %s",
+                validation_error
+            )
             # Fall back to creating record directly
             return AudioProcessingRecord(
                 audio_file_name=audio_file_name,
@@ -1092,8 +1095,9 @@ def create_audio_record_from_data(
                 if tt_s.size >= 2:
                     dt_med = float(np.median(np.diff(tt_s)))
                     sr = (1.0 / dt_med) if dt_med > 0 else None
-                    # Round to nearest 100 for stability
-                    data["sample_rate"] = float(int(round(sr / 100.0)) * 100) if sr else None
+                    # Round to nearest 100 Hz for stability (typical audio board sample rates: 46800, 46900, 47000)
+                    SAMPLE_RATE_ROUNDING = 100
+                    data["sample_rate"] = float(int(round(sr / SAMPLE_RATE_ROUNDING)) * SAMPLE_RATE_ROUNDING) if sr else None
             except Exception:
                 pass
 
@@ -1122,7 +1126,10 @@ def create_audio_record_from_data(
         validated = AudioProcessingMetadata(**data)
         return AudioProcessingRecord.from_metadata(validated)
     except Exception as validation_error:
-        logger.warning(f"Validation failed for audio record, using unvalidated data: {validation_error}")
+        logger.warning(
+            "Pydantic validation failed for audio record, using unvalidated data: %s",
+            validation_error
+        )
         # Fallback: create record directly without validation
         return AudioProcessingRecord(
             audio_file_name=audio_file_name,
