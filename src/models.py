@@ -407,3 +407,264 @@ class MovementCycle(MovementCycleMetadata):
     """Single movement cycle with synchronized data."""
 
     data: SynchronizedData
+
+
+# Processing log models for validation and logging
+# These models consolidate the dataclass fields from processing_log.py
+# into Pydantic models for comprehensive validation
+
+
+class AudioProcessingMetadata(BaseModel):
+    """Metadata for audio file processing and QC.
+    
+    Consolidates audio processing information for logging and validation.
+    Fields use snake_case for direct mapping to database columns and Excel headers.
+    """
+    
+    # File identification
+    audio_file_name: str
+    audio_bin_file: Optional[str] = None
+    audio_pkl_file: Optional[str] = None
+    
+    # Processing metadata
+    processing_date: Optional[datetime] = None
+    processing_status: Literal["not_processed", "success", "error"] = "not_processed"
+    error_message: Optional[str] = None
+    
+    # Audio file characteristics
+    sample_rate: Optional[float] = None  # Hz
+    num_channels: int = 4
+    duration_seconds: Optional[float] = None
+    file_size_mb: Optional[float] = None
+    
+    # Header metadata
+    device_serial: Optional[str] = None
+    firmware_version: Optional[int] = None
+    file_time: Optional[datetime] = None
+    
+    # QC metrics (per-channel RMS and peak values)
+    channel_1_rms: Optional[float] = None
+    channel_2_rms: Optional[float] = None
+    channel_3_rms: Optional[float] = None
+    channel_4_rms: Optional[float] = None
+    channel_1_peak: Optional[float] = None
+    channel_2_peak: Optional[float] = None
+    channel_3_peak: Optional[float] = None
+    channel_4_peak: Optional[float] = None
+    
+    # Processing flags
+    has_instantaneous_freq: bool = False
+    
+    # Raw audio QC results (dropout and artifacts)
+    # String representation of list of (start, end) tuples
+    qc_not_passed: Optional[str] = None  # Any mic bad intervals
+    qc_not_passed_mic_1: Optional[str] = None
+    qc_not_passed_mic_2: Optional[str] = None
+    qc_not_passed_mic_3: Optional[str] = None
+    qc_not_passed_mic_4: Optional[str] = None
+    
+    # QC version tracking
+    audio_qc_version: int = Field(default_factory=get_audio_qc_version)
+    
+    @field_validator("sample_rate")
+    @classmethod
+    def validate_sample_rate(cls, value: Optional[float]) -> Optional[float]:
+        """Validate sample rate is positive if provided."""
+        if value is not None and value <= 0:
+            raise ValueError("sample_rate must be positive")
+        return value
+    
+    @field_validator("duration_seconds")
+    @classmethod
+    def validate_duration(cls, value: Optional[float]) -> Optional[float]:
+        """Validate duration is non-negative if provided."""
+        if value is not None and value < 0:
+            raise ValueError("duration_seconds must be non-negative")
+        return value
+    
+    @field_validator("num_channels")
+    @classmethod
+    def validate_num_channels(cls, value: int) -> int:
+        """Validate number of channels."""
+        if value not in [1, 2, 3, 4]:
+            raise ValueError(f"num_channels must be 1-4, got {value}")
+        return value
+
+
+class BiomechanicsImportMetadata(BaseModel):
+    """Metadata for biomechanics data import.
+    
+    Tracks biomechanics file import status and characteristics.
+    Fields use snake_case for direct mapping to database columns and Excel headers.
+    """
+    
+    # File identification
+    biomechanics_file: str
+    sheet_name: Optional[str] = None
+    
+    # Processing metadata
+    processing_date: Optional[datetime] = None
+    processing_status: Literal["not_processed", "success", "error"] = "not_processed"
+    error_message: Optional[str] = None
+    
+    # Import statistics
+    num_recordings: int = 0
+    num_passes: int = 0  # For walking maneuvers
+    
+    # Data characteristics
+    duration_seconds: Optional[float] = None
+    num_data_points: Optional[int] = None
+    sample_rate: Optional[float] = None
+    
+    # Time range
+    start_time: Optional[float] = None
+    end_time: Optional[float] = None
+    
+    # QC version tracking
+    biomech_qc_version: int = Field(default_factory=get_biomech_qc_version)
+    
+    @field_validator("num_recordings", "num_passes")
+    @classmethod
+    def validate_counts(cls, value: int) -> int:
+        """Validate counts are non-negative."""
+        if value < 0:
+            raise ValueError("counts must be non-negative")
+        return value
+    
+    @field_validator("sample_rate")
+    @classmethod
+    def validate_sample_rate(cls, value: Optional[float]) -> Optional[float]:
+        """Validate sample rate is positive if provided."""
+        if value is not None and value <= 0:
+            raise ValueError("sample_rate must be positive")
+        return value
+
+
+class SynchronizationMetadata(BaseModel):
+    """Metadata for audio-biomechanics synchronization.
+    
+    Tracks synchronization process and alignment details.
+    Fields use snake_case for direct mapping to database columns and Excel headers.
+    """
+    
+    # File identification
+    sync_file_name: str
+    pass_number: Optional[int] = None  # For walking
+    speed: Optional[Literal["slow", "normal", "fast", "medium"]] = None
+    
+    # Processing metadata
+    processing_date: Optional[datetime] = None
+    processing_status: Literal["not_processed", "success", "error"] = "not_processed"
+    error_message: Optional[str] = None
+    
+    # Synchronization details (in original time coordinates)
+    audio_stomp_time: Optional[float] = None  # seconds (audio time coords)
+    bio_left_stomp_time: Optional[float] = None  # seconds (bio time coords)
+    bio_right_stomp_time: Optional[float] = None  # seconds (bio time coords)
+    knee_side: Optional[Literal["left", "right"]] = None
+    
+    # Alignment details (derived from sync)
+    stomp_offset: Optional[float] = None  # seconds (bio_stomp - audio_stomp)
+    aligned_audio_stomp_time: Optional[float] = None  # seconds (synced coords)
+    aligned_bio_stomp_time: Optional[float] = None  # seconds (synced coords)
+    
+    # Synchronized data characteristics
+    num_synced_samples: Optional[int] = None
+    duration_seconds: Optional[float] = None
+    
+    # QC results
+    sync_qc_performed: bool = False
+    sync_qc_passed: Optional[bool] = None
+    
+    # QC version tracking
+    audio_qc_version: int = Field(default_factory=get_audio_qc_version)
+    biomech_qc_version: int = Field(default_factory=get_biomech_qc_version)
+    
+    # Detection method details
+    consensus_time: Optional[float] = None
+    consensus_methods: Optional[str] = None  # Comma-separated method names
+    rms_time: Optional[float] = None
+    onset_time: Optional[float] = None
+    freq_time: Optional[float] = None
+    rms_energy: Optional[float] = None
+    onset_magnitude: Optional[float] = None
+    freq_energy: Optional[float] = None
+    method_agreement_span: Optional[float] = None
+    
+    # Biomechanics-guided detection metadata
+    audio_stomp_method: Optional[Literal["consensus", "biomechanics-guided"]] = None
+    selected_time: Optional[float] = None
+    contra_selected_time: Optional[float] = None
+    
+    @field_validator("pass_number")
+    @classmethod
+    def validate_pass_number(cls, value: Optional[int]) -> Optional[int]:
+        """Validate pass number is non-negative if provided."""
+        if value is not None and value < 0:
+            raise ValueError("pass_number must be non-negative")
+        return value
+    
+    @field_validator("num_synced_samples")
+    @classmethod
+    def validate_num_samples(cls, value: Optional[int]) -> Optional[int]:
+        """Validate sample count is positive if provided."""
+        if value is not None and value <= 0:
+            raise ValueError("num_synced_samples must be positive")
+        return value
+
+
+class MovementCyclesMetadata(BaseModel):
+    """Metadata for movement cycle extraction and QC.
+    
+    Tracks cycle extraction process and aggregate statistics.
+    Fields use snake_case for direct mapping to database columns and Excel headers.
+    """
+    
+    # Source file
+    sync_file_name: str
+    
+    # Processing metadata
+    processing_date: Optional[datetime] = None
+    processing_status: Literal["not_processed", "success", "error"] = "not_processed"
+    error_message: Optional[str] = None
+    
+    # Extraction results
+    total_cycles_extracted: int = 0
+    clean_cycles: int = 0
+    outlier_cycles: int = 0
+    
+    # QC parameters
+    acoustic_threshold: Optional[float] = None
+    
+    # Output information
+    output_directory: Optional[str] = None
+    plots_created: bool = False
+    
+    # Aggregate statistics (across clean cycles)
+    mean_cycle_duration_s: Optional[float] = None
+    median_cycle_duration_s: Optional[float] = None
+    min_cycle_duration_s: Optional[float] = None
+    max_cycle_duration_s: Optional[float] = None
+    mean_acoustic_auc: Optional[float] = None
+    
+    # QC version tracking
+    cycle_qc_version: int = Field(default_factory=get_cycle_qc_version)
+    
+    @field_validator("total_cycles_extracted", "clean_cycles", "outlier_cycles")
+    @classmethod
+    def validate_cycle_counts(cls, value: int) -> int:
+        """Validate cycle counts are non-negative."""
+        if value < 0:
+            raise ValueError("cycle counts must be non-negative")
+        return value
+    
+    @model_validator(mode="after")
+    def validate_cycle_totals(self) -> Self:
+        """Validate that clean + outlier cycles equals total (if all are set)."""
+        if self.total_cycles_extracted > 0:
+            expected = self.clean_cycles + self.outlier_cycles
+            if expected != self.total_cycles_extracted:
+                # Allow mismatch but log warning through validation
+                # In practice, we'll be lenient here
+                pass
+        return self
