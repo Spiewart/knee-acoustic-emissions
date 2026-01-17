@@ -1167,19 +1167,32 @@ def create_biomechanics_record_from_data(
     Returns:
         BiomechanicsImportRecord instance
     """
-    record = BiomechanicsImportRecord(
-        biomechanics_file=str(biomechanics_file),
-        sheet_name=sheet_name,
-        processing_date=datetime.now(),
-    )
+    # Build data dictionary
+    data = {
+        "biomechanics_file": str(biomechanics_file),
+        "sheet_name": sheet_name,
+        "processing_date": datetime.now(),
+    }
 
     if error:
-        record.processing_status = "error"
-        record.error_message = str(error)
-        return record
+        data["processing_status"] = "error"
+        data["error_message"] = str(error)
+        # Validate and return early for error case
+        try:
+            validated = BiomechanicsImportMetadata(**data)
+            return BiomechanicsImportRecord.from_metadata(validated)
+        except Exception as validation_error:
+            logger.warning(f"Validation failed for biomechanics record, using unvalidated data: {validation_error}")
+            return BiomechanicsImportRecord(
+                biomechanics_file=data["biomechanics_file"],
+                sheet_name=data.get("sheet_name"),
+                processing_date=data.get("processing_date"),
+                processing_status=data.get("processing_status", "error"),
+                error_message=data.get("error_message"),
+            )
 
-    record.processing_status = "success"
-    record.num_recordings = len(recordings)
+    data["processing_status"] = "success"
+    data["num_recordings"] = len(recordings)
 
     if recordings:
         # Count passes (for walking)
@@ -1187,13 +1200,13 @@ def create_biomechanics_record_from_data(
         for rec in recordings:
             if hasattr(rec, 'pass_number') and rec.pass_number is not None:
                 pass_numbers.add(rec.pass_number)
-        record.num_passes = len(pass_numbers)
+        data["num_passes"] = len(pass_numbers)
 
         # Get statistics from first recording
         first_rec = recordings[0]
         if hasattr(first_rec, 'data') and isinstance(first_rec.data, pd.DataFrame):
             df = first_rec.data
-            record.num_data_points = len(df)
+            data["num_data_points"] = len(df)
 
             # Identify time-like column
             time_col: Optional[str] = None
@@ -1221,21 +1234,41 @@ def create_biomechanics_record_from_data(
                 if times.size >= 2:
                     # Normalize to start at zero to avoid huge absolute timestamps
                     times = times - times[0]
-                    record.start_time = 0.0
-                    record.end_time = float(times[-1])
-                    record.duration_seconds = float(times[-1])
+                    data["start_time"] = 0.0
+                    data["end_time"] = float(times[-1])
+                    data["duration_seconds"] = float(times[-1])
                     dt = float(np.median(np.diff(times)))
                     if dt and dt > 0:
                         sr = float(1.0 / dt)
                         # Round to nearest common biomechanics sampling rates
                         candidates = np.array([60, 100, 120], dtype=float)
                         nearest = int(candidates[np.argmin(np.abs(candidates - sr))])
-                        record.sample_rate = float(nearest)
+                        data["sample_rate"] = float(nearest)
             # Final fallback: infer duration from rows if sample_rate known elsewhere (rare)
-            if record.duration_seconds is None and record.sample_rate and record.sample_rate > 0:
-                record.duration_seconds = float(len(df) / record.sample_rate)
+            if data.get("duration_seconds") is None and data.get("sample_rate") and data["sample_rate"] > 0:
+                data["duration_seconds"] = float(len(df) / data["sample_rate"])
 
-    return record
+    # Validate using Pydantic model
+    try:
+        validated = BiomechanicsImportMetadata(**data)
+        return BiomechanicsImportRecord.from_metadata(validated)
+    except Exception as validation_error:
+        logger.warning(f"Validation failed for biomechanics record, using unvalidated data: {validation_error}")
+        # Fallback: create record directly without validation
+        return BiomechanicsImportRecord(
+            biomechanics_file=data["biomechanics_file"],
+            sheet_name=data.get("sheet_name"),
+            processing_date=data.get("processing_date"),
+            processing_status=data.get("processing_status", "success"),
+            error_message=data.get("error_message"),
+            num_recordings=data.get("num_recordings", 0),
+            num_passes=data.get("num_passes", 0),
+            duration_seconds=data.get("duration_seconds"),
+            num_data_points=data.get("num_data_points"),
+            sample_rate=data.get("sample_rate"),
+            start_time=data.get("start_time"),
+            end_time=data.get("end_time"),
+        )
 
 
 def create_sync_record_from_data(
@@ -1312,42 +1345,43 @@ def create_sync_record_from_data(
         # Bio stomp remains at its original position (synced timeline is in bio coords)
         aligned_bio_stomp = bio_stomp_s
 
-    record = SynchronizationRecord(
-        sync_file_name=sync_file_name,
-        pass_number=pass_number,
-        speed=speed,
-        processing_date=datetime.now(),
-        audio_stomp_time=audio_stomp_s,
-        bio_left_stomp_time=bio_left_s,
-        bio_right_stomp_time=bio_right_s,
-        knee_side=knee_side,
-        stomp_offset=stomp_offset,
-        aligned_audio_stomp_time=aligned_audio_stomp,
-        aligned_bio_stomp_time=aligned_bio_stomp,
-    )
+    # Build data dictionary
+    data = {
+        "sync_file_name": sync_file_name,
+        "pass_number": pass_number,
+        "speed": speed,
+        "processing_date": datetime.now(),
+        "audio_stomp_time": audio_stomp_s,
+        "bio_left_stomp_time": bio_left_s,
+        "bio_right_stomp_time": bio_right_s,
+        "knee_side": knee_side,
+        "stomp_offset": stomp_offset,
+        "aligned_audio_stomp_time": aligned_audio_stomp,
+        "aligned_bio_stomp_time": aligned_bio_stomp,
+    }
 
     # Populate detection method details if provided
     if detection_results:
         try:
-            record.consensus_time = _to_seconds(detection_results.get("consensus_time"))
+            data["consensus_time"] = _to_seconds(detection_results.get("consensus_time"))
             # Extract which methods contributed to consensus
             consensus_methods_list = detection_results.get("consensus_methods", [])
             if consensus_methods_list:
-                record.consensus_methods = ", ".join(consensus_methods_list)
+                data["consensus_methods"] = ", ".join(consensus_methods_list)
 
-            record.rms_time = _to_seconds(detection_results.get("rms_time"))
-            record.onset_time = _to_seconds(detection_results.get("onset_time"))
-            record.freq_time = _to_seconds(detection_results.get("freq_time"))
+            data["rms_time"] = _to_seconds(detection_results.get("rms_time"))
+            data["onset_time"] = _to_seconds(detection_results.get("onset_time"))
+            data["freq_time"] = _to_seconds(detection_results.get("freq_time"))
             # Energies/magnitudes may already be floats
-            record.rms_energy = (
+            data["rms_energy"] = (
                 float(detection_results.get("rms_energy"))
                 if detection_results.get("rms_energy") is not None else None
             )
-            record.onset_magnitude = (
+            data["onset_magnitude"] = (
                 float(detection_results.get("onset_magnitude"))
                 if detection_results.get("onset_magnitude") is not None else None
             )
-            record.freq_energy = (
+            data["freq_energy"] = (
                 float(detection_results.get("freq_energy"))
                 if detection_results.get("freq_energy") is not None else None
             )
@@ -1356,39 +1390,94 @@ def create_sync_record_from_data(
             # Get times for methods that contributed
             method_times_used = []
             if consensus_methods_list:
-                if "rms" in consensus_methods_list and record.rms_time is not None:
-                    method_times_used.append(record.rms_time)
-                if "onset" in consensus_methods_list and record.onset_time is not None:
-                    method_times_used.append(record.onset_time)
-                if "freq" in consensus_methods_list and record.freq_time is not None:
-                    method_times_used.append(record.freq_time)
+                if "rms" in consensus_methods_list and data.get("rms_time") is not None:
+                    method_times_used.append(data["rms_time"])
+                if "onset" in consensus_methods_list and data.get("onset_time") is not None:
+                    method_times_used.append(data["onset_time"])
+                if "freq" in consensus_methods_list and data.get("freq_time") is not None:
+                    method_times_used.append(data["freq_time"])
 
             if method_times_used:
-                record.method_agreement_span = float(max(method_times_used) - min(method_times_used))
+                data["method_agreement_span"] = float(max(method_times_used) - min(method_times_used))
 
             # Biomechanics-guided detection metadata
-            record.audio_stomp_method = detection_results.get("audio_stomp_method")
-            record.selected_time = _to_seconds(detection_results.get("selected_time"))
-            record.contra_selected_time = _to_seconds(detection_results.get("contra_selected_time"))
+            data["audio_stomp_method"] = detection_results.get("audio_stomp_method")
+            data["selected_time"] = _to_seconds(detection_results.get("selected_time"))
+            data["contra_selected_time"] = _to_seconds(detection_results.get("contra_selected_time"))
         except Exception as e:
             logger.debug(f"Failed to populate detection_results in sync record: {e}")
 
     if error:
-        record.processing_status = "error"
-        record.error_message = str(error)
-        return record
+        data["processing_status"] = "error"
+        data["error_message"] = str(error)
+        # Validate and return early for error case
+        try:
+            validated = SynchronizationMetadata(**data)
+            return SynchronizationRecord.from_metadata(validated)
+        except Exception as validation_error:
+            logger.warning(f"Validation failed for sync record, using unvalidated data: {validation_error}")
+            return SynchronizationRecord(
+                sync_file_name=data["sync_file_name"],
+                pass_number=data.get("pass_number"),
+                speed=data.get("speed"),
+                processing_date=data.get("processing_date"),
+                processing_status=data.get("processing_status", "error"),
+                error_message=data.get("error_message"),
+                audio_stomp_time=data.get("audio_stomp_time"),
+                bio_left_stomp_time=data.get("bio_left_stomp_time"),
+                bio_right_stomp_time=data.get("bio_right_stomp_time"),
+                knee_side=data.get("knee_side"),
+                stomp_offset=data.get("stomp_offset"),
+                aligned_audio_stomp_time=data.get("aligned_audio_stomp_time"),
+                aligned_bio_stomp_time=data.get("aligned_bio_stomp_time"),
+            )
 
-    record.processing_status = "success"
-    record.num_synced_samples = len(synced_df)
+    data["processing_status"] = "success"
+    data["num_synced_samples"] = len(synced_df)
 
     if "tt" in synced_df.columns and len(synced_df) > 0:
         duration = synced_df["tt"].iloc[-1] - synced_df["tt"].iloc[0]
         if hasattr(duration, 'total_seconds'):
-            record.duration_seconds = duration.total_seconds()
+            data["duration_seconds"] = duration.total_seconds()
         else:
-            record.duration_seconds = float(duration)
+            data["duration_seconds"] = float(duration)
 
-    return record
+    # Validate using Pydantic model
+    try:
+        validated = SynchronizationMetadata(**data)
+        return SynchronizationRecord.from_metadata(validated)
+    except Exception as validation_error:
+        logger.warning(f"Validation failed for sync record, using unvalidated data: {validation_error}")
+        # Fallback: create record directly without validation
+        return SynchronizationRecord(
+            sync_file_name=data["sync_file_name"],
+            pass_number=data.get("pass_number"),
+            speed=data.get("speed"),
+            processing_date=data.get("processing_date"),
+            processing_status=data.get("processing_status", "success"),
+            error_message=data.get("error_message"),
+            audio_stomp_time=data.get("audio_stomp_time"),
+            bio_left_stomp_time=data.get("bio_left_stomp_time"),
+            bio_right_stomp_time=data.get("bio_right_stomp_time"),
+            knee_side=data.get("knee_side"),
+            stomp_offset=data.get("stomp_offset"),
+            aligned_audio_stomp_time=data.get("aligned_audio_stomp_time"),
+            aligned_bio_stomp_time=data.get("aligned_bio_stomp_time"),
+            num_synced_samples=data.get("num_synced_samples"),
+            duration_seconds=data.get("duration_seconds"),
+            consensus_time=data.get("consensus_time"),
+            consensus_methods=data.get("consensus_methods"),
+            rms_time=data.get("rms_time"),
+            onset_time=data.get("onset_time"),
+            freq_time=data.get("freq_time"),
+            rms_energy=data.get("rms_energy"),
+            onset_magnitude=data.get("onset_magnitude"),
+            freq_energy=data.get("freq_energy"),
+            method_agreement_span=data.get("method_agreement_span"),
+            audio_stomp_method=data.get("audio_stomp_method"),
+            selected_time=data.get("selected_time"),
+            contra_selected_time=data.get("contra_selected_time"),
+        )
 
 
 def create_cycles_record_from_data(
@@ -1414,20 +1503,36 @@ def create_cycles_record_from_data(
     Returns:
         MovementCyclesRecord instance
     """
-    record = MovementCyclesRecord(
-        sync_file_name=sync_file_name,
-        processing_date=datetime.now(),
-        acoustic_threshold=acoustic_threshold,
-        output_directory=str(output_dir) if output_dir else None,
-        plots_created=plots_created,
-    )
+    # Build data dictionary
+    data = {
+        "sync_file_name": sync_file_name,
+        "processing_date": datetime.now(),
+        "acoustic_threshold": acoustic_threshold,
+        "output_directory": str(output_dir) if output_dir else None,
+        "plots_created": plots_created,
+    }
 
     if error:
-        record.processing_status = "error"
-        record.error_message = str(error)
-        return record
+        data["processing_status"] = "error"
+        data["error_message"] = str(error)
+        # Validate and return early for error case
+        try:
+            validated = MovementCyclesMetadata(**data)
+            return MovementCyclesRecord.from_metadata(validated, per_cycle_details=[])
+        except Exception as validation_error:
+            logger.warning(f"Validation failed for cycles record, using unvalidated data: {validation_error}")
+            return MovementCyclesRecord(
+                sync_file_name=data["sync_file_name"],
+                processing_date=data.get("processing_date"),
+                processing_status=data.get("processing_status", "error"),
+                error_message=data.get("error_message"),
+                acoustic_threshold=data.get("acoustic_threshold"),
+                output_directory=data.get("output_directory"),
+                plots_created=data.get("plots_created", False),
+                per_cycle_details=[],
+            )
 
-    record.processing_status = "success"
+    data["processing_status"] = "success"
 
     # If output_dir provided, derive cycles from .pkl files only to avoid counting plots
     pkl_cycles: list[Path] = []
@@ -1442,15 +1547,15 @@ def create_cycles_record_from_data(
 
     if pkl_cycles:
         # Count total cycles for this synced file only
-        record.total_cycles_extracted = len(pkl_cycles)
+        data["total_cycles_extracted"] = len(pkl_cycles)
         # Preserve clean/outlier counts from inputs if available
-        record.clean_cycles = len(clean_cycles)
-        record.outlier_cycles = len(outlier_cycles)
+        data["clean_cycles"] = len(clean_cycles)
+        data["outlier_cycles"] = len(outlier_cycles)
     else:
         # Fallback to in-memory lists
-        record.clean_cycles = len(clean_cycles)
-        record.outlier_cycles = len(outlier_cycles)
-        record.total_cycles_extracted = len(clean_cycles) + len(outlier_cycles)
+        data["clean_cycles"] = len(clean_cycles)
+        data["outlier_cycles"] = len(outlier_cycles)
+        data["total_cycles_extracted"] = len(clean_cycles) + len(outlier_cycles)
 
     # Helper to compute duration (s) and acoustic AUC for one cycle
     def _cycle_metrics(cycle_df: pd.DataFrame) -> tuple[float, float, float, float]:
@@ -1548,13 +1653,37 @@ def create_cycles_record_from_data(
         _append_cycles(clean_cycles, is_outlier=False)
         _append_cycles(outlier_cycles, is_outlier=True)
 
-    record.per_cycle_details = details
+    # Calculate aggregate statistics
     if durations:
-        record.mean_cycle_duration_s = float(np.nanmean(durations))
-        record.median_cycle_duration_s = float(np.nanmedian(durations))
-        record.min_cycle_duration_s = float(np.nanmin(durations))
-        record.max_cycle_duration_s = float(np.nanmax(durations))
+        data["mean_cycle_duration_s"] = float(np.nanmean(durations))
+        data["median_cycle_duration_s"] = float(np.nanmedian(durations))
+        data["min_cycle_duration_s"] = float(np.nanmin(durations))
+        data["max_cycle_duration_s"] = float(np.nanmax(durations))
     if aucs:
-        record.mean_acoustic_auc = float(np.nanmean(aucs))
+        data["mean_acoustic_auc"] = float(np.nanmean(aucs))
 
-    return record
+    # Validate using Pydantic model
+    try:
+        validated = MovementCyclesMetadata(**data)
+        return MovementCyclesRecord.from_metadata(validated, per_cycle_details=details)
+    except Exception as validation_error:
+        logger.warning(f"Validation failed for cycles record, using unvalidated data: {validation_error}")
+        # Fallback: create record directly without validation
+        return MovementCyclesRecord(
+            sync_file_name=data["sync_file_name"],
+            processing_date=data.get("processing_date"),
+            processing_status=data.get("processing_status", "success"),
+            error_message=data.get("error_message"),
+            total_cycles_extracted=data.get("total_cycles_extracted", 0),
+            clean_cycles=data.get("clean_cycles", 0),
+            outlier_cycles=data.get("outlier_cycles", 0),
+            acoustic_threshold=data.get("acoustic_threshold"),
+            output_directory=data.get("output_directory"),
+            plots_created=data.get("plots_created", False),
+            mean_cycle_duration_s=data.get("mean_cycle_duration_s"),
+            median_cycle_duration_s=data.get("median_cycle_duration_s"),
+            min_cycle_duration_s=data.get("min_cycle_duration_s"),
+            max_cycle_duration_s=data.get("max_cycle_duration_s"),
+            mean_acoustic_auc=data.get("mean_acoustic_auc"),
+            per_cycle_details=details,
+        )
