@@ -181,7 +181,7 @@ def parse_participant_directory(participant_dir: Path, knee: Optional[str] = Non
         study_id,
         len(all_synced_data),
     )
-    for output_path, synced_df in all_synced_data:
+    for output_path, synced_df, _ in all_synced_data:
         output_path.parent.mkdir(parents=True, exist_ok=True)
         synced_df.to_pickle(output_path)
         logging.info("Saved synchronized data to %s", output_path)
@@ -509,7 +509,7 @@ def _sync_maneuver_data(
             pass_number=None,
             speed=None,
         )
-        synced_data.append((output_path, synced_df))
+        synced_data.append((output_path, synced_df, stomp_times))
         # Generate visualization immediately to avoid keeping large DataFrames in memory
         audio_stomp, bio_left, bio_right, detection_results = stomp_times
         plot_stomp_detection(audio_df, bio_df, synced_df, audio_stomp, bio_left, bio_right, output_path, detection_results)
@@ -604,7 +604,7 @@ def _process_walk_speed(
                 # Keep original speed for filename; events normalized later
                 speed=speed,
             )
-            synced_data.append((output_path, synced_df))
+            synced_data.append((output_path, synced_df, stomp_times))
 
             # Generate visualization immediately to avoid accumulating DataFrames in memory
             audio_stomp, bio_left, bio_right, detection_results = stomp_times
