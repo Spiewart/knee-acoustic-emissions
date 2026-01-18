@@ -5,7 +5,7 @@ capturing information about audio conversion, biomechanics import, synchronizati
 and movement cycle extraction. Logs are saved as Excel files (.xlsx) in the
 maneuver directory and can be incrementally updated when re-processing.
 
-This module uses Pydantic models from src.models for validation and consistency.
+This module uses Pydantic dataclasses from src.metadata for validation and Excel export.
 """
 
 from __future__ import annotations
@@ -19,12 +19,12 @@ from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional
 import numpy as np
 import pandas as pd
 
-from src.models import (
-    AudioProcessingMetadata,
-    BiomechanicsImportMetadata,
-    MovementCycleMetadata,
-    MovementCyclesMetadata,
-    SynchronizationMetadata,
+from src.metadata import (
+    AudioProcessing,
+    BiomechanicsImport,
+    MovementCycle,
+    MovementCycles,
+    Synchronization,
 )
 from src.qc_versions import (
     get_audio_qc_version,
@@ -38,457 +38,12 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-@dataclass
-class AudioProcessingRecord:
-    """Record of audio file processing and QC.
-    
-    Wraps AudioProcessingMetadata Pydantic model for Excel export compatibility.
-    Use the Pydantic model for validation, this dataclass for logging.
-    
-    Note: _metadata is required - records can only be created from validated data.
-    """
-    
-    # Pydantic model for validation (required)
-    _metadata: AudioProcessingMetadata
-    
-    # Keep original fields for backward compatibility
-    audio_file_name: str = ""
-    audio_bin_file: Optional[str] = None
-    audio_pkl_file: Optional[str] = None
-    processing_date: Optional[datetime] = None
-    processing_status: str = "not_processed"
-    error_message: Optional[str] = None
-    sample_rate: Optional[float] = None
-    num_channels: int = 4
-    duration_seconds: Optional[float] = None
-    file_size_mb: Optional[float] = None
-    device_serial: Optional[str] = None
-    firmware_version: Optional[int] = None
-    file_time: Optional[datetime] = None
-    channel_1_rms: Optional[float] = None
-    channel_2_rms: Optional[float] = None
-    channel_3_rms: Optional[float] = None
-    channel_4_rms: Optional[float] = None
-    channel_1_peak: Optional[float] = None
-    channel_2_peak: Optional[float] = None
-    channel_3_peak: Optional[float] = None
-    channel_4_peak: Optional[float] = None
-    has_instantaneous_freq: bool = False
-    QC_not_passed: Optional[str] = None
-    QC_not_passed_mic_1: Optional[str] = None
-    QC_not_passed_mic_2: Optional[str] = None
-    QC_not_passed_mic_3: Optional[str] = None
-    QC_not_passed_mic_4: Optional[str] = None
-    audio_qc_version: int = field(default_factory=get_audio_qc_version)
-    
-    @classmethod
-    def from_metadata(cls, metadata: AudioProcessingMetadata) -> 'AudioProcessingRecord':
-        """Create record from validated Pydantic model."""
-        data = metadata.model_dump()
-        # Map qc_not_passed fields to QC_not_passed (uppercase convention)
-        return cls(
-            _metadata=metadata,
-            audio_file_name=data["audio_file_name"],
-            audio_bin_file=data.get("audio_bin_file"),
-            audio_pkl_file=data.get("audio_pkl_file"),
-            processing_date=data.get("processing_date"),
-            processing_status=data["processing_status"],
-            error_message=data.get("error_message"),
-            sample_rate=data.get("sample_rate"),
-            num_channels=data["num_channels"],
-            duration_seconds=data.get("duration_seconds"),
-            file_size_mb=data.get("file_size_mb"),
-            device_serial=data.get("device_serial"),
-            firmware_version=data.get("firmware_version"),
-            file_time=data.get("file_time"),
-            # channel RMS/peak values removed from metadata - set separately from actual data
-            has_instantaneous_freq=data["has_instantaneous_freq"],
-            QC_not_passed=data.get("qc_not_passed"),
-            QC_not_passed_mic_1=data.get("qc_not_passed_mic_1"),
-            QC_not_passed_mic_2=data.get("qc_not_passed_mic_2"),
-            QC_not_passed_mic_3=data.get("qc_not_passed_mic_3"),
-            QC_not_passed_mic_4=data.get("qc_not_passed_mic_4"),
-            audio_qc_version=data["audio_qc_version"],
-        )
-
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary for Excel export."""
-        return {
-            "Audio File": self.audio_file_name,
-            "Bin File": self.audio_bin_file,
-            "Pickle File": self.audio_pkl_file,
-            "Processing Date": self.processing_date,
-            "Status": self.processing_status,
-            "Error": self.error_message,
-            "Sample Rate (Hz)": self.sample_rate,
-            "Channels": self.num_channels,
-            "Duration (s)": self.duration_seconds,
-            "File Size (MB)": self.file_size_mb,
-            "Device Serial": self.device_serial,
-            "Firmware Version": self.firmware_version,
-            "Recording Time": self.file_time,
-            "Ch1 RMS": self.channel_1_rms,
-            "Ch2 RMS": self.channel_2_rms,
-            "Ch3 RMS": self.channel_3_rms,
-            "Ch4 RMS": self.channel_4_rms,
-            "Ch1 Peak": self.channel_1_peak,
-            "Ch2 Peak": self.channel_2_peak,
-            "Ch3 Peak": self.channel_3_peak,
-            "Ch4 Peak": self.channel_4_peak,
-            "Has Inst. Freq": self.has_instantaneous_freq,
-            "QC_not_passed": self.QC_not_passed,
-            "QC_not_passed_mic_1": self.QC_not_passed_mic_1,
-            "QC_not_passed_mic_2": self.QC_not_passed_mic_2,
-            "QC_not_passed_mic_3": self.QC_not_passed_mic_3,
-            "QC_not_passed_mic_4": self.QC_not_passed_mic_4,
-            "Audio QC Version": self.audio_qc_version,
-        }
-
-
-@dataclass
-class BiomechanicsImportRecord:
-    """Record of biomechanics data import.
-    
-    Wraps BiomechanicsImportMetadata Pydantic model for Excel export compatibility.
-    
-    Note: _metadata is required - records can only be created from validated data.
-    """
-    
-    _metadata: BiomechanicsImportMetadata
-    
-    biomechanics_file: str = ""
-    sheet_name: Optional[str] = None
-    processing_date: Optional[datetime] = None
-    processing_status: str = "not_processed"
-    error_message: Optional[str] = None
-    num_recordings: int = 0
-    num_passes: int = 0
-    duration_seconds: Optional[float] = None
-    num_data_points: Optional[int] = None
-    sample_rate: Optional[float] = None
-    start_time: Optional[float] = None
-    end_time: Optional[float] = None
-    biomech_qc_version: int = field(default_factory=get_biomech_qc_version)
-    
-    @classmethod
-    def from_metadata(cls, metadata: BiomechanicsImportMetadata) -> 'BiomechanicsImportRecord':
-        """Create record from validated Pydantic model."""
-        data = metadata.model_dump()
-        return cls(
-            _metadata=metadata,
-            biomechanics_file=data["biomechanics_file"],
-            sheet_name=data.get("sheet_name"),
-            processing_date=data.get("processing_date"),
-            processing_status=data["processing_status"],
-            error_message=data.get("error_message"),
-            num_recordings=data["num_recordings"],
-            num_passes=data["num_passes"],
-            duration_seconds=data.get("duration_seconds"),
-            # num_data_points removed from metadata - will be set separately from actual data
-            sample_rate=data.get("sample_rate"),
-            start_time=data.get("start_time"),
-            end_time=data.get("end_time"),
-            biomech_qc_version=data["biomech_qc_version"],
-        )
-
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary for Excel export."""
-        return {
-            "Biomechanics File": self.biomechanics_file,
-            "Sheet Name": self.sheet_name,
-            "Processing Date": self.processing_date,
-            "Status": self.processing_status,
-            "Error": self.error_message,
-            "Num Recordings": self.num_recordings,
-            "Num Passes": self.num_passes,
-            "Duration (s)": self.duration_seconds,
-            "Num Data Points": self.num_data_points,
-            "Sample Rate (Hz)": self.sample_rate,
-            "Start Time (s)": self.start_time,
-            "End Time (s)": self.end_time,
-            "Biomech QC Version": self.biomech_qc_version,
-        }
-
-
-@dataclass
-class SynchronizationRecord:
-    """Record of audio-biomechanics synchronization.
-    
-    Wraps SynchronizationMetadata Pydantic model for Excel export compatibility.
-    
-    Note: _metadata is required - records can only be created from validated data.
-    """
-    
-    _metadata: SynchronizationMetadata
-    
-    sync_file_name: str = ""
-    pass_number: Optional[int] = None
-    speed: Optional[str] = None
-    processing_date: Optional[datetime] = None
-    processing_status: str = "not_processed"
-    error_message: Optional[str] = None
-    audio_stomp_time: Optional[float] = None
-    bio_left_stomp_time: Optional[float] = None
-    bio_right_stomp_time: Optional[float] = None
-    knee_side: Optional[str] = None
-    stomp_offset: Optional[float] = None
-    aligned_audio_stomp_time: Optional[float] = None
-    aligned_bio_stomp_time: Optional[float] = None
-    num_synced_samples: Optional[int] = None
-    duration_seconds: Optional[float] = None
-    sync_qc_performed: bool = False
-    sync_qc_passed: Optional[bool] = None
-    audio_qc_version: int = field(default_factory=get_audio_qc_version)
-    biomech_qc_version: int = field(default_factory=get_biomech_qc_version)
-    consensus_time: Optional[float] = None
-    consensus_methods: Optional[str] = None
-    rms_time: Optional[float] = None
-    onset_time: Optional[float] = None
-    freq_time: Optional[float] = None
-    rms_energy: Optional[float] = None
-    onset_magnitude: Optional[float] = None
-    freq_energy: Optional[float] = None
-    method_agreement_span: Optional[float] = None
-    audio_stomp_method: Optional[str] = None
-    selected_time: Optional[float] = None
-    contra_selected_time: Optional[float] = None
-    
-    @classmethod
-    def from_metadata(cls, metadata: SynchronizationMetadata) -> 'SynchronizationRecord':
-        """Create record from validated Pydantic model."""
-        data = metadata.model_dump()
-        return cls(
-            _metadata=metadata,
-            sync_file_name=data["sync_file_name"],
-            pass_number=data.get("pass_number"),
-            speed=data.get("speed"),
-            processing_date=data.get("processing_date"),
-            processing_status=data["processing_status"],
-            error_message=data.get("error_message"),
-            audio_stomp_time=data.get("audio_stomp_time"),
-            bio_left_stomp_time=data.get("bio_left_stomp_time"),
-            bio_right_stomp_time=data.get("bio_right_stomp_time"),
-            knee_side=data.get("knee_side"),
-            stomp_offset=data.get("stomp_offset"),
-            aligned_audio_stomp_time=data.get("aligned_audio_stomp_time"),
-            aligned_bio_stomp_time=data.get("aligned_bio_stomp_time"),
-            # num_synced_samples removed from metadata - set separately from actual data
-            duration_seconds=data.get("duration_seconds"),
-            sync_qc_performed=data["sync_qc_performed"],
-            sync_qc_passed=data.get("sync_qc_passed"),
-            audio_qc_version=data["audio_qc_version"],
-            biomech_qc_version=data["biomech_qc_version"],
-            consensus_time=data.get("consensus_time"),
-            consensus_methods=data.get("consensus_methods"),
-            rms_time=data.get("rms_time"),
-            onset_time=data.get("onset_time"),
-            freq_time=data.get("freq_time"),
-            # rms_energy, onset_magnitude, freq_energy removed from metadata
-            method_agreement_span=data.get("method_agreement_span"),
-            audio_stomp_method=data.get("audio_stomp_method"),
-            selected_time=data.get("selected_time"),
-            contra_selected_time=data.get("contra_selected_time"),
-        )
-
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary for Excel export."""
-        return {
-            "Sync File": self.sync_file_name,
-            "Pass Number": self.pass_number,
-            "Speed": self.speed,
-            "Processing Date": self.processing_date,
-            "Status": self.processing_status,
-            "Error": self.error_message,
-            "Audio Stomp (s)": self.audio_stomp_time,
-            "Bio Left Stomp (s)": self.bio_left_stomp_time,
-            "Bio Right Stomp (s)": self.bio_right_stomp_time,
-            "Knee Side": self.knee_side,
-            "Stomp Offset (s)": self.stomp_offset,
-            "Aligned Audio Stomp (s)": self.aligned_audio_stomp_time,
-            "Aligned Bio Stomp (s)": self.aligned_bio_stomp_time,
-            "Num Samples": self.num_synced_samples,
-            "Duration (s)": self.duration_seconds,
-            "Sync QC Done": self.sync_qc_performed,
-            "Sync QC Passed": self.sync_qc_passed,
-            "Audio QC Version": self.audio_qc_version,
-            "Biomech QC Version": self.biomech_qc_version,
-            "Consensus (s)": self.consensus_time,
-            "Consensus Methods": self.consensus_methods,
-            "RMS Detect (s)": self.rms_time,
-            "Onset Detect (s)": self.onset_time,
-            "Freq Detect (s)": self.freq_time,
-            "RMS Energy": self.rms_energy,
-            "Onset Magnitude": self.onset_magnitude,
-            "Freq Energy": self.freq_energy,
-            "Method Agreement Span (s)": self.method_agreement_span,
-            "Detection Method": self.audio_stomp_method,
-            "Selected Time (s)": self.selected_time,
-            "Contra Selected Time (s)": self.contra_selected_time,
-        }
-
-
-@dataclass
-class MovementCyclesRecord:
-    """Record of movement cycle extraction and QC.
-    
-    Wraps MovementCyclesMetadata Pydantic model for Excel export compatibility.
-    
-    Note: _metadata is required - records can only be created from validated data.
-    """
-    
-    _metadata: MovementCyclesMetadata
-    
-    sync_file_name: str = ""
-    processing_date: Optional[datetime] = None
-    processing_status: str = "not_processed"
-    error_message: Optional[str] = None
-    total_cycles_extracted: int = 0
-    clean_cycles: int = 0
-    outlier_cycles: int = 0
-    acoustic_threshold: Optional[float] = None
-    output_directory: Optional[str] = None
-    plots_created: bool = False
-    mean_cycle_duration_s: Optional[float] = None
-    median_cycle_duration_s: Optional[float] = None
-    min_cycle_duration_s: Optional[float] = None
-    max_cycle_duration_s: Optional[float] = None
-    mean_acoustic_auc: Optional[float] = None
-    per_cycle_details: list[MovementCycleRecord] = field(default_factory=list)
-    cycle_qc_version: int = field(default_factory=get_cycle_qc_version)
-    
-    @classmethod
-    def from_metadata(cls, metadata: MovementCyclesMetadata, per_cycle_details: Optional[list[MovementCycleRecord]] = None) -> 'MovementCyclesRecord':
-        """Create record from validated Pydantic model."""
-        data = metadata.model_dump()
-        return cls(
-            _metadata=metadata,
-            sync_file_name=data["sync_file_name"],
-            processing_date=data.get("processing_date"),
-            processing_status=data["processing_status"],
-            error_message=data.get("error_message"),
-            total_cycles_extracted=data["total_cycles_extracted"],
-            clean_cycles=data["clean_cycles"],
-            outlier_cycles=data["outlier_cycles"],
-            acoustic_threshold=data.get("qc_acoustic_threshold"),  # Renamed field
-            # output_directory and plots_created removed from metadata
-            mean_cycle_duration_s=data.get("mean_cycle_duration_s"),
-            median_cycle_duration_s=data.get("median_cycle_duration_s"),
-            min_cycle_duration_s=data.get("min_cycle_duration_s"),
-            max_cycle_duration_s=data.get("max_cycle_duration_s"),
-            mean_acoustic_auc=data.get("mean_acoustic_auc"),
-            per_cycle_details=per_cycle_details or [],
-            cycle_qc_version=data["cycle_qc_version"],
-        )
-
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary for Excel export."""
-        return {
-            "Source Sync File": self.sync_file_name,
-            "Processing Date": self.processing_date,
-            "Status": self.processing_status,
-            "Error": self.error_message,
-            "Total Cycles": self.total_cycles_extracted,
-            "Clean Cycles": self.clean_cycles,
-            "Outlier Cycles": self.outlier_cycles,
-            "Acoustic Threshold": self.acoustic_threshold,
-            "Output Directory": self.output_directory,
-            "Plots Created": self.plots_created,
-            "Mean Duration (s)": self.mean_cycle_duration_s,
-            "Median Duration (s)": self.median_cycle_duration_s,
-            "Min Duration (s)": self.min_cycle_duration_s,
-            "Max Duration (s)": self.max_cycle_duration_s,
-            "Mean Acoustic AUC": self.mean_acoustic_auc,
-            "Cycle QC Version": self.cycle_qc_version,
-        }
-
-
-@dataclass
-class MovementCycleRecord:
-    """Record of a single movement cycle with comprehensive metadata.
-    
-    Wraps MovementCycleMetadata Pydantic model for Excel export compatibility.
-    The metadata model uses composition to include upstream processing metadata,
-    ensuring tight coupling and avoiding field duplication.
-    
-    Note: _metadata is required - records can only be created from validated data.
-    """
-    
-    _metadata: MovementCycleMetadata
-    
-    # Per-channel RMS values (data-derived, not in metadata)
-    ch1_rms: Optional[float] = None
-    ch2_rms: Optional[float] = None
-    ch3_rms: Optional[float] = None
-    ch4_rms: Optional[float] = None
-    
-    @classmethod
-    def from_metadata(cls, metadata: MovementCycleMetadata, 
-                     ch1_rms: Optional[float] = None,
-                     ch2_rms: Optional[float] = None,
-                     ch3_rms: Optional[float] = None,
-                     ch4_rms: Optional[float] = None) -> 'MovementCycleRecord':
-        """Create record from validated Pydantic model.
-        
-        Args:
-            metadata: Validated Pydantic metadata model with embedded upstream metadata
-            ch1_rms: Channel 1 RMS (data-derived, not in metadata)
-            ch2_rms: Channel 2 RMS (data-derived, not in metadata)
-            ch3_rms: Channel 3 RMS (data-derived, not in metadata)
-            ch4_rms: Channel 4 RMS (data-derived, not in metadata)
-        """
-        return cls(
-            _metadata=metadata,
-            ch1_rms=ch1_rms,
-            ch2_rms=ch2_rms,
-            ch3_rms=ch3_rms,
-            ch4_rms=ch4_rms,
-        )
-    
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary for Excel export (Cycle Details sheet).
-        
-        Uses the flattened representation from the metadata model.
-        """
-        # Start with flattened metadata fields
-        flat_dict = self._metadata.to_flat_dict()
-        
-        # Map to Excel column names
-        result = {
-            "Cycle Index": flat_dict.get("cycle_index"),
-            "Is Outlier": flat_dict.get("is_outlier"),
-            "Cycle File": flat_dict.get("cycle_file"),
-            "Audio File": flat_dict.get("audio_file_name"),
-            "Biomechanics File": flat_dict.get("biomechanics_file"),
-            "Sync File": flat_dict.get("sync_file_name"),
-            "Start (s)": flat_dict.get("start_time_s"),
-            "End (s)": flat_dict.get("end_time_s"),
-            "Duration (s)": flat_dict.get("duration_s"),
-            "Acoustic AUC": flat_dict.get("acoustic_auc"),
-            # Add data-derived channel RMS values
-            "Ch1 RMS": self.ch1_rms,
-            "Ch2 RMS": self.ch2_rms,
-            "Ch3 RMS": self.ch3_rms,
-            "Ch4 RMS": self.ch4_rms,
-            "Audio Sample Rate (Hz)": flat_dict.get("audio_sample_rate"),
-            "Audio Duration (s)": flat_dict.get("audio_duration_seconds"),
-            "Audio QC Version": flat_dict.get("audio_qc_version"),
-            "Audio Status": flat_dict.get("audio_processing_status"),
-            "Biomech Sample Rate (Hz)": flat_dict.get("biomech_sample_rate"),
-            "Biomech Duration (s)": flat_dict.get("biomech_duration_seconds"),
-            "Biomech QC Version": flat_dict.get("biomech_qc_version"),
-            "Biomech Status": flat_dict.get("biomech_processing_status"),
-            "Audio Stomp (s)": flat_dict.get("audio_stomp_time"),
-            "Bio Left Stomp (s)": flat_dict.get("bio_left_stomp_time"),
-            "Bio Right Stomp (s)": flat_dict.get("bio_right_stomp_time"),
-            "Knee Side": flat_dict.get("knee_side"),
-            "Stomp Offset (s)": flat_dict.get("stomp_offset"),
-            "Sync QC Performed": flat_dict.get("sync_qc_performed"),
-            "Sync QC Passed": flat_dict.get("sync_qc_passed"),
-            "Sync Duration (s)": flat_dict.get("sync_duration_seconds"),
-            "QC Acoustic Threshold": flat_dict.get("qc_acoustic_threshold"),
-            "Cycle QC Version": flat_dict.get("cycle_qc_version"),
-        }
-        return result
+# Maintain backward compatibility by aliasing new classes to old names
+AudioProcessingRecord = AudioProcessing
+BiomechanicsImportRecord = BiomechanicsImport
+SynchronizationRecord = Synchronization
+MovementCyclesRecord = MovementCycles
+MovementCycleRecord = MovementCycle
 
 
 @dataclass
@@ -1138,14 +693,7 @@ class KneeProcessingLog:
 
 
 # Helper functions to create records from processing data
-# These functions now use Pydantic models for validation
-#
-# IMPORTANT: Distinction between metadata fields and data-derived fields:
-# - Metadata fields: Go into Pydantic model, represent recording properties/QC decisions
-#   Examples: sample_rate, duration_seconds, processing_status
-# - Data-derived fields: Set directly on record after creation, pure statistics from data
-#   Examples: channel_1_rms, channel_1_peak, num_synced_samples
-# This separation keeps Pydantic models focused on validation, not computation.
+# These functions now use Pydantic dataclasses for validation and Excel export
 
 
 def create_audio_record_from_data(
@@ -1156,7 +704,7 @@ def create_audio_record_from_data(
     metadata: Optional[Dict[str, Any]] = None,
     error: Optional[Exception] = None,
 ) -> AudioProcessingRecord:
-    """Create an AudioProcessingRecord from processing data with Pydantic validation.
+    """Create an AudioProcessing record from processing data with Pydantic validation.
 
     Args:
         audio_file_name: Name of the audio file
@@ -1167,10 +715,10 @@ def create_audio_record_from_data(
         error: Exception if processing failed
 
     Returns:
-        AudioProcessingRecord instance (validated through Pydantic)
+        AudioProcessing instance (validated through Pydantic)
         
     Raises:
-        ValidationError: If data doesn't meet Pydantic model requirements
+        ValidationError: If data doesn't meet Pydantic dataclass requirements
     """
     # Build data dict for Pydantic validation
     data: Dict[str, Any] = {
@@ -1184,8 +732,7 @@ def create_audio_record_from_data(
 
     if error:
         # Early return on error - validate and return
-        validated = AudioProcessingMetadata(**data)
-        return AudioProcessingRecord.from_metadata(validated)
+        return AudioProcessing(**data)
 
     data["processing_status"] = "success"
 
@@ -1209,10 +756,8 @@ def create_audio_record_from_data(
         data["file_time"] = metadata.get("fileTime")
 
     # Calculate statistics from DataFrame
-    channel_stats = {}
     if audio_df is not None:
         # Duration (metadata field - used for QC, represents recording metadata)
-        # Unlike RMS/peak (pure statistics), duration is about the recording's extent
         if "tt" in audio_df.columns:
             dur = audio_df["tt"].iloc[-1] - audio_df["tt"].iloc[0]
             if hasattr(dur, 'total_seconds'):
@@ -1232,21 +777,19 @@ def create_audio_record_from_data(
                 if tt_s.size >= 2:
                     dt_med = float(np.median(np.diff(tt_s)))
                     sr = (1.0 / dt_med) if dt_med > 0 else None
-                    # Round to nearest 100 Hz for stability (typical audio board sample rates: 46800, 46900, 47000)
+                    # Round to nearest 100 Hz for stability
                     SAMPLE_RATE_ROUNDING = 100
                     data["sample_rate"] = float(int(round(sr / SAMPLE_RATE_ROUNDING)) * SAMPLE_RATE_ROUNDING) if sr else None
             except Exception:
                 pass
 
-        # Channel statistics (pure data-derived, not metadata)
+        # Channel statistics (pure data-derived)
         for ch_num in range(1, 5):
             ch_name = f"ch{ch_num}"
             if ch_name in audio_df.columns:
                 ch_data = audio_df[ch_name].values
-                rms = float(np.sqrt(np.mean(ch_data ** 2)))
-                peak = float(np.max(np.abs(ch_data)))
-                channel_stats[f"channel_{ch_num}_rms"] = rms
-                channel_stats[f"channel_{ch_num}_peak"] = peak
+                data[f"channel_{ch_num}_rms"] = float(np.sqrt(np.mean(ch_data ** 2)))
+                data[f"channel_{ch_num}_peak"] = float(np.max(np.abs(ch_data)))
 
         # Check for instantaneous frequency columns
         data["has_instantaneous_freq"] = any(
@@ -1257,15 +800,8 @@ def create_audio_record_from_data(
     if audio_bin_path and audio_bin_path.exists():
         data["file_size_mb"] = audio_bin_path.stat().st_size / (1024 * 1024)
 
-    # Validate using Pydantic model and create record
-    validated = AudioProcessingMetadata(**data)
-    record = AudioProcessingRecord.from_metadata(validated)
-    
-    # Set pure data-derived fields directly (not in metadata)
-    for field, value in channel_stats.items():
-        setattr(record, field, value)
-    
-    return record
+    # Create and return validated Pydantic dataclass
+    return AudioProcessing(**data)
 
 
 def create_biomechanics_record_from_data(
@@ -1274,7 +810,7 @@ def create_biomechanics_record_from_data(
     sheet_name: Optional[str] = None,
     error: Optional[Exception] = None,
 ) -> BiomechanicsImportRecord:
-    """Create a BiomechanicsImportRecord from import data.
+    """Create a BiomechanicsImport record from import data.
 
     Args:
         biomechanics_file: Path to biomechanics Excel file
@@ -1283,7 +819,7 @@ def create_biomechanics_record_from_data(
         error: Exception if import failed
 
     Returns:
-        BiomechanicsImportRecord instance
+        BiomechanicsImport instance
     """
     # Build data dictionary
     data = {
@@ -1295,15 +831,10 @@ def create_biomechanics_record_from_data(
     if error:
         data["processing_status"] = "error"
         data["error_message"] = str(error)
-        # Validate and return early for error case
-        validated = BiomechanicsImportMetadata(**data)
-        return BiomechanicsImportRecord.from_metadata(validated)
+        return BiomechanicsImport(**data)
 
     data["processing_status"] = "success"
     data["num_recordings"] = len(recordings)
-
-    # Calculate data-derived fields (not stored in metadata)
-    num_data_points = None
     
     if recordings:
         # Count passes (for walking)
@@ -1317,8 +848,7 @@ def create_biomechanics_record_from_data(
         first_rec = recordings[0]
         if hasattr(first_rec, 'data') and isinstance(first_rec.data, pd.DataFrame):
             df = first_rec.data
-            # num_data_points is pure data-derived (like RMS/peak), set on record not metadata
-            num_data_points = len(df)
+            data["num_data_points"] = len(df)
 
             # Identify time-like column
             time_col: Optional[str] = None
@@ -1344,7 +874,7 @@ def create_biomechanics_record_from_data(
 
                 times = _seconds_array(df[time_col])
                 if times.size >= 2:
-                    # Normalize to start at zero to avoid huge absolute timestamps
+                    # Normalize to start at zero
                     times = times - times[0]
                     data["start_time"] = 0.0
                     data["end_time"] = float(times[-1])
@@ -1356,18 +886,11 @@ def create_biomechanics_record_from_data(
                         candidates = np.array([60, 100, 120], dtype=float)
                         nearest = int(candidates[np.argmin(np.abs(candidates - sr))])
                         data["sample_rate"] = float(nearest)
-            # Final fallback: infer duration from rows if sample_rate known elsewhere (rare)
+            # Final fallback
             if data.get("duration_seconds") is None and data.get("sample_rate") and data["sample_rate"] > 0:
                 data["duration_seconds"] = float(len(df) / data["sample_rate"])
 
-    # Validate using Pydantic model and create record
-    validated = BiomechanicsImportMetadata(**data)
-    record = BiomechanicsImportRecord.from_metadata(validated)
-    
-    # Set data-derived fields directly (not in metadata)
-    record.num_data_points = num_data_points
-    
-    return record
+    return BiomechanicsImport(**data)
 
 
 def create_sync_record_from_data(
