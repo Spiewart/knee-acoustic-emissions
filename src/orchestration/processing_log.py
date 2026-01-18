@@ -39,11 +39,19 @@ logger = logging.getLogger(__name__)
 
 
 # Maintain backward compatibility by aliasing new classes to old names
+# Record aliases (for external code expecting Record classes)
 AudioProcessingRecord = AudioProcessing
 BiomechanicsImportRecord = BiomechanicsImport
 SynchronizationRecord = Synchronization
 MovementCyclesRecord = MovementCycles
 MovementCycleRecord = MovementCycle
+
+# Metadata aliases (for load_from_excel and other internal code expecting Metadata classes)
+AudioProcessingMetadata = AudioProcessing
+BiomechanicsImportMetadata = BiomechanicsImport
+SynchronizationMetadata = Synchronization
+MovementCyclesMetadata = MovementCycles
+MovementCycleMetadata = MovementCycle
 
 
 @dataclass

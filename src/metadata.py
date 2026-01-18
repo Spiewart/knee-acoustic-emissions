@@ -14,7 +14,7 @@ convenient to_dict() methods for Excel export in a single definition.
 """
 
 from datetime import datetime
-from typing import Any, Dict, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import Field, field_validator
 from pydantic.dataclasses import dataclass
@@ -104,6 +104,16 @@ class AudioProcessing:
             raise ValueError(f"num_channels must be 1-4, got {value}")
         return value
     
+    @classmethod
+    def from_metadata(cls, metadata: 'AudioProcessing') -> 'AudioProcessing':
+        """Backward compatibility: create from metadata (now a no-op since unified)."""
+        return metadata
+    
+    @property
+    def _metadata(self) -> 'AudioProcessing':
+        """Backward compatibility: return self as metadata."""
+        return self
+    
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for Excel export."""
         return {
@@ -190,6 +200,16 @@ class BiomechanicsImport:
             raise ValueError("sample_rate must be positive")
         return value
     
+    @classmethod
+    def from_metadata(cls, metadata: 'BiomechanicsImport') -> 'BiomechanicsImport':
+        """Backward compatibility: create from metadata (now a no-op since unified)."""
+        return metadata
+    
+    @property
+    def _metadata(self) -> 'BiomechanicsImport':
+        """Backward compatibility: return self as metadata."""
+        return self
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for Excel export."""
         return {
@@ -279,6 +299,16 @@ class Synchronization:
             raise ValueError("pass_number must be non-negative")
         return value
     
+    @classmethod
+    def from_metadata(cls, metadata: 'Synchronization') -> 'Synchronization':
+        """Backward compatibility: create from metadata (now a no-op since unified)."""
+        return metadata
+    
+    @property
+    def _metadata(self) -> 'Synchronization':
+        """Backward compatibility: return self as metadata."""
+        return self
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for Excel export."""
         return {
@@ -345,6 +375,9 @@ class MovementCycles:
     output_directory: Optional[str] = None
     plots_created: bool = False
     
+    # Per-cycle details list (for Cycle Details sheet in Excel)
+    per_cycle_details: List['MovementCycle'] = None
+    
     # Aggregate statistics (across clean cycles)
     mean_cycle_duration_s: Optional[float] = None
     median_cycle_duration_s: Optional[float] = None
@@ -355,6 +388,11 @@ class MovementCycles:
     # QC version tracking
     cycle_qc_version: int = Field(default_factory=get_cycle_qc_version)
     
+    def __post_init__(self):
+        """Initialize per_cycle_details to empty list if None."""
+        if self.per_cycle_details is None:
+            object.__setattr__(self, 'per_cycle_details', [])
+    
     @field_validator("total_cycles_extracted", "clean_cycles", "outlier_cycles")
     @classmethod
     def validate_cycle_counts(cls, value: int) -> int:
@@ -363,6 +401,26 @@ class MovementCycles:
             raise ValueError("cycle counts must be non-negative")
         return value
     
+    @classmethod
+    def from_metadata(cls, metadata: 'MovementCycles', per_cycle_details: Optional[List['MovementCycle']] = None) -> 'MovementCycles':
+        """Backward compatibility: create from metadata.
+        
+        Since metadata is now unified with the record, just update per_cycle_details if provided.
+        """
+        if per_cycle_details is not None:
+            metadata.per_cycle_details = per_cycle_details
+        return metadata
+    
+    @property
+    def _metadata(self) -> 'MovementCycles':
+        """Backward compatibility: return self as metadata."""
+        return self
+    
+    @property
+    def acoustic_threshold(self) -> Optional[float]:
+        """Backward compatibility: alias for qc_acoustic_threshold."""
+        return self.qc_acoustic_threshold
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for Excel export."""
         return {
@@ -445,6 +503,31 @@ class MovementCycle:
         if value is not None and value < 0:
             raise ValueError("acoustic_auc must be non-negative")
         return value
+    
+    @classmethod
+    def from_metadata(cls, metadata: 'MovementCycle', 
+                     ch1_rms: Optional[float] = None,
+                     ch2_rms: Optional[float] = None,
+                     ch3_rms: Optional[float] = None,
+                     ch4_rms: Optional[float] = None) -> 'MovementCycle':
+        """Backward compatibility: create from metadata.
+        
+        Since metadata is now unified with the record, just update channel RMS if provided.
+        """
+        if ch1_rms is not None:
+            metadata.ch1_rms = ch1_rms
+        if ch2_rms is not None:
+            metadata.ch2_rms = ch2_rms
+        if ch3_rms is not None:
+            metadata.ch3_rms = ch3_rms
+        if ch4_rms is not None:
+            metadata.ch4_rms = ch4_rms
+        return metadata
+    
+    @property
+    def _metadata(self) -> 'MovementCycle':
+        """Backward compatibility: return self as metadata."""
+        return self
     
     # Helper properties for backward compatibility and easy access to flattened data
     @property
