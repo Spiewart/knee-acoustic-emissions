@@ -407,65 +407,19 @@ class MovementCycleRecord:
     """Record of a single movement cycle with comprehensive metadata.
     
     Wraps MovementCycleMetadata Pydantic model for Excel export compatibility.
-    Contains all upstream processing information from audio, biomechanics, and synchronization.
+    The metadata model uses composition to include upstream processing metadata,
+    ensuring tight coupling and avoiding field duplication.
     
     Note: _metadata is required - records can only be created from validated data.
     """
     
     _metadata: MovementCycleMetadata
     
-    # Cycle identification
-    cycle_index: int = 0
-    is_outlier: bool = False
-    cycle_file: Optional[str] = None
-    
-    # Source files
-    audio_file_name: Optional[str] = None
-    biomechanics_file: Optional[str] = None
-    sync_file_name: Optional[str] = None
-    
-    # Cycle temporal characteristics
-    start_time_s: Optional[float] = None
-    end_time_s: Optional[float] = None
-    duration_s: Optional[float] = None
-    
-    # Acoustic characteristics
-    acoustic_auc: Optional[float] = None
-    
     # Per-channel RMS values (data-derived, not in metadata)
     ch1_rms: Optional[float] = None
     ch2_rms: Optional[float] = None
     ch3_rms: Optional[float] = None
     ch4_rms: Optional[float] = None
-    
-    # Audio QC metadata
-    audio_sample_rate: Optional[float] = None
-    audio_duration_seconds: Optional[float] = None
-    audio_qc_version: Optional[int] = None
-    audio_processing_status: Optional[str] = None
-    
-    # Biomechanics QC metadata
-    biomech_sample_rate: Optional[float] = None
-    biomech_duration_seconds: Optional[float] = None
-    biomech_qc_version: Optional[int] = None
-    biomech_processing_status: Optional[str] = None
-    
-    # Synchronization QC metadata
-    audio_stomp_time: Optional[float] = None
-    bio_left_stomp_time: Optional[float] = None
-    bio_right_stomp_time: Optional[float] = None
-    knee_side: Optional[str] = None
-    stomp_offset: Optional[float] = None
-    sync_qc_performed: bool = False
-    sync_qc_passed: Optional[bool] = None
-    sync_duration_seconds: Optional[float] = None
-    
-    # Cycle QC metadata
-    qc_acoustic_threshold: Optional[float] = None
-    cycle_qc_version: Optional[int] = None
-    
-    # Processing timestamps
-    processing_date: Optional[datetime] = None
     
     @classmethod
     def from_metadata(cls, metadata: MovementCycleMetadata, 
@@ -476,88 +430,65 @@ class MovementCycleRecord:
         """Create record from validated Pydantic model.
         
         Args:
-            metadata: Validated Pydantic metadata model
+            metadata: Validated Pydantic metadata model with embedded upstream metadata
             ch1_rms: Channel 1 RMS (data-derived, not in metadata)
             ch2_rms: Channel 2 RMS (data-derived, not in metadata)
             ch3_rms: Channel 3 RMS (data-derived, not in metadata)
             ch4_rms: Channel 4 RMS (data-derived, not in metadata)
         """
-        data = metadata.model_dump()
         return cls(
             _metadata=metadata,
-            cycle_index=data["cycle_index"],
-            is_outlier=data["is_outlier"],
-            cycle_file=data.get("cycle_file"),
-            audio_file_name=data.get("audio_file_name"),
-            biomechanics_file=data.get("biomechanics_file"),
-            sync_file_name=data.get("sync_file_name"),
-            start_time_s=data.get("start_time_s"),
-            end_time_s=data.get("end_time_s"),
-            duration_s=data.get("duration_s"),
-            acoustic_auc=data.get("acoustic_auc"),
-            # Channel RMS values passed separately (data-derived)
             ch1_rms=ch1_rms,
             ch2_rms=ch2_rms,
             ch3_rms=ch3_rms,
             ch4_rms=ch4_rms,
-            audio_sample_rate=data.get("audio_sample_rate"),
-            audio_duration_seconds=data.get("audio_duration_seconds"),
-            audio_qc_version=data.get("audio_qc_version"),
-            audio_processing_status=data.get("audio_processing_status"),
-            biomech_sample_rate=data.get("biomech_sample_rate"),
-            biomech_duration_seconds=data.get("biomech_duration_seconds"),
-            biomech_qc_version=data.get("biomech_qc_version"),
-            biomech_processing_status=data.get("biomech_processing_status"),
-            audio_stomp_time=data.get("audio_stomp_time"),
-            bio_left_stomp_time=data.get("bio_left_stomp_time"),
-            bio_right_stomp_time=data.get("bio_right_stomp_time"),
-            knee_side=data.get("knee_side"),
-            stomp_offset=data.get("stomp_offset"),
-            sync_qc_performed=data["sync_qc_performed"],
-            sync_qc_passed=data.get("sync_qc_passed"),
-            sync_duration_seconds=data.get("sync_duration_seconds"),
-            qc_acoustic_threshold=data.get("qc_acoustic_threshold"),
-            cycle_qc_version=data.get("cycle_qc_version"),
-            processing_date=data.get("processing_date"),
         )
     
     def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary for Excel export (Cycle Details sheet)."""
-        return {
-            "Cycle Index": self.cycle_index,
-            "Is Outlier": self.is_outlier,
-            "Cycle File": self.cycle_file,
-            "Audio File": self.audio_file_name,
-            "Biomechanics File": self.biomechanics_file,
-            "Sync File": self.sync_file_name,
-            "Start (s)": self.start_time_s,
-            "End (s)": self.end_time_s,
-            "Duration (s)": self.duration_s,
-            "Acoustic AUC": self.acoustic_auc,
+        """Convert to dictionary for Excel export (Cycle Details sheet).
+        
+        Uses the flattened representation from the metadata model.
+        """
+        # Start with flattened metadata fields
+        flat_dict = self._metadata.to_flat_dict()
+        
+        # Map to Excel column names
+        result = {
+            "Cycle Index": flat_dict.get("cycle_index"),
+            "Is Outlier": flat_dict.get("is_outlier"),
+            "Cycle File": flat_dict.get("cycle_file"),
+            "Audio File": flat_dict.get("audio_file_name"),
+            "Biomechanics File": flat_dict.get("biomechanics_file"),
+            "Sync File": flat_dict.get("sync_file_name"),
+            "Start (s)": flat_dict.get("start_time_s"),
+            "End (s)": flat_dict.get("end_time_s"),
+            "Duration (s)": flat_dict.get("duration_s"),
+            "Acoustic AUC": flat_dict.get("acoustic_auc"),
+            # Add data-derived channel RMS values
             "Ch1 RMS": self.ch1_rms,
             "Ch2 RMS": self.ch2_rms,
             "Ch3 RMS": self.ch3_rms,
             "Ch4 RMS": self.ch4_rms,
-            "Audio Sample Rate (Hz)": self.audio_sample_rate,
-            "Audio Duration (s)": self.audio_duration_seconds,
-            "Audio QC Version": self.audio_qc_version,
-            "Audio Status": self.audio_processing_status,
-            "Biomech Sample Rate (Hz)": self.biomech_sample_rate,
-            "Biomech Duration (s)": self.biomech_duration_seconds,
-            "Biomech QC Version": self.biomech_qc_version,
-            "Biomech Status": self.biomech_processing_status,
-            "Audio Stomp (s)": self.audio_stomp_time,
-            "Bio Left Stomp (s)": self.bio_left_stomp_time,
-            "Bio Right Stomp (s)": self.bio_right_stomp_time,
-            "Knee Side": self.knee_side,
-            "Stomp Offset (s)": self.stomp_offset,
-            "Sync QC Performed": self.sync_qc_performed,
-            "Sync QC Passed": self.sync_qc_passed,
-            "Sync Duration (s)": self.sync_duration_seconds,
-            "QC Acoustic Threshold": self.qc_acoustic_threshold,
-            "Cycle QC Version": self.cycle_qc_version,
-            "Processing Date": self.processing_date,
+            "Audio Sample Rate (Hz)": flat_dict.get("audio_sample_rate"),
+            "Audio Duration (s)": flat_dict.get("audio_duration_seconds"),
+            "Audio QC Version": flat_dict.get("audio_qc_version"),
+            "Audio Status": flat_dict.get("audio_processing_status"),
+            "Biomech Sample Rate (Hz)": flat_dict.get("biomech_sample_rate"),
+            "Biomech Duration (s)": flat_dict.get("biomech_duration_seconds"),
+            "Biomech QC Version": flat_dict.get("biomech_qc_version"),
+            "Biomech Status": flat_dict.get("biomech_processing_status"),
+            "Audio Stomp (s)": flat_dict.get("audio_stomp_time"),
+            "Bio Left Stomp (s)": flat_dict.get("bio_left_stomp_time"),
+            "Bio Right Stomp (s)": flat_dict.get("bio_right_stomp_time"),
+            "Knee Side": flat_dict.get("knee_side"),
+            "Stomp Offset (s)": flat_dict.get("stomp_offset"),
+            "Sync QC Performed": flat_dict.get("sync_qc_performed"),
+            "Sync QC Passed": flat_dict.get("sync_qc_passed"),
+            "Sync Duration (s)": flat_dict.get("sync_duration_seconds"),
+            "QC Acoustic Threshold": flat_dict.get("qc_acoustic_threshold"),
+            "Cycle QC Version": flat_dict.get("cycle_qc_version"),
         }
+        return result
 
 
 @dataclass
@@ -1734,29 +1665,13 @@ def create_cycles_record_from_data(
     durations: list[float] = []
     aucs: list[float] = []
     
-    # Extract context information from upstream records
-    audio_file_name = audio_record.audio_file_name if audio_record else None
-    biomechanics_file = biomech_record.biomechanics_file if biomech_record else None
-    audio_sample_rate = audio_record.sample_rate if audio_record else None
-    audio_duration = audio_record.duration_seconds if audio_record else None
-    audio_qc_version = audio_record.audio_qc_version if audio_record else None
-    audio_status = audio_record.processing_status if audio_record else None
+    # Extract context information from upstream records and create embedded metadata
+    audio_metadata = audio_record._metadata if audio_record else None
+    biomech_metadata = biomech_record._metadata if biomech_record else None
+    sync_metadata = sync_record._metadata if sync_record else None
     
-    biomech_sample_rate = biomech_record.sample_rate if biomech_record else None
-    biomech_duration = biomech_record.duration_seconds if biomech_record else None
-    biomech_qc_version = biomech_record.biomech_qc_version if biomech_record else None
-    biomech_status = biomech_record.processing_status if biomech_record else None
-    
-    audio_stomp = sync_record.audio_stomp_time if sync_record else None
-    bio_left_stomp = sync_record.bio_left_stomp_time if sync_record else None
-    bio_right_stomp = sync_record.bio_right_stomp_time if sync_record else None
-    knee_side = sync_record.knee_side if sync_record else None
-    stomp_offset = sync_record.stomp_offset if sync_record else None
-    sync_qc_performed = sync_record.sync_qc_performed if sync_record else False
-    sync_qc_passed = sync_record.sync_qc_passed if sync_record else None
-    sync_duration = sync_record.duration_seconds if sync_record else None
-    
-    cycle_qc_version = get_cycle_qc_version()
+    # We'll create cycles_metadata after calculating aggregates
+    # For now, keep it as None for individual cycles
 
     def _append_cycles(cycles: List[pd.DataFrame], is_outlier: bool) -> None:
         for idx, cdf in enumerate(cycles):
@@ -1770,36 +1685,20 @@ def create_cycles_record_from_data(
                     arr = pd.to_numeric(cdf[col], errors="coerce").to_numpy()
                     ch_rms[n] = float(np.sqrt(np.nanmean(arr ** 2)))
             
-            # Create Pydantic metadata model
+            # Create Pydantic metadata model with embedded upstream metadata
+            # Note: cycles_metadata will be None here, filled in after aggregates
             cycle_metadata = MovementCycleMetadata(
                 cycle_index=idx,
                 is_outlier=is_outlier,
-                audio_file_name=audio_file_name,
-                biomechanics_file=biomechanics_file,
-                sync_file_name=sync_file_name,
                 start_time_s=s,
                 end_time_s=e,
                 duration_s=d,
                 acoustic_auc=auc,
-                audio_sample_rate=audio_sample_rate,
-                audio_duration_seconds=audio_duration,
-                audio_qc_version=audio_qc_version,
-                audio_processing_status=audio_status,
-                biomech_sample_rate=biomech_sample_rate,
-                biomech_duration_seconds=biomech_duration,
-                biomech_qc_version=biomech_qc_version,
-                biomech_processing_status=biomech_status,
-                audio_stomp_time=audio_stomp,
-                bio_left_stomp_time=bio_left_stomp,
-                bio_right_stomp_time=bio_right_stomp,
-                knee_side=knee_side,
-                stomp_offset=stomp_offset,
-                sync_qc_performed=sync_qc_performed,
-                sync_qc_passed=sync_qc_passed,
-                sync_duration_seconds=sync_duration,
-                qc_acoustic_threshold=acoustic_threshold,
-                cycle_qc_version=cycle_qc_version,
-                processing_date=datetime.now(),
+                # Embed upstream metadata models
+                audio_metadata=audio_metadata,
+                biomech_metadata=biomech_metadata,
+                sync_metadata=sync_metadata,
+                cycles_metadata=None,  # Will be set after aggregate calculation
             )
             
             # Create record from validated metadata
@@ -1834,37 +1733,21 @@ def create_cycles_record_from_data(
                     arr = pd.to_numeric(cdf[col], errors="coerce").to_numpy()
                     ch_rms[n] = float(np.sqrt(np.nanmean(arr ** 2)))
             
-            # Create Pydantic metadata model
+            # Create Pydantic metadata model with embedded upstream metadata
+            # Note: cycles_metadata will be None here, filled in after aggregates
             cycle_metadata = MovementCycleMetadata(
                 cycle_index=pidx,
                 is_outlier=is_outlier,
                 cycle_file=str(p),
-                audio_file_name=audio_file_name,
-                biomechanics_file=biomechanics_file,
-                sync_file_name=sync_file_name,
                 start_time_s=s,
                 end_time_s=e,
                 duration_s=d,
                 acoustic_auc=auc,
-                audio_sample_rate=audio_sample_rate,
-                audio_duration_seconds=audio_duration,
-                audio_qc_version=audio_qc_version,
-                audio_processing_status=audio_status,
-                biomech_sample_rate=biomech_sample_rate,
-                biomech_duration_seconds=biomech_duration,
-                biomech_qc_version=biomech_qc_version,
-                biomech_processing_status=biomech_status,
-                audio_stomp_time=audio_stomp,
-                bio_left_stomp_time=bio_left_stomp,
-                bio_right_stomp_time=bio_right_stomp,
-                knee_side=knee_side,
-                stomp_offset=stomp_offset,
-                sync_qc_performed=sync_qc_performed,
-                sync_qc_passed=sync_qc_passed,
-                sync_duration_seconds=sync_duration,
-                qc_acoustic_threshold=acoustic_threshold,
-                cycle_qc_version=cycle_qc_version,
-                processing_date=datetime.now(),
+                # Embed upstream metadata models
+                audio_metadata=audio_metadata,
+                biomech_metadata=biomech_metadata,
+                sync_metadata=sync_metadata,
+                cycles_metadata=None,  # Will be set after aggregate calculation
             )
             
             # Create record from validated metadata
@@ -1895,6 +1778,11 @@ def create_cycles_record_from_data(
 
     # Validate using Pydantic model and create record
     validated = MovementCyclesMetadata(**data)
+    
+    # Now update all cycle records with the complete cycles_metadata
+    for detail in details:
+        detail._metadata.cycles_metadata = validated
+    
     record = MovementCyclesRecord.from_metadata(validated, per_cycle_details=details)
     # Set data-derived fields directly (not in metadata)
     record.output_directory = str(output_dir) if output_dir else None

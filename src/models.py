@@ -653,8 +653,8 @@ class MovementCycleMetadata(BaseModel):
     for a single extracted cycle. This model is used for database population and the 
     'Cycle Details' sheet in processing log Excel files.
     
-    Uses inheritance structure to avoid code duplication - contains all upstream
-    processing metadata from audio, biomechanics, and synchronization.
+    Uses composition pattern with embedded metadata models to avoid code duplication.
+    All upstream processing metadata is accessible through nested models.
     
     Fields use snake_case for direct mapping to database columns and Excel headers.
     """
@@ -664,11 +664,6 @@ class MovementCycleMetadata(BaseModel):
     is_outlier: bool = False
     cycle_file: Optional[str] = None  # Path to .pkl file if saved
     
-    # Source files and processing (from upstream)
-    audio_file_name: Optional[str] = None
-    biomechanics_file: Optional[str] = None
-    sync_file_name: Optional[str] = None
-    
     # Cycle temporal characteristics
     start_time_s: Optional[float] = None  # Start time within synced recording
     end_time_s: Optional[float] = None    # End time within synced recording
@@ -677,34 +672,12 @@ class MovementCycleMetadata(BaseModel):
     # Acoustic characteristics (data-derived from cycle)
     acoustic_auc: Optional[float] = None  # Total acoustic energy
     
-    # Audio QC metadata (from AudioProcessingMetadata)
-    audio_sample_rate: Optional[float] = None
-    audio_duration_seconds: Optional[float] = None
-    audio_qc_version: Optional[int] = None
-    audio_processing_status: Optional[str] = None
-    
-    # Biomechanics QC metadata (from BiomechanicsImportMetadata)
-    biomech_sample_rate: Optional[float] = None
-    biomech_duration_seconds: Optional[float] = None
-    biomech_qc_version: Optional[int] = None
-    biomech_processing_status: Optional[str] = None
-    
-    # Synchronization QC metadata (from SynchronizationMetadata)
-    audio_stomp_time: Optional[float] = None
-    bio_left_stomp_time: Optional[float] = None
-    bio_right_stomp_time: Optional[float] = None
-    knee_side: Optional[str] = None
-    stomp_offset: Optional[float] = None
-    sync_qc_performed: bool = False
-    sync_qc_passed: Optional[bool] = None
-    sync_duration_seconds: Optional[float] = None
-    
-    # Cycle QC metadata (from MovementCyclesMetadata)
-    qc_acoustic_threshold: Optional[float] = None
-    cycle_qc_version: Optional[int] = None
-    
-    # Processing timestamps
-    processing_date: Optional[datetime] = None
+    # Upstream processing metadata (embedded models)
+    # These ensure tight coupling between cycle metadata and processing metadata
+    audio_metadata: Optional[AudioProcessingMetadata] = None
+    biomech_metadata: Optional[BiomechanicsImportMetadata] = None
+    sync_metadata: Optional[SynchronizationMetadata] = None
+    cycles_metadata: Optional[MovementCyclesMetadata] = None
     
     @field_validator("cycle_index")
     @classmethod
@@ -729,4 +702,79 @@ class MovementCycleMetadata(BaseModel):
         if value is not None and value < 0:
             raise ValueError("acoustic_auc must be non-negative")
         return value
+    
+    # Helper properties for backward compatibility and easy access to flattened data
+    @property
+    def audio_file_name(self) -> Optional[str]:
+        """Get audio file name from embedded metadata."""
+        return self.audio_metadata.audio_file_name if self.audio_metadata else None
+    
+    @property
+    def biomechanics_file(self) -> Optional[str]:
+        """Get biomechanics file name from embedded metadata."""
+        return self.biomech_metadata.biomechanics_file if self.biomech_metadata else None
+    
+    @property
+    def sync_file_name(self) -> Optional[str]:
+        """Get sync file name from embedded metadata."""
+        return self.sync_metadata.sync_file_name if self.sync_metadata else None
+    
+    def to_flat_dict(self) -> dict:
+        """Convert to flattened dictionary for Excel export.
+        
+        Extracts key fields from embedded metadata models and combines them with
+        cycle-specific fields into a single flat dictionary suitable for Excel export.
+        """
+        result = {
+            "cycle_index": self.cycle_index,
+            "is_outlier": self.is_outlier,
+            "cycle_file": self.cycle_file,
+            "start_time_s": self.start_time_s,
+            "end_time_s": self.end_time_s,
+            "duration_s": self.duration_s,
+            "acoustic_auc": self.acoustic_auc,
+        }
+        
+        # Add audio metadata fields
+        if self.audio_metadata:
+            result.update({
+                "audio_file_name": self.audio_metadata.audio_file_name,
+                "audio_sample_rate": self.audio_metadata.sample_rate,
+                "audio_duration_seconds": self.audio_metadata.duration_seconds,
+                "audio_qc_version": self.audio_metadata.audio_qc_version,
+                "audio_processing_status": self.audio_metadata.processing_status,
+            })
+        
+        # Add biomechanics metadata fields
+        if self.biomech_metadata:
+            result.update({
+                "biomechanics_file": self.biomech_metadata.biomechanics_file,
+                "biomech_sample_rate": self.biomech_metadata.sample_rate,
+                "biomech_duration_seconds": self.biomech_metadata.duration_seconds,
+                "biomech_qc_version": self.biomech_metadata.biomech_qc_version,
+                "biomech_processing_status": self.biomech_metadata.processing_status,
+            })
+        
+        # Add synchronization metadata fields
+        if self.sync_metadata:
+            result.update({
+                "sync_file_name": self.sync_metadata.sync_file_name,
+                "audio_stomp_time": self.sync_metadata.audio_stomp_time,
+                "bio_left_stomp_time": self.sync_metadata.bio_left_stomp_time,
+                "bio_right_stomp_time": self.sync_metadata.bio_right_stomp_time,
+                "knee_side": self.sync_metadata.knee_side,
+                "stomp_offset": self.sync_metadata.stomp_offset,
+                "sync_qc_performed": self.sync_metadata.sync_qc_performed,
+                "sync_qc_passed": self.sync_metadata.sync_qc_passed,
+                "sync_duration_seconds": self.sync_metadata.duration_seconds,
+            })
+        
+        # Add cycles metadata fields
+        if self.cycles_metadata:
+            result.update({
+                "qc_acoustic_threshold": self.cycles_metadata.qc_acoustic_threshold,
+                "cycle_qc_version": self.cycles_metadata.cycle_qc_version,
+            })
+        
+        return result
 
