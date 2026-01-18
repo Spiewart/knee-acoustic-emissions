@@ -26,14 +26,25 @@ acoustic_emissions_processing/
 Data Models
 -----------
 
-- **StudyMetadata**: Optional study identifiers (`id`, `study`, `study_id`) carried through all recordings.
-- **ScriptedManeuverMetadata**: Canonical `scripted_maneuver` (alias `maneuver`) plus `speed`, `pass_number`, and optional `pass_data` (walk event sheet); walk fields are enforced for models that set `require_walk_details=True`.
+### Data Validation Architecture
+
+This project uses Pydantic models (`src/models.py`) as the single source of truth for data validation:
+
+**Processing Log Models** (used for logging and Excel export):
+- **AudioProcessingMetadata**: Audio file processing and QC metadata (validated via Pydantic)
+- **BiomechanicsImportMetadata**: Biomechanics data import tracking (validated via Pydantic)
+- **SynchronizationMetadata**: Audio-biomechanics synchronization details (validated via Pydantic)
+- **MovementCyclesMetadata**: Movement cycle extraction and QC metadata (validated via Pydantic)
+
+**Recording Models** (used during processing):
 - **AcousticsFileMetadata / AcousticsRecording**: Audio-specific fields (`audio_file_name`, microphones 1-4, optional QC/timestamps/notes) layered on top of scripted maneuver + knee metadata.
 - **BiomechanicsFileMetadata / BiomechanicsRecording**: Biomechanics file metadata (`biomech_file_name`, system, sync times, QC) with required walk details.
 - **SynchronizedRecording**: Combines acoustics + biomechanics metadata and data after alignment.
 - **MovementCycleMetadata / MovementCycle**: Per-cycle metadata (cycle IDs, energy, QC, notes, periodic noise detection, sync quality) plus the synchronized data slice used for aggregation/DB export.
 
-See [MIGRATION.md](MIGRATION.md) for detailed module mappings, [QC_VERSIONING.md](docs/QC_VERSIONING.md) for QA/QC version tracking, and [CYCLE_QC.md](docs/CYCLE_QC.md) for movement cycle quality control details.
+**Key Design Principle**: Pydantic models contain metadata and recording properties (file names, QC parameters, timestamps, sample rates). Data-derived statistics (channel RMS values, per-sample counts) are stored separately in dataclass wrappers for Excel export but NOT validated through Pydantic.
+
+See [ai_instructions.md](ai_instructions.md) for detailed information on adding new fields to models, [MIGRATION.md](MIGRATION.md) for module mappings, [QC_VERSIONING.md](docs/QC_VERSIONING.md) for QA/QC version tracking, and [CYCLE_QC.md](docs/CYCLE_QC.md) for movement cycle quality control details.
 
 Prerequisites
 -----------
