@@ -786,6 +786,7 @@ def create_audio_record_from_data(
                     dt_med = float(np.median(np.diff(tt_s)))
                     sr = (1.0 / dt_med) if dt_med > 0 else None
                     # Round to nearest 100 Hz for stability
+                    # (typical audio board sample rates: 46800, 46900, 47000)
                     SAMPLE_RATE_ROUNDING = 100
                     data["sample_rate"] = float(int(round(sr / SAMPLE_RATE_ROUNDING)) * SAMPLE_RATE_ROUNDING) if sr else None
             except Exception:
@@ -885,7 +886,7 @@ def create_biomechanics_record_from_data(
 
                 times = _seconds_array(df[time_col])
                 if times.size >= 2:
-                    # Normalize to start at zero
+                    # Normalize to start at zero to avoid huge absolute timestamps
                     times = times - times[0]
                     data["start_time"] = 0.0
                     data["end_time"] = float(times[-1])
@@ -897,7 +898,7 @@ def create_biomechanics_record_from_data(
                         candidates = np.array([60, 100, 120], dtype=float)
                         nearest = int(candidates[np.argmin(np.abs(candidates - sr))])
                         data["sample_rate"] = float(nearest)
-            # Final fallback
+            # Final fallback: infer duration from rows if sample_rate known elsewhere (rare)
             if data.get("duration_seconds") is None and data.get("sample_rate") and data["sample_rate"] > 0:
                 data["duration_seconds"] = float(len(df) / data["sample_rate"])
 
