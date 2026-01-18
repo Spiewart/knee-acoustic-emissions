@@ -22,7 +22,7 @@ import pandas as pd
 from src.models import (
     AudioProcessingMetadata,
     BiomechanicsImportMetadata,
-    IndividualMovementCycleMetadata,
+    MovementCycleMetadata,
     MovementCyclesMetadata,
     SynchronizationMetadata,
 )
@@ -353,11 +353,11 @@ class MovementCyclesRecord:
     min_cycle_duration_s: Optional[float] = None
     max_cycle_duration_s: Optional[float] = None
     mean_acoustic_auc: Optional[float] = None
-    per_cycle_details: list[IndividualMovementCycleRecord] = field(default_factory=list)
+    per_cycle_details: list[MovementCycleRecord] = field(default_factory=list)
     cycle_qc_version: int = field(default_factory=get_cycle_qc_version)
     
     @classmethod
-    def from_metadata(cls, metadata: MovementCyclesMetadata, per_cycle_details: Optional[list[IndividualMovementCycleRecord]] = None) -> 'MovementCyclesRecord':
+    def from_metadata(cls, metadata: MovementCyclesMetadata, per_cycle_details: Optional[list[MovementCycleRecord]] = None) -> 'MovementCyclesRecord':
         """Create record from validated Pydantic model."""
         data = metadata.model_dump()
         return cls(
@@ -403,16 +403,16 @@ class MovementCyclesRecord:
 
 
 @dataclass
-class IndividualMovementCycleRecord:
+class MovementCycleRecord:
     """Record of a single movement cycle with comprehensive metadata.
     
-    Wraps IndividualMovementCycleMetadata Pydantic model for Excel export compatibility.
+    Wraps MovementCycleMetadata Pydantic model for Excel export compatibility.
     Contains all upstream processing information from audio, biomechanics, and synchronization.
     
     Note: _metadata is required - records can only be created from validated data.
     """
     
-    _metadata: IndividualMovementCycleMetadata
+    _metadata: MovementCycleMetadata
     
     # Cycle identification
     cycle_index: int = 0
@@ -468,11 +468,11 @@ class IndividualMovementCycleRecord:
     processing_date: Optional[datetime] = None
     
     @classmethod
-    def from_metadata(cls, metadata: IndividualMovementCycleMetadata, 
+    def from_metadata(cls, metadata: MovementCycleMetadata, 
                      ch1_rms: Optional[float] = None,
                      ch2_rms: Optional[float] = None,
                      ch3_rms: Optional[float] = None,
-                     ch4_rms: Optional[float] = None) -> 'IndividualMovementCycleRecord':
+                     ch4_rms: Optional[float] = None) -> 'MovementCycleRecord':
         """Create record from validated Pydantic model.
         
         Args:
@@ -691,7 +691,7 @@ class ManeuverProcessingLog:
         details_rows: list[Dict[str, Any]] = []
         for rec in self.movement_cycles_records:
             for cycle_record in getattr(rec, "per_cycle_details", []) or []:
-                # Convert IndividualMovementCycleRecord to dict for Excel export
+                # Convert MovementCycleRecord to dict for Excel export
                 details_rows.append(cycle_record.to_dict())
         if details_rows:
             sheets["Cycle Details"] = pd.DataFrame(details_rows)
@@ -877,10 +877,10 @@ class ManeuverProcessingLog:
             try:
                 details_df = pd.read_excel(filepath, sheet_name="Cycle Details")
                 if len(details_df) > 0:
-                    # Create IndividualMovementCycleRecord objects from Excel rows
+                    # Create MovementCycleRecord objects from Excel rows
                     for _, row in details_df.iterrows():
                         # Create Pydantic metadata from Excel row
-                        metadata = IndividualMovementCycleMetadata(
+                        metadata = MovementCycleMetadata(
                             cycle_index=int(row["Cycle Index"]) if pd.notna(row.get("Cycle Index")) else 0,
                             is_outlier=bool(row.get("Is Outlier", False)),
                             cycle_file=str(row.get("Cycle File")) if pd.notna(row.get("Cycle File")) else None,
@@ -913,7 +913,7 @@ class ManeuverProcessingLog:
                         )
                         
                         # Create record from metadata with channel RMS (data-derived)
-                        cycle_record = IndividualMovementCycleRecord.from_metadata(
+                        cycle_record = MovementCycleRecord.from_metadata(
                             metadata,
                             ch1_rms=row.get("Ch1 RMS") if pd.notna(row.get("Ch1 RMS")) else None,
                             ch2_rms=row.get("Ch2 RMS") if pd.notna(row.get("Ch2 RMS")) else None,
@@ -1730,7 +1730,7 @@ def create_cycles_record_from_data(
         return start_s, end_s, float(dur), float(auc_total)
 
     # Build per-cycle details and aggregates for clean cycles
-    details: list[IndividualMovementCycleRecord] = []
+    details: list[MovementCycleRecord] = []
     durations: list[float] = []
     aucs: list[float] = []
     
@@ -1771,7 +1771,7 @@ def create_cycles_record_from_data(
                     ch_rms[n] = float(np.sqrt(np.nanmean(arr ** 2)))
             
             # Create Pydantic metadata model
-            cycle_metadata = IndividualMovementCycleMetadata(
+            cycle_metadata = MovementCycleMetadata(
                 cycle_index=idx,
                 is_outlier=is_outlier,
                 audio_file_name=audio_file_name,
@@ -1803,7 +1803,7 @@ def create_cycles_record_from_data(
             )
             
             # Create record from validated metadata
-            cycle_record = IndividualMovementCycleRecord.from_metadata(
+            cycle_record = MovementCycleRecord.from_metadata(
                 cycle_metadata,
                 ch1_rms=ch_rms.get(1),
                 ch2_rms=ch_rms.get(2),
@@ -1835,7 +1835,7 @@ def create_cycles_record_from_data(
                     ch_rms[n] = float(np.sqrt(np.nanmean(arr ** 2)))
             
             # Create Pydantic metadata model
-            cycle_metadata = IndividualMovementCycleMetadata(
+            cycle_metadata = MovementCycleMetadata(
                 cycle_index=pidx,
                 is_outlier=is_outlier,
                 cycle_file=str(p),
@@ -1868,7 +1868,7 @@ def create_cycles_record_from_data(
             )
             
             # Create record from validated metadata
-            cycle_record = IndividualMovementCycleRecord.from_metadata(
+            cycle_record = MovementCycleRecord.from_metadata(
                 cycle_metadata,
                 ch1_rms=ch_rms.get(1),
                 ch2_rms=ch_rms.get(2),

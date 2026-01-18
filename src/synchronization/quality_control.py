@@ -28,7 +28,7 @@ from src.biomechanics.quality_control import (
     get_default_min_rom,
     validate_knee_angle_waveform,
 )
-from src.models import MicrophonePosition, MovementCycleMetadata
+from src.models import MicrophonePosition, FullMovementCycleMetadata
 
 logger = logging.getLogger(__name__)
 
@@ -293,7 +293,7 @@ def _build_cycle_metadata_context(
 def _build_cycle_metadata_for_cycle(
     result: _CycleResult,
     context: dict[str, Any],
-) -> MovementCycleMetadata:
+) -> FullMovementCycleMetadata:
     return MovementCycleMetadata(
         id=result.index,
         cycle_index=result.index,
@@ -343,12 +343,12 @@ def _format_timedelta_readable(td: timedelta) -> str:
     return f"{total_seconds:.3f} s"
 
 
-def _write_cycle_metadata_json(path: Path, metadata: MovementCycleMetadata) -> None:
+def _write_cycle_metadata_json(path: Path, metadata: FullMovementCycleMetadata) -> None:
     """Write cycle metadata to JSON file with readable timedelta formatting.
 
     Args:
         path: Path to write JSON to
-        metadata: MovementCycleMetadata to serialize
+        metadata: FullMovementCycleMetadata to serialize
     """
     try:
         payload = metadata.model_dump(mode="json")

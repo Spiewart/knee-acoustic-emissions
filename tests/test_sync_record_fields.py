@@ -5,6 +5,7 @@ from datetime import datetime
 import pandas as pd
 import pytest
 
+from src.models import SynchronizationMetadata
 from src.orchestration.processing_log import (
     SynchronizationRecord,
     create_sync_record_from_data,
@@ -13,12 +14,15 @@ from src.orchestration.processing_log import (
 
 def test_synchronization_record_new_fields():
     """Test that SynchronizationRecord has new fields for biomechanics-guided detection."""
-    record = SynchronizationRecord(
+    sync_meta = SynchronizationMetadata(
         sync_file_name="test_sync.pkl",
-        audio_stomp_method="biomechanics-guided",
-        selected_time=2.5,
-        contra_selected_time=3.8,
+        processing_status="success",
     )
+    record = SynchronizationRecord.from_metadata(sync_meta)
+    # Set data-derived fields
+    record.audio_stomp_method = "biomechanics-guided"
+    record.selected_time = 2.5
+    record.contra_selected_time = 3.8
 
     assert record.audio_stomp_method == "biomechanics-guided"
     assert record.selected_time == 2.5
@@ -27,12 +31,15 @@ def test_synchronization_record_new_fields():
 
 def test_synchronization_record_to_dict_includes_new_fields():
     """Test that to_dict includes new fields."""
-    record = SynchronizationRecord(
+    sync_meta = SynchronizationMetadata(
         sync_file_name="test_sync.pkl",
-        audio_stomp_method="biomechanics-guided",
-        selected_time=2.5,
-        contra_selected_time=3.8,
+        processing_status="success",
     )
+    record = SynchronizationRecord.from_metadata(sync_meta)
+    # Set data-derived fields
+    record.audio_stomp_method = "biomechanics-guided"
+    record.selected_time = 2.5
+    record.contra_selected_time = 3.8
 
     record_dict = record.to_dict()
 
@@ -159,9 +166,11 @@ def test_create_sync_record_without_detection_results():
 
 def test_synchronization_record_fields_optional():
     """Test that new fields are optional (default to None)."""
-    record = SynchronizationRecord(
+    sync_meta = SynchronizationMetadata(
         sync_file_name="test_sync.pkl",
+        processing_status="success",
     )
+    record = SynchronizationRecord.from_metadata(sync_meta)
 
     # New fields should default to None
     assert record.audio_stomp_method is None

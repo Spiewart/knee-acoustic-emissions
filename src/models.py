@@ -345,14 +345,17 @@ class SynchronizedRecording(
     data: SynchronizedData
 
 
-class MovementCycleMetadata(
+class FullMovementCycleMetadata(
     AcousticsFileMetadata,
     BiomechanicsFileMetadata,
 ):
     """Metadata for a knee acoustic emission recording for a single
     movement cycle. Optionally (ideally) synchronized to a biomechanics
     recording. Contains all the requisite information for saving to a
-    postgres database."""
+    postgres database.
+    
+    Note: This is the complete model that inherits from file metadata classes.
+    For processing log metadata, see MovementCycleMetadata below."""
 
     id: int
     cycle_index: int
@@ -403,7 +406,7 @@ class MovementCycleMetadata(
         return value
 
 
-class MovementCycle(MovementCycleMetadata):
+class MovementCycle(FullMovementCycleMetadata):
     """Single movement cycle with synchronized data."""
 
     data: SynchronizedData
@@ -643,7 +646,7 @@ class MovementCyclesMetadata(BaseModel):
         return self
 
 
-class IndividualMovementCycleMetadata(BaseModel):
+class MovementCycleMetadata(BaseModel):
     """Metadata for a single movement cycle.
     
     Combines information from audio processing, biomechanics import, and synchronization
