@@ -376,7 +376,7 @@ class MovementCycles:
     plots_created: bool = False
     
     # Per-cycle details list (for Cycle Details sheet in Excel)
-    per_cycle_details: List['MovementCycle'] = None
+    per_cycle_details: List['MovementCycle'] = Field(default_factory=list)
     
     # Aggregate statistics (across clean cycles)
     mean_cycle_duration_s: Optional[float] = None
@@ -387,11 +387,6 @@ class MovementCycles:
     
     # QC version tracking
     cycle_qc_version: int = Field(default_factory=get_cycle_qc_version)
-    
-    def __post_init__(self):
-        """Initialize per_cycle_details to empty list if None."""
-        if self.per_cycle_details is None:
-            object.__setattr__(self, 'per_cycle_details', [])
     
     @field_validator("total_cycles_extracted", "clean_cycles", "outlier_cycles")
     @classmethod
