@@ -10,9 +10,9 @@ from pydantic import ValidationError
 from src.models import (
     MicrophonePosition,
     MovementCycle,
-    FullMovementCycleMetadata,
     SynchronizedData,
 )
+from src.metadata import FullMovementCycleMetadata
 
 
 @pytest.fixture

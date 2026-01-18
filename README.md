@@ -28,21 +28,23 @@ Data Models
 
 ### Data Validation Architecture
 
-This project uses Pydantic models (`src/models.py`) as the single source of truth for data validation:
+This project uses unified Pydantic dataclasses (`src/metadata.py`) as the single source of truth for data validation:
 
-**Processing Log Models** (used for logging and Excel export):
-- **AudioProcessingMetadata**: Audio file processing and QC metadata (validated via Pydantic)
-- **BiomechanicsImportMetadata**: Biomechanics data import tracking (validated via Pydantic)
-- **SynchronizationMetadata**: Audio-biomechanics synchronization details (validated via Pydantic)
-- **MovementCyclesMetadata**: Movement cycle extraction and QC metadata (validated via Pydantic)
+**Processing Log Metadata** (Pydantic dataclasses in `src/metadata.py`):
+- **AudioProcessing**: Audio file processing and QC metadata (validation + Excel export)
+- **BiomechanicsImport**: Biomechanics data import tracking (validation + Excel export)
+- **Synchronization**: Audio-biomechanics synchronization details (validation + Excel export)
+- **MovementCycles**: Movement cycle extraction and QC metadata (validation + Excel export)
+- **MovementCycle**: Individual movement cycle metadata with embedded upstream processing info (validation + Excel export)
+- **FullMovementCycleMetadata**: Complete cycle metadata inheriting from file metadata classes (for sync QC workflows)
 
-**Recording Models** (used during processing):
+**Recording Models** (Pydantic BaseModels in `src/models.py`, used during processing):
 - **AcousticsFileMetadata / AcousticsRecording**: Audio-specific fields (`audio_file_name`, microphones 1-4, optional QC/timestamps/notes) layered on top of scripted maneuver + knee metadata.
 - **BiomechanicsFileMetadata / BiomechanicsRecording**: Biomechanics file metadata (`biomech_file_name`, system, sync times, QC) with required walk details.
 - **SynchronizedRecording**: Combines acoustics + biomechanics metadata and data after alignment.
-- **MovementCycleMetadata / MovementCycle**: Per-cycle metadata (cycle IDs, energy, QC, notes, periodic noise detection, sync quality) plus the synchronized data slice used for aggregation/DB export.
+- **MovementCycle**: Per-cycle metadata plus the synchronized data slice used for aggregation/DB export (includes data field).
 
-**Key Design Principle**: Pydantic models contain metadata and recording properties (file names, QC parameters, timestamps, sample rates). Data-derived statistics (channel RMS values, per-sample counts) are stored separately in dataclass wrappers for Excel export but NOT validated through Pydantic.
+**Key Design Principle**: Pydantic dataclasses in `metadata.py` unify validation and Excel export in a single definition. They contain metadata and recording properties (file names, QC parameters, timestamps, sample rates) plus data-derived statistics (channel RMS values, per-sample counts) for comprehensive logging.
 
 See [ai_instructions.md](ai_instructions.md) for detailed information on adding new fields to models, [MIGRATION.md](MIGRATION.md) for module mappings, [QC_VERSIONING.md](docs/QC_VERSIONING.md) for QA/QC version tracking, and [CYCLE_QC.md](docs/CYCLE_QC.md) for movement cycle quality control details.
 

@@ -345,44 +345,88 @@ class SynchronizedRecording(
     data: SynchronizedData
 
 
-class FullMovementCycleMetadata(
-    AcousticsFileMetadata,
-    BiomechanicsFileMetadata,
-):
-    """Metadata for a knee acoustic emission recording for a single
-    movement cycle. Optionally (ideally) synchronized to a biomechanics
-    recording. Contains all the requisite information for saving to a
-    postgres database.
-    
-    Note: This is the complete model that inherits from file metadata classes.
-    For processing log metadata, see MovementCycleMetadata below."""
+# Note: FullMovementCycleMetadata has been moved to src/metadata.py as a Pydantic @dataclass
+# Import it from there: from src.metadata import FullMovementCycleMetadata
 
+
+class MovementCycle(BaseModel):
+    """Single movement cycle with synchronized data.
+    
+    This class combines FullMovementCycleMetadata (now in src/metadata.py) with
+    the synchronized data slice for the cycle. It's used in synchronization QC
+    workflows where the actual data needs to be carried along with metadata.
+    
+    For metadata-only operations, use FullMovementCycleMetadata from src/metadata.py."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+    
+    # Core cycle identification
     id: int
     cycle_index: int
+    
+    # Study metadata (from StudyMetadata)
+    study: str
+    study_id: int
+    
+    # Knee metadata (from KneeMetadata)
+    knee: Literal["left", "right"]
+    
+    # Scripted maneuver metadata (from ScriptedManeuverMetadata)
+    scripted_maneuver: Literal["walk", "sit_to_stand", "flexion_extension"]
+    speed: Optional[Literal["slow", "normal", "fast", "medium"]] = None
+    pass_number: Optional[int] = None
+    
+    # Acoustics file metadata fields
+    audio_file_name: str
+    audio_serial_number: str = "unknown"
+    audio_firmware_version: int = 0
+    date_of_recording: datetime = Field(default_factory=lambda: datetime.min)
+    microphones: Optional[dict[Literal[1, 2, 3, 4], MicrophonePosition]] = None
+    microphone_notes: Optional[dict[Literal[1, 2, 3, 4], str]] = None
+    audio_qc_pass: bool = False
+    audio_qc_mic_1_pass: bool = True
+    audio_qc_mic_2_pass: bool = True
+    audio_qc_mic_3_pass: bool = True
+    audio_qc_mic_4_pass: bool = True
+    audio_qc_version: int = Field(default_factory=get_audio_qc_version)
+    audio_notes: Optional[str] = None
+    
+    # Biomechanics file metadata fields
+    biomech_file_name: str
+    biomech_system: Literal["Vicon", "Qualisys"] = "Qualisys"
+    biomech_qc_pass: bool = False
+    biomech_qc_version: int = Field(default_factory=get_biomech_qc_version)
+    biomech_notes: Optional[str] = None
+    
+    # Sync times
     audio_sync_time: timedelta
     biomech_sync_left_time: timedelta
     biomech_sync_right_time: timedelta
+    
+    # Cycle measurements
     cycle_acoustic_energy: float
     cycle_qc_pass: bool
     cycle_qc_version: int = Field(default_factory=get_cycle_qc_version)
     cycle_notes: Optional[str] = None
     
-    # Periodic noise detection results (per-channel)
+    # Periodic noise detection
     periodic_noise_detected: bool = False
     periodic_noise_ch1: bool = False
     periodic_noise_ch2: bool = False
     periodic_noise_ch3: bool = False
     periodic_noise_ch4: bool = False
     
-    # Sync quality results (cross-modal validation)
+    # Sync quality
     sync_quality_score: Optional[float] = None
     sync_qc_pass: Optional[bool] = None
     
-    require_walk_details: ClassVar[bool] = True
-
+    # The synchronized data for this cycle
+    data: SynchronizedData
+    
     @field_validator("cycle_index")
     @classmethod
     def validate_cycle_index(cls, value: int) -> int:
+        """Validate cycle index is non-negative."""
         if value < 0:
             raise ValueError("cycle_index must be non-negative")
         return value
@@ -390,24 +434,8 @@ class FullMovementCycleMetadata(
     @field_validator("id")
     @classmethod
     def validate_id(cls, value: int) -> int:
+        """Validate id is non-negative."""
         if value < 0:
             raise ValueError("id must be non-negative")
         return value
-
-    @field_validator(
-        "audio_sync_time",
-        "biomech_sync_left_time",
-        "biomech_sync_right_time",
-    )
-    @classmethod
-    def validate_sync_times(cls, value: timedelta) -> timedelta:
-        if value is None:
-            raise ValueError("sync times are required for movement cycles")
-        return value
-
-
-class MovementCycle(FullMovementCycleMetadata):
-    """Single movement cycle with synchronized data."""
-
-    data: SynchronizedData
 
