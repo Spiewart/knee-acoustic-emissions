@@ -36,11 +36,11 @@ This project uses unified Pydantic dataclasses (`src/metadata.py`) as the single
 - **Synchronization**: Audio-biomechanics synchronization details (validation + Excel export)
 - **MovementCycles**: Movement cycle extraction and QC metadata (validation + Excel export)
 - **MovementCycle**: Individual movement cycle metadata with embedded upstream processing info (validation + Excel export)
-- **FullMovementCycleMetadata**: Complete cycle metadata inheriting from file metadata classes (for sync QC workflows)
 
 **Recording Models** (Pydantic BaseModels in `src/models.py`, used during processing):
 - **AcousticsFileMetadata / AcousticsRecording**: Audio-specific fields (`audio_file_name`, microphones 1-4, optional QC/timestamps/notes) layered on top of scripted maneuver + knee metadata.
 - **BiomechanicsFileMetadata / BiomechanicsRecording**: Biomechanics file metadata (`biomech_file_name`, system, sync times, QC) with required walk details.
+- **FullMovementCycleMetadata**: Complete cycle metadata inheriting from file metadata classes (for sync QC and data processing workflows).
 - **SynchronizedRecording**: Combines acoustics + biomechanics metadata and data after alignment.
 - **MovementCycle**: Per-cycle metadata plus the synchronized data slice used for aggregation/DB export (includes data field).
 

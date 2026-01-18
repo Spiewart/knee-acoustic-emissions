@@ -11,8 +11,8 @@ from src.models import (
     MicrophonePosition,
     MovementCycle,
     SynchronizedData,
+    FullMovementCycleMetadata,
 )
-from src.metadata import FullMovementCycleMetadata
 
 
 @pytest.fixture

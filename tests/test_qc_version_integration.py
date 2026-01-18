@@ -7,8 +7,8 @@ from src.models import (
     AcousticsFileMetadata,
     BiomechanicsFileMetadata,
     MicrophonePosition,
+    FullMovementCycleMetadata,
 )
-from src.metadata import FullMovementCycleMetadata
 from src.qc_versions import (
     AUDIO_QC_VERSION,
     BIOMECH_QC_VERSION,

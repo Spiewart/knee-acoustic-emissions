@@ -25,8 +25,7 @@ from src.qc_versions import (
     get_cycle_qc_version,
 )
 
-# Import base classes for FullMovementCycleMetadata
-from src.models import AcousticsFileMetadata, BiomechanicsFileMetadata
+
 
 
 @dataclass
@@ -581,83 +580,3 @@ class MovementCycle:
             "Cycle QC Version": flat_dict.get("cycle_qc_version"),
         }
         return result
-
-
-# Import BaseModel for FullMovementCycleMetadata which requires inheritance
-from pydantic import BaseModel, ConfigDict
-
-
-class FullMovementCycleMetadata(
-    AcousticsFileMetadata,
-    BiomechanicsFileMetadata,
-):
-    """Metadata for a knee acoustic emission recording for a single movement cycle.
-    
-    This is a complete model that inherits from file metadata classes
-    (AcousticsFileMetadata and BiomechanicsFileMetadata) and contains all
-    the requisite information for saving to a postgres database.
-    
-    Moved to metadata.py to consolidate all metadata definitions in one location.
-    Remains a Pydantic BaseModel (not @dataclass) due to inheriting from BaseModel parents.
-    
-    Note: This is different from MovementCycle above, which is used for
-    processing log metadata with embedded upstream metadata objects.
-    FullMovementCycleMetadata inherits all fields from parent classes
-    and is used in synchronization quality control workflows.
-    """
-
-    # Core cycle identification
-    id: int
-    cycle_index: int
-    
-    # Sync times (inherited fields made required)
-    audio_sync_time: timedelta
-    biomech_sync_left_time: timedelta
-    biomech_sync_right_time: timedelta
-    
-    # Cycle-specific measurements
-    cycle_acoustic_energy: float
-    cycle_qc_pass: bool
-    cycle_qc_version: int = Field(default_factory=get_cycle_qc_version)
-    cycle_notes: Optional[str] = None
-    
-    # Periodic noise detection results (per-channel)
-    periodic_noise_detected: bool = False
-    periodic_noise_ch1: bool = False
-    periodic_noise_ch2: bool = False
-    periodic_noise_ch3: bool = False
-    periodic_noise_ch4: bool = False
-    
-    # Sync quality results (cross-modal validation)
-    sync_quality_score: Optional[float] = None
-    sync_qc_pass: Optional[bool] = None
-    
-    require_walk_details: ClassVar[bool] = True
-
-    @field_validator("cycle_index")
-    @classmethod
-    def validate_cycle_index(cls, value: int) -> int:
-        """Validate cycle index is non-negative."""
-        if value < 0:
-            raise ValueError("cycle_index must be non-negative")
-        return value
-
-    @field_validator("id")
-    @classmethod
-    def validate_id(cls, value: int) -> int:
-        """Validate id is non-negative."""
-        if value < 0:
-            raise ValueError("id must be non-negative")
-        return value
-
-    @field_validator(
-        "audio_sync_time",
-        "biomech_sync_left_time",
-        "biomech_sync_right_time",
-    )
-    @classmethod
-    def validate_sync_times(cls, value: timedelta) -> timedelta:
-        """Validate sync times are provided (required for movement cycles)."""
-        if value is None:
-            raise ValueError("sync times are required for movement cycles")
-        return value

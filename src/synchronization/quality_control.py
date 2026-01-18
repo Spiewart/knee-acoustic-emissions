@@ -28,8 +28,7 @@ from src.biomechanics.quality_control import (
     get_default_min_rom,
     validate_knee_angle_waveform,
 )
-from src.models import MicrophonePosition
-from src.metadata import FullMovementCycleMetadata
+from src.models import MicrophonePosition, FullMovementCycleMetadata
 
 logger = logging.getLogger(__name__)
 

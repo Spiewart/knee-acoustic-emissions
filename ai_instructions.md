@@ -31,7 +31,6 @@ This project uses unified Pydantic dataclasses (`src/metadata.py`) that combine 
 - `Synchronization`: Audio-biomechanics synchronization details (replaces SynchronizationMetadata + SynchronizationRecord)
 - `MovementCycles`: Movement cycle extraction and QC metadata (replaces MovementCyclesMetadata + MovementCyclesRecord)
 - `MovementCycle`: Individual movement cycle with embedded upstream processing info
-- `FullMovementCycleMetadata`: Complete cycle metadata with file metadata inheritance (for sync QC workflows) - kept as BaseModel due to inheritance constraints
 
 **Field Guidelines**:
 - ✅ **Include**: File names, processing status, QC parameters, timestamps, recording characteristics (sample rate, duration), QC version tracking
@@ -105,9 +104,9 @@ excel_dict = audio.to_dict()
 **Key Classes**:
 - `AcousticsFileMetadata`: Audio file metadata with microphone positions
 - `BiomechanicsFileMetadata`: Biomechanics file metadata with system info
+- `FullMovementCycleMetadata`: Complete cycle metadata with file metadata inheritance (for sync QC and data processing workflows)
 - `SynchronizedRecording`: Combined acoustics + biomechanics with data
 - `MovementCycle`: Movement cycle with synchronized data field (for processing workflows)
-- `FullMovementCycleMetadata`: Also available in `src/metadata.py` for database operations
 
 **Note**: These BaseModel classes are separate from the unified Pydantic dataclasses in `metadata.py`. They are used for:
 1. Synchronization QC workflows that need inheritance from multiple file metadata classes
