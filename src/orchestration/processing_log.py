@@ -792,6 +792,9 @@ def create_audio_record_from_data(
                 pass
 
         # Channel statistics (pure data-derived)
+        # Note: These are computed from the actual audio data and stored directly
+        # in the dataclass fields rather than in a separate metadata model.
+        # This design consolidates all information (metadata + derived stats) in one place.
         for ch_num in range(1, 5):
             ch_name = f"ch{ch_num}"
             if ch_name in audio_df.columns:

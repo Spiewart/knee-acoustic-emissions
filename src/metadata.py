@@ -106,7 +106,16 @@ class AudioProcessing:
     
     @classmethod
     def from_metadata(cls, metadata: 'AudioProcessing') -> 'AudioProcessing':
-        """Backward compatibility: create from metadata (now a no-op since unified)."""
+        """Backward compatibility: create from metadata (now a no-op since unified).
+        
+        This method exists for backward compatibility with code that used the old
+        two-step pattern (create metadata, then wrap in record). Since AudioProcessing
+        is now a unified class that combines both metadata and record functionality,
+        this simply returns the input unchanged.
+        
+        This method can be removed in a future major version once all calling code
+        has been migrated to use the unified class directly.
+        """
         return metadata
     
     @property
@@ -413,7 +422,11 @@ class MovementCycles:
     
     @property
     def acoustic_threshold(self) -> Optional[float]:
-        """Backward compatibility: alias for qc_acoustic_threshold."""
+        """Backward compatibility: alias for qc_acoustic_threshold.
+        
+        The preferred field name is `qc_acoustic_threshold`. This property exists
+        for backward compatibility with code expecting the shorter name.
+        """
         return self.qc_acoustic_threshold
 
     def to_dict(self) -> Dict[str, Any]:
