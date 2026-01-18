@@ -1007,6 +1007,13 @@ class KneeProcessingLog:
 
 # Helper functions to create records from processing data
 # These functions now use Pydantic models for validation
+#
+# IMPORTANT: Distinction between metadata fields and data-derived fields:
+# - Metadata fields: Go into Pydantic model, represent recording properties/QC decisions
+#   Examples: sample_rate, duration_seconds, processing_status
+# - Data-derived fields: Set directly on record after creation, pure statistics from data
+#   Examples: channel_1_rms, channel_1_peak, num_synced_samples
+# This separation keeps Pydantic models focused on validation, not computation.
 
 
 def create_audio_record_from_data(
@@ -1072,7 +1079,8 @@ def create_audio_record_from_data(
     # Calculate statistics from DataFrame
     channel_stats = {}
     if audio_df is not None:
-        # Duration (metadata, not pure data-derived)
+        # Duration (metadata field - used for QC, represents recording metadata)
+        # Unlike RMS/peak (pure statistics), duration is about the recording's extent
         if "tt" in audio_df.columns:
             dur = audio_df["tt"].iloc[-1] - audio_df["tt"].iloc[0]
             if hasattr(dur, 'total_seconds'):
@@ -1177,7 +1185,8 @@ def create_biomechanics_record_from_data(
         first_rec = recordings[0]
         if hasattr(first_rec, 'data') and isinstance(first_rec.data, pd.DataFrame):
             df = first_rec.data
-            num_data_points = len(df)  # Data-derived, not metadata
+            # num_data_points is pure data-derived (like RMS/peak), set on record not metadata
+            num_data_points = len(df)
 
             # Identify time-like column
             time_col: Optional[str] = None
