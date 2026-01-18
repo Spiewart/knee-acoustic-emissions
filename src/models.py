@@ -641,3 +641,89 @@ class MovementCyclesMetadata(BaseModel):
                 # In practice, we'll be lenient here
                 pass
         return self
+
+
+class IndividualMovementCycleMetadata(BaseModel):
+    """Metadata for a single movement cycle.
+    
+    Combines information from audio processing, biomechanics import, and synchronization
+    for a single extracted cycle. This model is used for database population and the 
+    'Cycle Details' sheet in processing log Excel files.
+    
+    Uses inheritance structure to avoid code duplication - contains all upstream
+    processing metadata from audio, biomechanics, and synchronization.
+    
+    Fields use snake_case for direct mapping to database columns and Excel headers.
+    """
+    
+    # Cycle identification
+    cycle_index: int
+    is_outlier: bool = False
+    cycle_file: Optional[str] = None  # Path to .pkl file if saved
+    
+    # Source files and processing (from upstream)
+    audio_file_name: Optional[str] = None
+    biomechanics_file: Optional[str] = None
+    sync_file_name: Optional[str] = None
+    
+    # Cycle temporal characteristics
+    start_time_s: Optional[float] = None  # Start time within synced recording
+    end_time_s: Optional[float] = None    # End time within synced recording
+    duration_s: Optional[float] = None
+    
+    # Acoustic characteristics (data-derived from cycle)
+    acoustic_auc: Optional[float] = None  # Total acoustic energy
+    
+    # Audio QC metadata (from AudioProcessingMetadata)
+    audio_sample_rate: Optional[float] = None
+    audio_duration_seconds: Optional[float] = None
+    audio_qc_version: Optional[int] = None
+    audio_processing_status: Optional[str] = None
+    
+    # Biomechanics QC metadata (from BiomechanicsImportMetadata)
+    biomech_sample_rate: Optional[float] = None
+    biomech_duration_seconds: Optional[float] = None
+    biomech_qc_version: Optional[int] = None
+    biomech_processing_status: Optional[str] = None
+    
+    # Synchronization QC metadata (from SynchronizationMetadata)
+    audio_stomp_time: Optional[float] = None
+    bio_left_stomp_time: Optional[float] = None
+    bio_right_stomp_time: Optional[float] = None
+    knee_side: Optional[str] = None
+    stomp_offset: Optional[float] = None
+    sync_qc_performed: bool = False
+    sync_qc_passed: Optional[bool] = None
+    sync_duration_seconds: Optional[float] = None
+    
+    # Cycle QC metadata (from MovementCyclesMetadata)
+    qc_acoustic_threshold: Optional[float] = None
+    cycle_qc_version: Optional[int] = None
+    
+    # Processing timestamps
+    processing_date: Optional[datetime] = None
+    
+    @field_validator("cycle_index")
+    @classmethod
+    def validate_cycle_index(cls, value: int) -> int:
+        """Validate cycle index is non-negative."""
+        if value < 0:
+            raise ValueError("cycle_index must be non-negative")
+        return value
+    
+    @field_validator("duration_s", "start_time_s", "end_time_s")
+    @classmethod
+    def validate_times(cls, value: Optional[float]) -> Optional[float]:
+        """Validate time values are non-negative if provided."""
+        if value is not None and value < 0:
+            raise ValueError("time values must be non-negative")
+        return value
+    
+    @field_validator("acoustic_auc")
+    @classmethod
+    def validate_auc(cls, value: Optional[float]) -> Optional[float]:
+        """Validate acoustic AUC is non-negative if provided."""
+        if value is not None and value < 0:
+            raise ValueError("acoustic_auc must be non-negative")
+        return value
+

@@ -22,6 +22,7 @@ import pandas as pd
 from src.models import (
     AudioProcessingMetadata,
     BiomechanicsImportMetadata,
+    IndividualMovementCycleMetadata,
     MovementCyclesMetadata,
     SynchronizationMetadata,
 )
@@ -352,11 +353,11 @@ class MovementCyclesRecord:
     min_cycle_duration_s: Optional[float] = None
     max_cycle_duration_s: Optional[float] = None
     mean_acoustic_auc: Optional[float] = None
-    per_cycle_details: list[Dict[str, Any]] = field(default_factory=list)
+    per_cycle_details: list[IndividualMovementCycleRecord] = field(default_factory=list)
     cycle_qc_version: int = field(default_factory=get_cycle_qc_version)
     
     @classmethod
-    def from_metadata(cls, metadata: MovementCyclesMetadata, per_cycle_details: Optional[list[Dict[str, Any]]] = None) -> 'MovementCyclesRecord':
+    def from_metadata(cls, metadata: MovementCyclesMetadata, per_cycle_details: Optional[list[IndividualMovementCycleRecord]] = None) -> 'MovementCyclesRecord':
         """Create record from validated Pydantic model."""
         data = metadata.model_dump()
         return cls(
@@ -400,6 +401,163 @@ class MovementCyclesRecord:
             "Cycle QC Version": self.cycle_qc_version,
         }
 
+
+@dataclass
+class IndividualMovementCycleRecord:
+    """Record of a single movement cycle with comprehensive metadata.
+    
+    Wraps IndividualMovementCycleMetadata Pydantic model for Excel export compatibility.
+    Contains all upstream processing information from audio, biomechanics, and synchronization.
+    
+    Note: _metadata is required - records can only be created from validated data.
+    """
+    
+    _metadata: IndividualMovementCycleMetadata
+    
+    # Cycle identification
+    cycle_index: int = 0
+    is_outlier: bool = False
+    cycle_file: Optional[str] = None
+    
+    # Source files
+    audio_file_name: Optional[str] = None
+    biomechanics_file: Optional[str] = None
+    sync_file_name: Optional[str] = None
+    
+    # Cycle temporal characteristics
+    start_time_s: Optional[float] = None
+    end_time_s: Optional[float] = None
+    duration_s: Optional[float] = None
+    
+    # Acoustic characteristics
+    acoustic_auc: Optional[float] = None
+    
+    # Per-channel RMS values (data-derived, not in metadata)
+    ch1_rms: Optional[float] = None
+    ch2_rms: Optional[float] = None
+    ch3_rms: Optional[float] = None
+    ch4_rms: Optional[float] = None
+    
+    # Audio QC metadata
+    audio_sample_rate: Optional[float] = None
+    audio_duration_seconds: Optional[float] = None
+    audio_qc_version: Optional[int] = None
+    audio_processing_status: Optional[str] = None
+    
+    # Biomechanics QC metadata
+    biomech_sample_rate: Optional[float] = None
+    biomech_duration_seconds: Optional[float] = None
+    biomech_qc_version: Optional[int] = None
+    biomech_processing_status: Optional[str] = None
+    
+    # Synchronization QC metadata
+    audio_stomp_time: Optional[float] = None
+    bio_left_stomp_time: Optional[float] = None
+    bio_right_stomp_time: Optional[float] = None
+    knee_side: Optional[str] = None
+    stomp_offset: Optional[float] = None
+    sync_qc_performed: bool = False
+    sync_qc_passed: Optional[bool] = None
+    sync_duration_seconds: Optional[float] = None
+    
+    # Cycle QC metadata
+    qc_acoustic_threshold: Optional[float] = None
+    cycle_qc_version: Optional[int] = None
+    
+    # Processing timestamps
+    processing_date: Optional[datetime] = None
+    
+    @classmethod
+    def from_metadata(cls, metadata: IndividualMovementCycleMetadata, 
+                     ch1_rms: Optional[float] = None,
+                     ch2_rms: Optional[float] = None,
+                     ch3_rms: Optional[float] = None,
+                     ch4_rms: Optional[float] = None) -> 'IndividualMovementCycleRecord':
+        """Create record from validated Pydantic model.
+        
+        Args:
+            metadata: Validated Pydantic metadata model
+            ch1_rms: Channel 1 RMS (data-derived, not in metadata)
+            ch2_rms: Channel 2 RMS (data-derived, not in metadata)
+            ch3_rms: Channel 3 RMS (data-derived, not in metadata)
+            ch4_rms: Channel 4 RMS (data-derived, not in metadata)
+        """
+        data = metadata.model_dump()
+        return cls(
+            _metadata=metadata,
+            cycle_index=data["cycle_index"],
+            is_outlier=data["is_outlier"],
+            cycle_file=data.get("cycle_file"),
+            audio_file_name=data.get("audio_file_name"),
+            biomechanics_file=data.get("biomechanics_file"),
+            sync_file_name=data.get("sync_file_name"),
+            start_time_s=data.get("start_time_s"),
+            end_time_s=data.get("end_time_s"),
+            duration_s=data.get("duration_s"),
+            acoustic_auc=data.get("acoustic_auc"),
+            # Channel RMS values passed separately (data-derived)
+            ch1_rms=ch1_rms,
+            ch2_rms=ch2_rms,
+            ch3_rms=ch3_rms,
+            ch4_rms=ch4_rms,
+            audio_sample_rate=data.get("audio_sample_rate"),
+            audio_duration_seconds=data.get("audio_duration_seconds"),
+            audio_qc_version=data.get("audio_qc_version"),
+            audio_processing_status=data.get("audio_processing_status"),
+            biomech_sample_rate=data.get("biomech_sample_rate"),
+            biomech_duration_seconds=data.get("biomech_duration_seconds"),
+            biomech_qc_version=data.get("biomech_qc_version"),
+            biomech_processing_status=data.get("biomech_processing_status"),
+            audio_stomp_time=data.get("audio_stomp_time"),
+            bio_left_stomp_time=data.get("bio_left_stomp_time"),
+            bio_right_stomp_time=data.get("bio_right_stomp_time"),
+            knee_side=data.get("knee_side"),
+            stomp_offset=data.get("stomp_offset"),
+            sync_qc_performed=data["sync_qc_performed"],
+            sync_qc_passed=data.get("sync_qc_passed"),
+            sync_duration_seconds=data.get("sync_duration_seconds"),
+            qc_acoustic_threshold=data.get("qc_acoustic_threshold"),
+            cycle_qc_version=data.get("cycle_qc_version"),
+            processing_date=data.get("processing_date"),
+        )
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for Excel export (Cycle Details sheet)."""
+        return {
+            "Cycle Index": self.cycle_index,
+            "Is Outlier": self.is_outlier,
+            "Cycle File": self.cycle_file,
+            "Audio File": self.audio_file_name,
+            "Biomechanics File": self.biomechanics_file,
+            "Sync File": self.sync_file_name,
+            "Start (s)": self.start_time_s,
+            "End (s)": self.end_time_s,
+            "Duration (s)": self.duration_s,
+            "Acoustic AUC": self.acoustic_auc,
+            "Ch1 RMS": self.ch1_rms,
+            "Ch2 RMS": self.ch2_rms,
+            "Ch3 RMS": self.ch3_rms,
+            "Ch4 RMS": self.ch4_rms,
+            "Audio Sample Rate (Hz)": self.audio_sample_rate,
+            "Audio Duration (s)": self.audio_duration_seconds,
+            "Audio QC Version": self.audio_qc_version,
+            "Audio Status": self.audio_processing_status,
+            "Biomech Sample Rate (Hz)": self.biomech_sample_rate,
+            "Biomech Duration (s)": self.biomech_duration_seconds,
+            "Biomech QC Version": self.biomech_qc_version,
+            "Biomech Status": self.biomech_processing_status,
+            "Audio Stomp (s)": self.audio_stomp_time,
+            "Bio Left Stomp (s)": self.bio_left_stomp_time,
+            "Bio Right Stomp (s)": self.bio_right_stomp_time,
+            "Knee Side": self.knee_side,
+            "Stomp Offset (s)": self.stomp_offset,
+            "Sync QC Performed": self.sync_qc_performed,
+            "Sync QC Passed": self.sync_qc_passed,
+            "Sync Duration (s)": self.sync_duration_seconds,
+            "QC Acoustic Threshold": self.qc_acoustic_threshold,
+            "Cycle QC Version": self.cycle_qc_version,
+            "Processing Date": self.processing_date,
+        }
 
 
 @dataclass
@@ -532,10 +690,9 @@ class ManeuverProcessingLog:
         # Optional: Per-cycle details aggregated across all movement cycle analyses
         details_rows: list[Dict[str, Any]] = []
         for rec in self.movement_cycles_records:
-            for row in getattr(rec, "per_cycle_details", []) or []:
-                # include linkage back to the MovementCyclesRecord
-                row = {**row, "Source Sync File": rec.sync_file_name}
-                details_rows.append(row)
+            for cycle_record in getattr(rec, "per_cycle_details", []) or []:
+                # Convert IndividualMovementCycleRecord to dict for Excel export
+                details_rows.append(cycle_record.to_dict())
         if details_rows:
             sheets["Cycle Details"] = pd.DataFrame(details_rows)
 
@@ -719,15 +876,59 @@ class ManeuverProcessingLog:
             # Load optional Cycle Details sheet
             try:
                 details_df = pd.read_excel(filepath, sheet_name="Cycle Details")
-                if len(details_df) > 0 and "Source Sync File" in details_df.columns:
-                    # Attach rows to corresponding MovementCyclesRecord by sync file
-                    grouped = details_df.groupby("Source Sync File")
-                    for rec in log.movement_cycles_records:
-                        if rec.sync_file_name in grouped.groups:
-                            sub = grouped.get_group(rec.sync_file_name)
-                            rec.per_cycle_details = sub.drop(columns=[c for c in ["Source Sync File"] if c in sub.columns]).to_dict(orient="records")
-            except Exception:
-                # Optional sheet may not exist
+                if len(details_df) > 0:
+                    # Create IndividualMovementCycleRecord objects from Excel rows
+                    for _, row in details_df.iterrows():
+                        # Create Pydantic metadata from Excel row
+                        metadata = IndividualMovementCycleMetadata(
+                            cycle_index=int(row["Cycle Index"]) if pd.notna(row.get("Cycle Index")) else 0,
+                            is_outlier=bool(row.get("Is Outlier", False)),
+                            cycle_file=str(row.get("Cycle File")) if pd.notna(row.get("Cycle File")) else None,
+                            audio_file_name=str(row.get("Audio File")) if pd.notna(row.get("Audio File")) else None,
+                            biomechanics_file=str(row.get("Biomechanics File")) if pd.notna(row.get("Biomechanics File")) else None,
+                            sync_file_name=str(row.get("Sync File")) if pd.notna(row.get("Sync File")) else None,
+                            start_time_s=row.get("Start (s)") if pd.notna(row.get("Start (s)")) else None,
+                            end_time_s=row.get("End (s)") if pd.notna(row.get("End (s)")) else None,
+                            duration_s=row.get("Duration (s)") if pd.notna(row.get("Duration (s)")) else None,
+                            acoustic_auc=row.get("Acoustic AUC") if pd.notna(row.get("Acoustic AUC")) else None,
+                            audio_sample_rate=row.get("Audio Sample Rate (Hz)") if pd.notna(row.get("Audio Sample Rate (Hz)")) else None,
+                            audio_duration_seconds=row.get("Audio Duration (s)") if pd.notna(row.get("Audio Duration (s)")) else None,
+                            audio_qc_version=int(row["Audio QC Version"]) if pd.notna(row.get("Audio QC Version")) else None,
+                            audio_processing_status=str(row.get("Audio Status")) if pd.notna(row.get("Audio Status")) else None,
+                            biomech_sample_rate=row.get("Biomech Sample Rate (Hz)") if pd.notna(row.get("Biomech Sample Rate (Hz)")) else None,
+                            biomech_duration_seconds=row.get("Biomech Duration (s)") if pd.notna(row.get("Biomech Duration (s)")) else None,
+                            biomech_qc_version=int(row["Biomech QC Version"]) if pd.notna(row.get("Biomech QC Version")) else None,
+                            biomech_processing_status=str(row.get("Biomech Status")) if pd.notna(row.get("Biomech Status")) else None,
+                            audio_stomp_time=row.get("Audio Stomp (s)") if pd.notna(row.get("Audio Stomp (s)")) else None,
+                            bio_left_stomp_time=row.get("Bio Left Stomp (s)") if pd.notna(row.get("Bio Left Stomp (s)")) else None,
+                            bio_right_stomp_time=row.get("Bio Right Stomp (s)") if pd.notna(row.get("Bio Right Stomp (s)")) else None,
+                            knee_side=str(row.get("Knee Side")) if pd.notna(row.get("Knee Side")) else None,
+                            stomp_offset=row.get("Stomp Offset (s)") if pd.notna(row.get("Stomp Offset (s)")) else None,
+                            sync_qc_performed=bool(row.get("Sync QC Performed", False)),
+                            sync_qc_passed=bool(row.get("Sync QC Passed")) if pd.notna(row.get("Sync QC Passed")) else None,
+                            sync_duration_seconds=row.get("Sync Duration (s)") if pd.notna(row.get("Sync Duration (s)")) else None,
+                            qc_acoustic_threshold=row.get("QC Acoustic Threshold") if pd.notna(row.get("QC Acoustic Threshold")) else None,
+                            cycle_qc_version=int(row["Cycle QC Version"]) if pd.notna(row.get("Cycle QC Version")) else None,
+                            processing_date=pd.to_datetime(row["Processing Date"]) if pd.notna(row.get("Processing Date")) else None,
+                        )
+                        
+                        # Create record from metadata with channel RMS (data-derived)
+                        cycle_record = IndividualMovementCycleRecord.from_metadata(
+                            metadata,
+                            ch1_rms=row.get("Ch1 RMS") if pd.notna(row.get("Ch1 RMS")) else None,
+                            ch2_rms=row.get("Ch2 RMS") if pd.notna(row.get("Ch2 RMS")) else None,
+                            ch3_rms=row.get("Ch3 RMS") if pd.notna(row.get("Ch3 RMS")) else None,
+                            ch4_rms=row.get("Ch4 RMS") if pd.notna(row.get("Ch4 RMS")) else None,
+                        )
+                        
+                        # Attach to corresponding MovementCyclesRecord by sync file name
+                        for rec in log.movement_cycles_records:
+                            if rec.sync_file_name == cycle_record.sync_file_name:
+                                rec.per_cycle_details.append(cycle_record)
+                                break
+            except Exception as e:
+                # Optional sheet may not exist or have different format
+                logger.debug(f"Could not load Cycle Details sheet: {e}")
                 pass
 
             return log
@@ -1424,6 +1625,10 @@ def create_cycles_record_from_data(
     acoustic_threshold: Optional[float] = None,
     plots_created: bool = False,
     error: Optional[Exception] = None,
+    # Optional context from upstream processing
+    audio_record: Optional[AudioProcessingRecord] = None,
+    biomech_record: Optional[BiomechanicsImportRecord] = None,
+    sync_record: Optional[SynchronizationRecord] = None,
 ) -> MovementCyclesRecord:
     """Create a MovementCyclesRecord from cycle extraction data.
 
@@ -1435,6 +1640,9 @@ def create_cycles_record_from_data(
         acoustic_threshold: Acoustic threshold used for QC
         plots_created: Whether plots were created
         error: Exception if extraction failed
+        audio_record: Optional audio processing record for context
+        biomech_record: Optional biomechanics import record for context
+        sync_record: Optional synchronization record for context
 
     Returns:
         MovementCyclesRecord instance
@@ -1522,31 +1730,92 @@ def create_cycles_record_from_data(
         return start_s, end_s, float(dur), float(auc_total)
 
     # Build per-cycle details and aggregates for clean cycles
-    details: list[Dict[str, Any]] = []
+    details: list[IndividualMovementCycleRecord] = []
     durations: list[float] = []
     aucs: list[float] = []
+    
+    # Extract context information from upstream records
+    audio_file_name = audio_record.audio_file_name if audio_record else None
+    biomechanics_file = biomech_record.biomechanics_file if biomech_record else None
+    audio_sample_rate = audio_record.sample_rate if audio_record else None
+    audio_duration = audio_record.duration_seconds if audio_record else None
+    audio_qc_version = audio_record.audio_qc_version if audio_record else None
+    audio_status = audio_record.processing_status if audio_record else None
+    
+    biomech_sample_rate = biomech_record.sample_rate if biomech_record else None
+    biomech_duration = biomech_record.duration_seconds if biomech_record else None
+    biomech_qc_version = biomech_record.biomech_qc_version if biomech_record else None
+    biomech_status = biomech_record.processing_status if biomech_record else None
+    
+    audio_stomp = sync_record.audio_stomp_time if sync_record else None
+    bio_left_stomp = sync_record.bio_left_stomp_time if sync_record else None
+    bio_right_stomp = sync_record.bio_right_stomp_time if sync_record else None
+    knee_side = sync_record.knee_side if sync_record else None
+    stomp_offset = sync_record.stomp_offset if sync_record else None
+    sync_qc_performed = sync_record.sync_qc_performed if sync_record else False
+    sync_qc_passed = sync_record.sync_qc_passed if sync_record else None
+    sync_duration = sync_record.duration_seconds if sync_record else None
+    
+    cycle_qc_version = get_cycle_qc_version()
 
     def _append_cycles(cycles: List[pd.DataFrame], is_outlier: bool) -> None:
         for idx, cdf in enumerate(cycles):
             s, e, d, auc = _cycle_metrics(cdf)
-            row: Dict[str, Any] = {
-                "Cycle Index": idx,
-                "Is Outlier": is_outlier,
-                "Start (s)": s,
-                "End (s)": e,
-                "Duration (s)": d,
-                "Acoustic AUC": auc,
-            }
-            # Optional channel RMS per cycle (filtered preferred)
+            
+            # Calculate channel RMS values (data-derived)
+            ch_rms = {}
             for n in [1, 2, 3, 4]:
                 col = f"f_ch{n}" if f"f_ch{n}" in cdf.columns else (f"ch{n}" if f"ch{n}" in cdf.columns else None)
                 if col:
                     arr = pd.to_numeric(cdf[col], errors="coerce").to_numpy()
-                    row[f"Ch{n} RMS"] = float(np.sqrt(np.nanmean(arr ** 2)))
-            details.append(row)
+                    ch_rms[n] = float(np.sqrt(np.nanmean(arr ** 2)))
+            
+            # Create Pydantic metadata model
+            cycle_metadata = IndividualMovementCycleMetadata(
+                cycle_index=idx,
+                is_outlier=is_outlier,
+                audio_file_name=audio_file_name,
+                biomechanics_file=biomechanics_file,
+                sync_file_name=sync_file_name,
+                start_time_s=s,
+                end_time_s=e,
+                duration_s=d,
+                acoustic_auc=auc,
+                audio_sample_rate=audio_sample_rate,
+                audio_duration_seconds=audio_duration,
+                audio_qc_version=audio_qc_version,
+                audio_processing_status=audio_status,
+                biomech_sample_rate=biomech_sample_rate,
+                biomech_duration_seconds=biomech_duration,
+                biomech_qc_version=biomech_qc_version,
+                biomech_processing_status=biomech_status,
+                audio_stomp_time=audio_stomp,
+                bio_left_stomp_time=bio_left_stomp,
+                bio_right_stomp_time=bio_right_stomp,
+                knee_side=knee_side,
+                stomp_offset=stomp_offset,
+                sync_qc_performed=sync_qc_performed,
+                sync_qc_passed=sync_qc_passed,
+                sync_duration_seconds=sync_duration,
+                qc_acoustic_threshold=acoustic_threshold,
+                cycle_qc_version=cycle_qc_version,
+                processing_date=datetime.now(),
+            )
+            
+            # Create record from validated metadata
+            cycle_record = IndividualMovementCycleRecord.from_metadata(
+                cycle_metadata,
+                ch1_rms=ch_rms.get(1),
+                ch2_rms=ch_rms.get(2),
+                ch3_rms=ch_rms.get(3),
+                ch4_rms=ch_rms.get(4),
+            )
+            
+            details.append(cycle_record)
             if not is_outlier:
                 durations.append(d)
                 aucs.append(auc)
+                
     # Build details from .pkl files if present; otherwise from provided cycles
     if pkl_cycles:
         for pidx, p in enumerate(sorted(pkl_cycles)):
@@ -1555,23 +1824,60 @@ def create_cycles_record_from_data(
             except Exception:
                 continue
             s, e, d, auc = _cycle_metrics(cdf)
-            row: Dict[str, Any] = {
-                "Cycle File": str(p),
-                "Cycle Index": pidx,
-                # Heuristic: infer outliers by filename
-                "Is Outlier": ("outlier" in p.name.lower()),
-                "Start (s)": s,
-                "End (s)": e,
-                "Duration (s)": d,
-                "Acoustic AUC": auc,
-            }
+            is_outlier = "outlier" in p.name.lower()
+            
+            # Calculate channel RMS values (data-derived)
+            ch_rms = {}
             for n in [1, 2, 3, 4]:
                 col = f"f_ch{n}" if f"f_ch{n}" in cdf.columns else (f"ch{n}" if f"ch{n}" in cdf.columns else None)
                 if col:
                     arr = pd.to_numeric(cdf[col], errors="coerce").to_numpy()
-                    row[f"Ch{n} RMS"] = float(np.sqrt(np.nanmean(arr ** 2)))
-            details.append(row)
-            if not row["Is Outlier"]:
+                    ch_rms[n] = float(np.sqrt(np.nanmean(arr ** 2)))
+            
+            # Create Pydantic metadata model
+            cycle_metadata = IndividualMovementCycleMetadata(
+                cycle_index=pidx,
+                is_outlier=is_outlier,
+                cycle_file=str(p),
+                audio_file_name=audio_file_name,
+                biomechanics_file=biomechanics_file,
+                sync_file_name=sync_file_name,
+                start_time_s=s,
+                end_time_s=e,
+                duration_s=d,
+                acoustic_auc=auc,
+                audio_sample_rate=audio_sample_rate,
+                audio_duration_seconds=audio_duration,
+                audio_qc_version=audio_qc_version,
+                audio_processing_status=audio_status,
+                biomech_sample_rate=biomech_sample_rate,
+                biomech_duration_seconds=biomech_duration,
+                biomech_qc_version=biomech_qc_version,
+                biomech_processing_status=biomech_status,
+                audio_stomp_time=audio_stomp,
+                bio_left_stomp_time=bio_left_stomp,
+                bio_right_stomp_time=bio_right_stomp,
+                knee_side=knee_side,
+                stomp_offset=stomp_offset,
+                sync_qc_performed=sync_qc_performed,
+                sync_qc_passed=sync_qc_passed,
+                sync_duration_seconds=sync_duration,
+                qc_acoustic_threshold=acoustic_threshold,
+                cycle_qc_version=cycle_qc_version,
+                processing_date=datetime.now(),
+            )
+            
+            # Create record from validated metadata
+            cycle_record = IndividualMovementCycleRecord.from_metadata(
+                cycle_metadata,
+                ch1_rms=ch_rms.get(1),
+                ch2_rms=ch_rms.get(2),
+                ch3_rms=ch_rms.get(3),
+                ch4_rms=ch_rms.get(4),
+            )
+            
+            details.append(cycle_record)
+            if not is_outlier:
                 durations.append(d)
                 aucs.append(auc)
     else:
