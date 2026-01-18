@@ -47,41 +47,49 @@ def test_basic_functionality():
 
         # Test 2: Add audio record
         print("  ✓ Adding audio record...")
-        audio_record = AudioProcessingRecord(
+        from src.models import AudioProcessingMetadata
+        audio_metadata = AudioProcessingMetadata(
             audio_file_name="test_audio",
             processing_status="success",
             sample_rate=46875.0,
         )
+        audio_record = AudioProcessingRecord.from_metadata(audio_metadata)
         log.update_audio_record(audio_record)
         assert log.audio_record is not None
 
         # Test 3: Add biomechanics record
         print("  ✓ Adding biomechanics record...")
-        bio_record = BiomechanicsImportRecord(
+        from src.models import BiomechanicsImportMetadata
+        bio_metadata = BiomechanicsImportMetadata(
             biomechanics_file="test.xlsx",
             num_recordings=3,
         )
+        bio_record = BiomechanicsImportRecord.from_metadata(bio_metadata)
         log.update_biomechanics_record(bio_record)
         assert log.biomechanics_record is not None
 
         # Test 4: Add sync records
         print("  ✓ Adding synchronization records...")
+        from src.models import SynchronizationMetadata
         for i in range(3):
-            sync_record = SynchronizationRecord(
+            sync_metadata = SynchronizationMetadata(
                 sync_file_name=f"sync_{i}",
                 num_synced_samples=1000,
             )
+            sync_record = SynchronizationRecord.from_metadata(sync_metadata)
             log.add_synchronization_record(sync_record)
         assert len(log.synchronization_records) == 3
 
         # Test 5: Add cycles records
         print("  ✓ Adding movement cycles records...")
+        from src.models import MovementCyclesMetadata
         for i in range(3):
-            cycles_record = MovementCyclesRecord(
+            cycles_metadata = MovementCyclesMetadata(
                 sync_file_name=f"sync_{i}",
                 clean_cycles=10,
                 outlier_cycles=2,
             )
+            cycles_record = MovementCyclesRecord.from_metadata(cycles_metadata)
             log.add_movement_cycles_record(cycles_record)
         assert len(log.movement_cycles_records) == 3
 
@@ -101,10 +109,11 @@ def test_basic_functionality():
 
         # Test 8: Update existing sync record
         print("  ✓ Testing incremental update...")
-        loaded_log.add_synchronization_record(SynchronizationRecord(
+        sync_metadata_update = SynchronizationMetadata(
             sync_file_name="sync_0",
             num_synced_samples=2000,  # Updated value
-        ))
+        )
+        loaded_log.add_synchronization_record(SynchronizationRecord.from_metadata(sync_metadata_update))
         assert len(loaded_log.synchronization_records) == 3  # Still 3
         assert loaded_log.synchronization_records[0].num_synced_samples == 2000
 

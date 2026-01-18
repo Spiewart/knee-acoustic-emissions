@@ -190,10 +190,12 @@ class TestProcessingLogIntegration:
 
         # Add some data
         from src.orchestration.processing_log import AudioProcessingRecord
-        log1.update_audio_record(AudioProcessingRecord(
+        from src.models import AudioProcessingMetadata
+        audio_metadata = AudioProcessingMetadata(
             audio_file_name="original_audio",
             sample_rate=46875.0,
-        ))
+        )
+        log1.update_audio_record(AudioProcessingRecord.from_metadata(audio_metadata))
         log1.save_to_excel()
 
         # Get or create should load the existing log

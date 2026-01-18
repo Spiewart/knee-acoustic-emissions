@@ -43,10 +43,12 @@ class AudioProcessingRecord:
     
     Wraps AudioProcessingMetadata Pydantic model for Excel export compatibility.
     Use the Pydantic model for validation, this dataclass for logging.
+    
+    Note: _metadata is required - records can only be created from validated data.
     """
     
-    # Pydantic model for validation
-    _metadata: Optional[AudioProcessingMetadata] = None
+    # Pydantic model for validation (required)
+    _metadata: AudioProcessingMetadata
     
     # Keep original fields for backward compatibility
     audio_file_name: str = ""
@@ -154,9 +156,11 @@ class BiomechanicsImportRecord:
     """Record of biomechanics data import.
     
     Wraps BiomechanicsImportMetadata Pydantic model for Excel export compatibility.
+    
+    Note: _metadata is required - records can only be created from validated data.
     """
     
-    _metadata: Optional[BiomechanicsImportMetadata] = None
+    _metadata: BiomechanicsImportMetadata
     
     biomechanics_file: str = ""
     sheet_name: Optional[str] = None
@@ -217,9 +221,11 @@ class SynchronizationRecord:
     """Record of audio-biomechanics synchronization.
     
     Wraps SynchronizationMetadata Pydantic model for Excel export compatibility.
+    
+    Note: _metadata is required - records can only be created from validated data.
     """
     
-    _metadata: Optional[SynchronizationMetadata] = None
+    _metadata: SynchronizationMetadata
     
     sync_file_name: str = ""
     pass_number: Optional[int] = None
@@ -334,9 +340,11 @@ class MovementCyclesRecord:
     """Record of movement cycle extraction and QC.
     
     Wraps MovementCyclesMetadata Pydantic model for Excel export compatibility.
+    
+    Note: _metadata is required - records can only be created from validated data.
     """
     
-    _metadata: Optional[MovementCyclesMetadata] = None
+    _metadata: MovementCyclesMetadata
     
     sync_file_name: str = ""
     processing_date: Optional[datetime] = None
@@ -587,13 +595,13 @@ class ManeuverProcessingLog:
                 audio_df = pd.read_excel(filepath, sheet_name="Audio")
                 if len(audio_df) > 0 and "Audio File" in audio_df.columns:
                     row = audio_df.iloc[0]
-                    log.audio_record = AudioProcessingRecord(
+                    metadata = AudioProcessingMetadata(
                         audio_file_name=row.get("Audio File", ""),
-                        audio_bin_file=row.get("Bin File"),
-                        audio_pkl_file=row.get("Pickle File"),
+                        audio_bin_file=str(row.get("Bin File")) if pd.notna(row.get("Bin File")) else None,
+                        audio_pkl_file=str(row.get("Pickle File")) if pd.notna(row.get("Pickle File")) else None,
                         processing_date=pd.to_datetime(row["Processing Date"]) if pd.notna(row.get("Processing Date")) else None,
                         processing_status=row.get("Status", "not_processed"),
-                        error_message=row.get("Error"),
+                        error_message=str(row.get("Error")) if pd.notna(row.get("Error")) else None,
                         sample_rate=row.get("Sample Rate (Hz)"),
                         num_channels=int(row.get("Channels", 4)),
                         duration_seconds=row.get("Duration (s)"),
@@ -610,12 +618,13 @@ class ManeuverProcessingLog:
                         channel_3_peak=row.get("Ch3 Peak"),
                         channel_4_peak=row.get("Ch4 Peak"),
                         has_instantaneous_freq=bool(row.get("Has Inst. Freq", False)),
-                        QC_not_passed=row.get("QC_not_passed"),
-                        QC_not_passed_mic_1=row.get("QC_not_passed_mic_1"),
-                        QC_not_passed_mic_2=row.get("QC_not_passed_mic_2"),
-                        QC_not_passed_mic_3=row.get("QC_not_passed_mic_3"),
-                        QC_not_passed_mic_4=row.get("QC_not_passed_mic_4"),
+                        qc_not_passed=str(row.get("QC_not_passed")) if pd.notna(row.get("QC_not_passed")) else None,
+                        qc_not_passed_mic_1=str(row.get("QC_not_passed_mic_1")) if pd.notna(row.get("QC_not_passed_mic_1")) else None,
+                        qc_not_passed_mic_2=str(row.get("QC_not_passed_mic_2")) if pd.notna(row.get("QC_not_passed_mic_2")) else None,
+                        qc_not_passed_mic_3=str(row.get("QC_not_passed_mic_3")) if pd.notna(row.get("QC_not_passed_mic_3")) else None,
+                        qc_not_passed_mic_4=str(row.get("QC_not_passed_mic_4")) if pd.notna(row.get("QC_not_passed_mic_4")) else None,
                     )
+                    log.audio_record = AudioProcessingRecord.from_metadata(metadata)
             except Exception as e:
                 logger.warning(f"Could not load audio record: {e}")
 
@@ -624,12 +633,12 @@ class ManeuverProcessingLog:
                 bio_df = pd.read_excel(filepath, sheet_name="Biomechanics")
                 if len(bio_df) > 0 and "Biomechanics File" in bio_df.columns:
                     row = bio_df.iloc[0]
-                    log.biomechanics_record = BiomechanicsImportRecord(
+                    metadata = BiomechanicsImportMetadata(
                         biomechanics_file=row.get("Biomechanics File", ""),
-                        sheet_name=row.get("Sheet Name"),
+                        sheet_name=str(row.get("Sheet Name")) if pd.notna(row.get("Sheet Name")) else None,
                         processing_date=pd.to_datetime(row["Processing Date"]) if pd.notna(row.get("Processing Date")) else None,
                         processing_status=row.get("Status", "not_processed"),
-                        error_message=row.get("Error"),
+                        error_message=str(row.get("Error")) if pd.notna(row.get("Error")) else None,
                         num_recordings=int(row.get("Num Recordings", 0)),
                         num_passes=int(row.get("Num Passes", 0)),
                         duration_seconds=row.get("Duration (s)"),
@@ -638,6 +647,7 @@ class ManeuverProcessingLog:
                         start_time=row.get("Start Time (s)"),
                         end_time=row.get("End Time (s)"),
                     )
+                    log.biomechanics_record = BiomechanicsImportRecord.from_metadata(metadata)
             except Exception as e:
                 logger.warning(f"Could not load biomechanics record: {e}")
 
@@ -646,17 +656,17 @@ class ManeuverProcessingLog:
                 sync_df = pd.read_excel(filepath, sheet_name="Synchronization")
                 if len(sync_df) > 0 and "Sync File" in sync_df.columns:
                     for _, row in sync_df.iterrows():
-                        record = SynchronizationRecord(
+                        metadata = SynchronizationMetadata(
                             sync_file_name=row.get("Sync File", ""),
                             pass_number=int(row["Pass Number"]) if pd.notna(row.get("Pass Number")) else None,
-                            speed=row.get("Speed"),
+                            speed=str(row.get("Speed")) if pd.notna(row.get("Speed")) else None,
                             processing_date=pd.to_datetime(row["Processing Date"]) if pd.notna(row.get("Processing Date")) else None,
                             processing_status=row.get("Status", "not_processed"),
-                            error_message=row.get("Error"),
+                            error_message=str(row.get("Error")) if pd.notna(row.get("Error")) else None,
                             audio_stomp_time=row.get("Audio Stomp (s)"),
                             bio_left_stomp_time=row.get("Bio Left Stomp (s)"),
                             bio_right_stomp_time=row.get("Bio Right Stomp (s)"),
-                            knee_side=row.get("Knee Side"),
+                            knee_side=str(row.get("Knee Side")) if pd.notna(row.get("Knee Side")) else None,
                             stomp_offset=row.get("Stomp Offset (s)"),
                             aligned_audio_stomp_time=row.get("Aligned Audio Stomp (s)"),
                             aligned_bio_stomp_time=row.get("Aligned Bio Stomp (s)"),
@@ -668,7 +678,7 @@ class ManeuverProcessingLog:
                             biomech_qc_version=int(row["Biomech QC Version"]) if pd.notna(row.get("Biomech QC Version")) else get_biomech_qc_version(),
                             # Load detection method details if present (backward compatible with older logs)
                             consensus_time=row.get("Consensus (s)"),
-                            consensus_methods=row.get("Consensus Methods"),
+                            consensus_methods=str(row.get("Consensus Methods")) if pd.notna(row.get("Consensus Methods")) else None,
                             rms_time=row.get("RMS Detect (s)"),
                             onset_time=row.get("Onset Detect (s)"),
                             freq_time=row.get("Freq Detect (s)"),
@@ -676,7 +686,11 @@ class ManeuverProcessingLog:
                             onset_magnitude=row.get("Onset Magnitude"),
                             freq_energy=row.get("Freq Energy"),
                             method_agreement_span=row.get("Method Agreement Span (s)"),
+                            audio_stomp_method=str(row.get("Detection Method")) if pd.notna(row.get("Detection Method")) else None,
+                            selected_time=row.get("Selected Time (s)"),
+                            contra_selected_time=row.get("Contra Selected Time (s)"),
                         )
+                        record = SynchronizationRecord.from_metadata(metadata)
                         log.synchronization_records.append(record)
             except Exception as e:
                 logger.warning(f"Could not load synchronization records: {e}")
@@ -686,16 +700,16 @@ class ManeuverProcessingLog:
                 cycles_df = pd.read_excel(filepath, sheet_name="Movement Cycles")
                 if len(cycles_df) > 0 and "Source Sync File" in cycles_df.columns:
                     for _, row in cycles_df.iterrows():
-                        record = MovementCyclesRecord(
+                        metadata = MovementCyclesMetadata(
                             sync_file_name=row.get("Source Sync File", ""),
                             processing_date=pd.to_datetime(row["Processing Date"]) if pd.notna(row.get("Processing Date")) else None,
                             processing_status=row.get("Status", "not_processed"),
-                            error_message=row.get("Error"),
+                            error_message=str(row.get("Error")) if pd.notna(row.get("Error")) else None,
                             total_cycles_extracted=int(row.get("Total Cycles", 0)),
                             clean_cycles=int(row.get("Clean Cycles", 0)),
                             outlier_cycles=int(row.get("Outlier Cycles", 0)),
                             acoustic_threshold=row.get("Acoustic Threshold"),
-                            output_directory=row.get("Output Directory"),
+                            output_directory=str(row.get("Output Directory")) if pd.notna(row.get("Output Directory")) else None,
                             plots_created=bool(row.get("Plots Created", False)),
                             mean_cycle_duration_s=float(row.get("Mean Duration (s)")) if pd.notna(row.get("Mean Duration (s)")) else None,
                             median_cycle_duration_s=float(row.get("Median Duration (s)")) if pd.notna(row.get("Median Duration (s)")) else None,
@@ -703,6 +717,7 @@ class ManeuverProcessingLog:
                             max_cycle_duration_s=float(row.get("Max Duration (s)")) if pd.notna(row.get("Max Duration (s)")) else None,
                             mean_acoustic_auc=float(row.get("Mean Acoustic AUC")) if pd.notna(row.get("Mean Acoustic AUC")) else None,
                         )
+                        record = MovementCyclesRecord.from_metadata(metadata)
                         log.movement_cycles_records.append(record)
             except Exception as e:
                 logger.warning(f"Could not load movement cycles records: {e}")
@@ -1036,21 +1051,8 @@ def create_audio_record_from_data(
 
     if error:
         # Early return on error - validate and return
-        try:
-            validated = AudioProcessingMetadata(**data)
-            return AudioProcessingRecord.from_metadata(validated)
-        except Exception as validation_error:
-            logger.warning(
-                "Pydantic validation failed for audio record, using unvalidated data: %s",
-                validation_error
-            )
-            # Fall back to creating record directly
-            return AudioProcessingRecord(
-                audio_file_name=audio_file_name,
-                processing_status="error",
-                error_message=str(error),
-                processing_date=datetime.now(),
-            )
+        validated = AudioProcessingMetadata(**data)
+        return AudioProcessingRecord.from_metadata(validated)
 
     data["processing_status"] = "success"
 
@@ -1121,40 +1123,9 @@ def create_audio_record_from_data(
     if audio_bin_path and audio_bin_path.exists():
         data["file_size_mb"] = audio_bin_path.stat().st_size / (1024 * 1024)
 
-    # Validate using Pydantic model
-    try:
-        validated = AudioProcessingMetadata(**data)
-        return AudioProcessingRecord.from_metadata(validated)
-    except Exception as validation_error:
-        logger.warning(
-            "Pydantic validation failed for audio record, using unvalidated data: %s",
-            validation_error
-        )
-        # Fallback: create record directly without validation
-        return AudioProcessingRecord(
-            audio_file_name=audio_file_name,
-            audio_bin_file=data.get("audio_bin_file"),
-            audio_pkl_file=data.get("audio_pkl_file"),
-            processing_date=data.get("processing_date"),
-            processing_status=data.get("processing_status", "success"),
-            error_message=data.get("error_message"),
-            sample_rate=data.get("sample_rate"),
-            num_channels=data.get("num_channels", 4),
-            duration_seconds=data.get("duration_seconds"),
-            file_size_mb=data.get("file_size_mb"),
-            device_serial=data.get("device_serial"),
-            firmware_version=data.get("firmware_version"),
-            file_time=data.get("file_time"),
-            channel_1_rms=data.get("channel_1_rms"),
-            channel_2_rms=data.get("channel_2_rms"),
-            channel_3_rms=data.get("channel_3_rms"),
-            channel_4_rms=data.get("channel_4_rms"),
-            channel_1_peak=data.get("channel_1_peak"),
-            channel_2_peak=data.get("channel_2_peak"),
-            channel_3_peak=data.get("channel_3_peak"),
-            channel_4_peak=data.get("channel_4_peak"),
-            has_instantaneous_freq=data.get("has_instantaneous_freq", False),
-        )
+    # Validate using Pydantic model and create record
+    validated = AudioProcessingMetadata(**data)
+    return AudioProcessingRecord.from_metadata(validated)
 
 
 def create_biomechanics_record_from_data(
@@ -1185,18 +1156,8 @@ def create_biomechanics_record_from_data(
         data["processing_status"] = "error"
         data["error_message"] = str(error)
         # Validate and return early for error case
-        try:
-            validated = BiomechanicsImportMetadata(**data)
-            return BiomechanicsImportRecord.from_metadata(validated)
-        except Exception as validation_error:
-            logger.warning(f"Validation failed for biomechanics record, using unvalidated data: {validation_error}")
-            return BiomechanicsImportRecord(
-                biomechanics_file=data["biomechanics_file"],
-                sheet_name=data.get("sheet_name"),
-                processing_date=data.get("processing_date"),
-                processing_status=data.get("processing_status", "error"),
-                error_message=data.get("error_message"),
-            )
+        validated = BiomechanicsImportMetadata(**data)
+        return BiomechanicsImportRecord.from_metadata(validated)
 
     data["processing_status"] = "success"
     data["num_recordings"] = len(recordings)
@@ -1255,27 +1216,9 @@ def create_biomechanics_record_from_data(
             if data.get("duration_seconds") is None and data.get("sample_rate") and data["sample_rate"] > 0:
                 data["duration_seconds"] = float(len(df) / data["sample_rate"])
 
-    # Validate using Pydantic model
-    try:
-        validated = BiomechanicsImportMetadata(**data)
-        return BiomechanicsImportRecord.from_metadata(validated)
-    except Exception as validation_error:
-        logger.warning(f"Validation failed for biomechanics record, using unvalidated data: {validation_error}")
-        # Fallback: create record directly without validation
-        return BiomechanicsImportRecord(
-            biomechanics_file=data["biomechanics_file"],
-            sheet_name=data.get("sheet_name"),
-            processing_date=data.get("processing_date"),
-            processing_status=data.get("processing_status", "success"),
-            error_message=data.get("error_message"),
-            num_recordings=data.get("num_recordings", 0),
-            num_passes=data.get("num_passes", 0),
-            duration_seconds=data.get("duration_seconds"),
-            num_data_points=data.get("num_data_points"),
-            sample_rate=data.get("sample_rate"),
-            start_time=data.get("start_time"),
-            end_time=data.get("end_time"),
-        )
+    # Validate using Pydantic model and create record
+    validated = BiomechanicsImportMetadata(**data)
+    return BiomechanicsImportRecord.from_metadata(validated)
 
 
 def create_sync_record_from_data(
@@ -1418,26 +1361,8 @@ def create_sync_record_from_data(
         data["processing_status"] = "error"
         data["error_message"] = str(error)
         # Validate and return early for error case
-        try:
-            validated = SynchronizationMetadata(**data)
-            return SynchronizationRecord.from_metadata(validated)
-        except Exception as validation_error:
-            logger.warning(f"Validation failed for sync record, using unvalidated data: {validation_error}")
-            return SynchronizationRecord(
-                sync_file_name=data["sync_file_name"],
-                pass_number=data.get("pass_number"),
-                speed=data.get("speed"),
-                processing_date=data.get("processing_date"),
-                processing_status=data.get("processing_status", "error"),
-                error_message=data.get("error_message"),
-                audio_stomp_time=data.get("audio_stomp_time"),
-                bio_left_stomp_time=data.get("bio_left_stomp_time"),
-                bio_right_stomp_time=data.get("bio_right_stomp_time"),
-                knee_side=data.get("knee_side"),
-                stomp_offset=data.get("stomp_offset"),
-                aligned_audio_stomp_time=data.get("aligned_audio_stomp_time"),
-                aligned_bio_stomp_time=data.get("aligned_bio_stomp_time"),
-            )
+        validated = SynchronizationMetadata(**data)
+        return SynchronizationRecord.from_metadata(validated)
 
     data["processing_status"] = "success"
     data["num_synced_samples"] = len(synced_df)
@@ -1449,42 +1374,9 @@ def create_sync_record_from_data(
         else:
             data["duration_seconds"] = float(duration)
 
-    # Validate using Pydantic model
-    try:
-        validated = SynchronizationMetadata(**data)
-        return SynchronizationRecord.from_metadata(validated)
-    except Exception as validation_error:
-        logger.warning(f"Validation failed for sync record, using unvalidated data: {validation_error}")
-        # Fallback: create record directly without validation
-        return SynchronizationRecord(
-            sync_file_name=data["sync_file_name"],
-            pass_number=data.get("pass_number"),
-            speed=data.get("speed"),
-            processing_date=data.get("processing_date"),
-            processing_status=data.get("processing_status", "success"),
-            error_message=data.get("error_message"),
-            audio_stomp_time=data.get("audio_stomp_time"),
-            bio_left_stomp_time=data.get("bio_left_stomp_time"),
-            bio_right_stomp_time=data.get("bio_right_stomp_time"),
-            knee_side=data.get("knee_side"),
-            stomp_offset=data.get("stomp_offset"),
-            aligned_audio_stomp_time=data.get("aligned_audio_stomp_time"),
-            aligned_bio_stomp_time=data.get("aligned_bio_stomp_time"),
-            num_synced_samples=data.get("num_synced_samples"),
-            duration_seconds=data.get("duration_seconds"),
-            consensus_time=data.get("consensus_time"),
-            consensus_methods=data.get("consensus_methods"),
-            rms_time=data.get("rms_time"),
-            onset_time=data.get("onset_time"),
-            freq_time=data.get("freq_time"),
-            rms_energy=data.get("rms_energy"),
-            onset_magnitude=data.get("onset_magnitude"),
-            freq_energy=data.get("freq_energy"),
-            method_agreement_span=data.get("method_agreement_span"),
-            audio_stomp_method=data.get("audio_stomp_method"),
-            selected_time=data.get("selected_time"),
-            contra_selected_time=data.get("contra_selected_time"),
-        )
+    # Validate using Pydantic model and create record
+    validated = SynchronizationMetadata(**data)
+    return SynchronizationRecord.from_metadata(validated)
 
 
 def create_cycles_record_from_data(
@@ -1523,21 +1415,8 @@ def create_cycles_record_from_data(
         data["processing_status"] = "error"
         data["error_message"] = str(error)
         # Validate and return early for error case
-        try:
-            validated = MovementCyclesMetadata(**data)
-            return MovementCyclesRecord.from_metadata(validated, per_cycle_details=[])
-        except Exception as validation_error:
-            logger.warning(f"Validation failed for cycles record, using unvalidated data: {validation_error}")
-            return MovementCyclesRecord(
-                sync_file_name=data["sync_file_name"],
-                processing_date=data.get("processing_date"),
-                processing_status=data.get("processing_status", "error"),
-                error_message=data.get("error_message"),
-                acoustic_threshold=data.get("acoustic_threshold"),
-                output_directory=data.get("output_directory"),
-                plots_created=data.get("plots_created", False),
-                per_cycle_details=[],
-            )
+        validated = MovementCyclesMetadata(**data)
+        return MovementCyclesRecord.from_metadata(validated, per_cycle_details=[])
 
     data["processing_status"] = "success"
 
@@ -1669,28 +1548,6 @@ def create_cycles_record_from_data(
     if aucs:
         data["mean_acoustic_auc"] = float(np.nanmean(aucs))
 
-    # Validate using Pydantic model
-    try:
-        validated = MovementCyclesMetadata(**data)
-        return MovementCyclesRecord.from_metadata(validated, per_cycle_details=details)
-    except Exception as validation_error:
-        logger.warning(f"Validation failed for cycles record, using unvalidated data: {validation_error}")
-        # Fallback: create record directly without validation
-        return MovementCyclesRecord(
-            sync_file_name=data["sync_file_name"],
-            processing_date=data.get("processing_date"),
-            processing_status=data.get("processing_status", "success"),
-            error_message=data.get("error_message"),
-            total_cycles_extracted=data.get("total_cycles_extracted", 0),
-            clean_cycles=data.get("clean_cycles", 0),
-            outlier_cycles=data.get("outlier_cycles", 0),
-            acoustic_threshold=data.get("acoustic_threshold"),
-            output_directory=data.get("output_directory"),
-            plots_created=data.get("plots_created", False),
-            mean_cycle_duration_s=data.get("mean_cycle_duration_s"),
-            median_cycle_duration_s=data.get("median_cycle_duration_s"),
-            min_cycle_duration_s=data.get("min_cycle_duration_s"),
-            max_cycle_duration_s=data.get("max_cycle_duration_s"),
-            mean_acoustic_auc=data.get("mean_acoustic_auc"),
-            per_cycle_details=details,
-        )
+    # Validate using Pydantic model and create record
+    validated = MovementCyclesMetadata(**data)
+    return MovementCyclesRecord.from_metadata(validated, per_cycle_details=details)

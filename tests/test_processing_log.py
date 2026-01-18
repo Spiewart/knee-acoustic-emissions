@@ -30,27 +30,34 @@ class TestAudioProcessingRecord:
     """Tests for AudioProcessingRecord."""
 
     def test_create_record(self):
-        """Test creating an audio processing record."""
-        record = AudioProcessingRecord(
+        """Test creating an audio processing record from validated metadata."""
+        from src.models import AudioProcessingMetadata
+        
+        metadata = AudioProcessingMetadata(
             audio_file_name="test_audio",
             processing_status="success",
             sample_rate=46875.0,
             duration_seconds=120.5,
         )
+        record = AudioProcessingRecord.from_metadata(metadata)
 
         assert record.audio_file_name == "test_audio"
         assert record.processing_status == "success"
         assert record.sample_rate == 46875.0
         assert record.duration_seconds == 120.5
+        assert record._metadata is not None
 
     def test_to_dict(self):
         """Test converting record to dictionary."""
-        record = AudioProcessingRecord(
+        from src.models import AudioProcessingMetadata
+        
+        metadata = AudioProcessingMetadata(
             audio_file_name="test_audio",
             processing_status="success",
             sample_rate=46875.0,
             channel_1_rms=150.3,
         )
+        record = AudioProcessingRecord.from_metadata(metadata)
 
         data = record.to_dict()
 
@@ -64,7 +71,10 @@ class TestAudioProcessingRecord:
 
     def test_default_values(self):
         """Test that default values are set correctly."""
-        record = AudioProcessingRecord(audio_file_name="test")
+        from src.models import AudioProcessingMetadata
+        
+        metadata = AudioProcessingMetadata(audio_file_name="test")
+        record = AudioProcessingRecord.from_metadata(metadata)
 
         assert record.processing_status == "not_processed"
         assert record.num_channels == 4
@@ -77,26 +87,33 @@ class TestBiomechanicsImportRecord:
     """Tests for BiomechanicsImportRecord."""
 
     def test_create_record(self):
-        """Test creating a biomechanics import record."""
-        record = BiomechanicsImportRecord(
+        """Test creating a biomechanics import record from validated metadata."""
+        from src.models import BiomechanicsImportMetadata
+        
+        metadata = BiomechanicsImportMetadata(
             biomechanics_file="AOA1011_Biomechanics_Full_Set.xlsx",
             processing_status="success",
             num_recordings=3,
             num_passes=9,
         )
+        record = BiomechanicsImportRecord.from_metadata(metadata)
 
         assert record.biomechanics_file == "AOA1011_Biomechanics_Full_Set.xlsx"
         assert record.processing_status == "success"
         assert record.num_recordings == 3
         assert record.num_passes == 9
+        assert record._metadata is not None
 
     def test_to_dict(self):
         """Test converting record to dictionary."""
-        record = BiomechanicsImportRecord(
+        from src.models import BiomechanicsImportMetadata
+        
+        metadata = BiomechanicsImportMetadata(
             biomechanics_file="test.xlsx",
             sheet_name="Walk0001",
             num_recordings=5,
         )
+        record = BiomechanicsImportRecord.from_metadata(metadata)
 
         data = record.to_dict()
 
@@ -111,8 +128,10 @@ class TestSynchronizationRecord:
     """Tests for SynchronizationRecord."""
 
     def test_create_record(self):
-        """Test creating a synchronization record."""
-        record = SynchronizationRecord(
+        """Test creating a synchronization record from validated metadata."""
+        from src.models import SynchronizationMetadata
+        
+        metadata = SynchronizationMetadata(
             sync_file_name="left_walk_slow_pass1",
             pass_number=1,
             speed="slow",
@@ -120,6 +139,7 @@ class TestSynchronizationRecord:
             bio_left_stomp_time=5.2,
             knee_side="left",
         )
+        record = SynchronizationRecord.from_metadata(metadata)
 
         assert record.sync_file_name == "left_walk_slow_pass1"
         assert record.pass_number == 1
@@ -129,11 +149,13 @@ class TestSynchronizationRecord:
 
     def test_to_dict(self):
         """Test converting record to dictionary."""
-        record = SynchronizationRecord(
+        from src.models import SynchronizationMetadata
+        metadata = SynchronizationMetadata(
             sync_file_name="test_sync",
             processing_status="success",
             num_synced_samples=1000,
         )
+        record = SynchronizationRecord.from_metadata(metadata)
 
         data = record.to_dict()
 
@@ -151,12 +173,14 @@ class TestMovementCyclesRecord:
 
     def test_create_record(self):
         """Test creating a movement cycles record."""
-        record = MovementCyclesRecord(
+        from src.models import MovementCyclesMetadata
+        metadata = MovementCyclesMetadata(
             sync_file_name="test_sync",
             total_cycles_extracted=12,
             clean_cycles=10,
             outlier_cycles=2,
         )
+        record = MovementCyclesRecord.from_metadata(metadata)
 
         assert record.sync_file_name == "test_sync"
         assert record.total_cycles_extracted == 12
@@ -165,11 +189,13 @@ class TestMovementCyclesRecord:
 
     def test_to_dict(self):
         """Test converting record to dictionary."""
-        record = MovementCyclesRecord(
+        from src.models import MovementCyclesMetadata
+        metadata = MovementCyclesMetadata(
             sync_file_name="test_sync",
             clean_cycles=8,
             outlier_cycles=2,
         )
+        record = MovementCyclesRecord.from_metadata(metadata)
 
         data = record.to_dict()
 
@@ -201,6 +227,7 @@ class TestManeuverProcessingLog:
 
     def test_update_audio_record(self, tmp_path):
         """Test updating audio record."""
+        from src.models import AudioProcessingMetadata
         log = ManeuverProcessingLog(
             study_id="1011",
             knee_side="Left",
@@ -208,10 +235,11 @@ class TestManeuverProcessingLog:
             maneuver_directory=tmp_path,
         )
 
-        audio_record = AudioProcessingRecord(
+        metadata = AudioProcessingMetadata(
             audio_file_name="test_audio",
             processing_status="success",
         )
+        audio_record = AudioProcessingRecord.from_metadata(metadata)
 
         log.update_audio_record(audio_record)
 
@@ -221,6 +249,7 @@ class TestManeuverProcessingLog:
 
     def test_add_synchronization_record(self, tmp_path):
         """Test adding synchronization record."""
+        from src.models import SynchronizationMetadata
         log = ManeuverProcessingLog(
             study_id="1011",
             knee_side="Left",
@@ -228,10 +257,11 @@ class TestManeuverProcessingLog:
             maneuver_directory=tmp_path,
         )
 
-        sync_record = SynchronizationRecord(
+        metadata = SynchronizationMetadata(
             sync_file_name="test_sync",
             processing_status="success",
         )
+        sync_record = SynchronizationRecord.from_metadata(metadata)
 
         log.add_synchronization_record(sync_record)
 
@@ -240,6 +270,7 @@ class TestManeuverProcessingLog:
 
     def test_update_existing_synchronization_record(self, tmp_path):
         """Test that adding a record with same filename updates existing."""
+        from src.models import SynchronizationMetadata
         log = ManeuverProcessingLog(
             study_id="1011",
             knee_side="Left",
@@ -248,17 +279,19 @@ class TestManeuverProcessingLog:
         )
 
         # Add first record
-        sync_record1 = SynchronizationRecord(
+        metadata1 = SynchronizationMetadata(
             sync_file_name="test_sync",
             num_synced_samples=1000,
         )
+        sync_record1 = SynchronizationRecord.from_metadata(metadata1)
         log.add_synchronization_record(sync_record1)
 
         # Add second record with same name
-        sync_record2 = SynchronizationRecord(
+        metadata2 = SynchronizationMetadata(
             sync_file_name="test_sync",
             num_synced_samples=2000,
         )
+        sync_record2 = SynchronizationRecord.from_metadata(metadata2)
         log.add_synchronization_record(sync_record2)
 
         # Should only have one record, with updated values
@@ -267,6 +300,7 @@ class TestManeuverProcessingLog:
 
     def test_add_movement_cycles_record(self, tmp_path):
         """Test adding movement cycles record."""
+        from src.models import MovementCyclesMetadata
         log = ManeuverProcessingLog(
             study_id="1011",
             knee_side="Left",
@@ -274,11 +308,12 @@ class TestManeuverProcessingLog:
             maneuver_directory=tmp_path,
         )
 
-        cycles_record = MovementCyclesRecord(
+        metadata = MovementCyclesMetadata(
             sync_file_name="test_sync",
             clean_cycles=10,
             outlier_cycles=2,
         )
+        cycles_record = MovementCyclesRecord.from_metadata(metadata)
 
         log.add_movement_cycles_record(cycles_record)
 
@@ -287,6 +322,7 @@ class TestManeuverProcessingLog:
 
     def test_save_to_excel(self, tmp_path):
         """Test saving log to Excel file."""
+        from src.models import AudioProcessingMetadata, SynchronizationMetadata
         log = ManeuverProcessingLog(
             study_id="1011",
             knee_side="Left",
@@ -297,15 +333,17 @@ class TestManeuverProcessingLog:
         )
 
         # Add some data
-        log.update_audio_record(AudioProcessingRecord(
+        audio_metadata = AudioProcessingMetadata(
             audio_file_name="test_audio",
             processing_status="success",
-        ))
+        )
+        log.update_audio_record(AudioProcessingRecord.from_metadata(audio_metadata))
 
-        log.add_synchronization_record(SynchronizationRecord(
+        sync_metadata = SynchronizationMetadata(
             sync_file_name="test_sync",
             processing_status="success",
-        ))
+        )
+        log.add_synchronization_record(SynchronizationRecord.from_metadata(sync_metadata))
 
         # Save to Excel
         excel_path = tmp_path / "test_log.xlsx"
@@ -316,6 +354,7 @@ class TestManeuverProcessingLog:
 
     def test_load_from_excel(self, tmp_path):
         """Test loading log from Excel file."""
+        from src.models import AudioProcessingMetadata, SynchronizationMetadata
         # Create and save a log
         original_log = ManeuverProcessingLog(
             study_id="1011",
@@ -326,16 +365,18 @@ class TestManeuverProcessingLog:
             log_updated=datetime.now(),
         )
 
-        original_log.update_audio_record(AudioProcessingRecord(
+        audio_metadata = AudioProcessingMetadata(
             audio_file_name="test_audio",
             sample_rate=46875.0,
             processing_status="success",
-        ))
+        )
+        original_log.update_audio_record(AudioProcessingRecord.from_metadata(audio_metadata))
 
-        original_log.add_synchronization_record(SynchronizationRecord(
+        sync_metadata = SynchronizationMetadata(
             sync_file_name="test_sync",
             num_synced_samples=1000,
-        ))
+        )
+        original_log.add_synchronization_record(SynchronizationRecord.from_metadata(sync_metadata))
 
         excel_path = tmp_path / "test_log.xlsx"
         original_log.save_to_excel(excel_path)
@@ -375,6 +416,7 @@ class TestManeuverProcessingLog:
 
     def test_get_or_create_loads_existing(self, tmp_path):
         """Test get_or_create loads existing log when file exists."""
+        from src.models import AudioProcessingMetadata
         # Create and save a log
         original_log = ManeuverProcessingLog(
             study_id="1011",
@@ -383,9 +425,10 @@ class TestManeuverProcessingLog:
             maneuver_directory=tmp_path,
             log_created=datetime.now(),
         )
-        original_log.update_audio_record(AudioProcessingRecord(
+        metadata = AudioProcessingMetadata(
             audio_file_name="original_audio",
-        ))
+        )
+        original_log.update_audio_record(AudioProcessingRecord.from_metadata(metadata))
         original_log.save_to_excel()
 
         # Get or create should load existing
@@ -555,6 +598,7 @@ class TestIncrementalUpdates:
 
     def test_update_only_audio_preserves_other_records(self, tmp_path):
         """Test that updating audio doesn't affect other records."""
+        from src.models import AudioProcessingMetadata, SynchronizationMetadata
         log = ManeuverProcessingLog(
             study_id="1011",
             knee_side="Left",
@@ -563,15 +607,17 @@ class TestIncrementalUpdates:
         )
 
         # Add sync record
-        log.add_synchronization_record(SynchronizationRecord(
+        sync_metadata = SynchronizationMetadata(
             sync_file_name="test_sync",
             num_synced_samples=1000,
-        ))
+        )
+        log.add_synchronization_record(SynchronizationRecord.from_metadata(sync_metadata))
 
         # Update audio record
-        log.update_audio_record(AudioProcessingRecord(
+        audio_metadata = AudioProcessingMetadata(
             audio_file_name="new_audio",
-        ))
+        )
+        log.update_audio_record(AudioProcessingRecord.from_metadata(audio_metadata))
 
         # Sync record should still be there
         assert len(log.synchronization_records) == 1
@@ -581,6 +627,7 @@ class TestIncrementalUpdates:
 
     def test_update_sync_record_replaces_existing(self, tmp_path):
         """Test that updating a sync record replaces the old one."""
+        from src.models import SynchronizationMetadata
         log = ManeuverProcessingLog(
             study_id="1011",
             knee_side="Left",
@@ -589,18 +636,20 @@ class TestIncrementalUpdates:
         )
 
         # Add first sync record
-        log.add_synchronization_record(SynchronizationRecord(
+        metadata1 = SynchronizationMetadata(
             sync_file_name="test_sync",
             num_synced_samples=1000,
             duration_seconds=10.0,
-        ))
+        )
+        log.add_synchronization_record(SynchronizationRecord.from_metadata(metadata1))
 
         # Update with new data for same file
-        log.add_synchronization_record(SynchronizationRecord(
+        metadata2 = SynchronizationMetadata(
             sync_file_name="test_sync",
             num_synced_samples=2000,
             duration_seconds=20.0,
-        ))
+        )
+        log.add_synchronization_record(SynchronizationRecord.from_metadata(metadata2))
 
         # Should only have one record with updated values
         assert len(log.synchronization_records) == 1
@@ -609,6 +658,7 @@ class TestIncrementalUpdates:
 
     def test_roundtrip_preserves_data(self, tmp_path):
         """Test that save and load preserves all data."""
+        from src.models import AudioProcessingMetadata, BiomechanicsImportMetadata, SynchronizationMetadata, MovementCyclesMetadata
         # Create a comprehensive log
         original_log = ManeuverProcessingLog(
             study_id="1011",
@@ -619,31 +669,35 @@ class TestIncrementalUpdates:
         )
 
         # Add all types of records
-        original_log.update_audio_record(AudioProcessingRecord(
+        audio_metadata = AudioProcessingMetadata(
             audio_file_name="test_audio",
             sample_rate=46875.0,
             channel_1_rms=150.3,
             has_instantaneous_freq=True,
-        ))
+        )
+        original_log.update_audio_record(AudioProcessingRecord.from_metadata(audio_metadata))
 
-        original_log.update_biomechanics_record(BiomechanicsImportRecord(
+        bio_metadata = BiomechanicsImportMetadata(
             biomechanics_file="test.xlsx",
             num_recordings=3,
             num_passes=9,
-        ))
+        )
+        original_log.update_biomechanics_record(BiomechanicsImportRecord.from_metadata(bio_metadata))
 
         for i in range(3):
-            original_log.add_synchronization_record(SynchronizationRecord(
+            sync_metadata = SynchronizationMetadata(
                 sync_file_name=f"sync_{i}",
                 num_synced_samples=1000 + i,
-            ))
+            )
+            original_log.add_synchronization_record(SynchronizationRecord.from_metadata(sync_metadata))
 
         for i in range(3):
-            original_log.add_movement_cycles_record(MovementCyclesRecord(
+            cycles_metadata = MovementCyclesMetadata(
                 sync_file_name=f"sync_{i}",
                 clean_cycles=10 + i,
                 outlier_cycles=2,
-            ))
+            )
+            original_log.add_movement_cycles_record(MovementCyclesRecord.from_metadata(cycles_metadata))
 
         # Save and load
         excel_path = tmp_path / "test_log.xlsx"
