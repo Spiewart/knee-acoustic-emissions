@@ -74,9 +74,9 @@ def test_basic_functionality():
         for i in range(3):
             sync_metadata = SynchronizationMetadata(
                 sync_file_name=f"sync_{i}",
-                num_synced_samples=1000,
             )
             sync_record = SynchronizationRecord.from_metadata(sync_metadata)
+            sync_record.num_synced_samples = 1000
             log.add_synchronization_record(sync_record)
         assert len(log.synchronization_records) == 3
 
@@ -111,9 +111,10 @@ def test_basic_functionality():
         print("  ✓ Testing incremental update...")
         sync_metadata_update = SynchronizationMetadata(
             sync_file_name="sync_0",
-            num_synced_samples=2000,  # Updated value
         )
-        loaded_log.add_synchronization_record(SynchronizationRecord.from_metadata(sync_metadata_update))
+        sync_record_update = SynchronizationRecord.from_metadata(sync_metadata_update)
+        sync_record_update.num_synced_samples = 2000  # Updated value
+        loaded_log.add_synchronization_record(sync_record_update)
         assert len(loaded_log.synchronization_records) == 3  # Still 3
         assert loaded_log.synchronization_records[0].num_synced_samples == 2000
 

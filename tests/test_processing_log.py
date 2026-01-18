@@ -55,9 +55,9 @@ class TestAudioProcessingRecord:
             audio_file_name="test_audio",
             processing_status="success",
             sample_rate=46875.0,
-            channel_1_rms=150.3,
         )
         record = AudioProcessingRecord.from_metadata(metadata)
+        record.channel_1_rms = 150.3
 
         data = record.to_dict()
 
@@ -153,9 +153,9 @@ class TestSynchronizationRecord:
         metadata = SynchronizationMetadata(
             sync_file_name="test_sync",
             processing_status="success",
-            num_synced_samples=1000,
         )
         record = SynchronizationRecord.from_metadata(metadata)
+        record.num_synced_samples = 1000
 
         data = record.to_dict()
 
@@ -281,17 +281,17 @@ class TestManeuverProcessingLog:
         # Add first record
         metadata1 = SynchronizationMetadata(
             sync_file_name="test_sync",
-            num_synced_samples=1000,
         )
         sync_record1 = SynchronizationRecord.from_metadata(metadata1)
+        sync_record1.num_synced_samples = 1000
         log.add_synchronization_record(sync_record1)
 
         # Add second record with same name
         metadata2 = SynchronizationMetadata(
             sync_file_name="test_sync",
-            num_synced_samples=2000,
         )
         sync_record2 = SynchronizationRecord.from_metadata(metadata2)
+        sync_record2.num_synced_samples = 2000
         log.add_synchronization_record(sync_record2)
 
         # Should only have one record, with updated values
@@ -374,9 +374,10 @@ class TestManeuverProcessingLog:
 
         sync_metadata = SynchronizationMetadata(
             sync_file_name="test_sync",
-            num_synced_samples=1000,
         )
-        original_log.add_synchronization_record(SynchronizationRecord.from_metadata(sync_metadata))
+        sync_record = SynchronizationRecord.from_metadata(sync_metadata)
+        sync_record.num_synced_samples = 1000
+        original_log.add_synchronization_record(sync_record)
 
         excel_path = tmp_path / "test_log.xlsx"
         original_log.save_to_excel(excel_path)
@@ -609,9 +610,10 @@ class TestIncrementalUpdates:
         # Add sync record
         sync_metadata = SynchronizationMetadata(
             sync_file_name="test_sync",
-            num_synced_samples=1000,
         )
-        log.add_synchronization_record(SynchronizationRecord.from_metadata(sync_metadata))
+        sync_record = SynchronizationRecord.from_metadata(sync_metadata)
+        sync_record.num_synced_samples = 1000
+        log.add_synchronization_record(sync_record)
 
         # Update audio record
         audio_metadata = AudioProcessingMetadata(
@@ -638,18 +640,20 @@ class TestIncrementalUpdates:
         # Add first sync record
         metadata1 = SynchronizationMetadata(
             sync_file_name="test_sync",
-            num_synced_samples=1000,
             duration_seconds=10.0,
         )
-        log.add_synchronization_record(SynchronizationRecord.from_metadata(metadata1))
+        sync_record1 = SynchronizationRecord.from_metadata(metadata1)
+        sync_record1.num_synced_samples = 1000
+        log.add_synchronization_record(sync_record1)
 
         # Update with new data for same file
         metadata2 = SynchronizationMetadata(
             sync_file_name="test_sync",
-            num_synced_samples=2000,
             duration_seconds=20.0,
         )
-        log.add_synchronization_record(SynchronizationRecord.from_metadata(metadata2))
+        sync_record2 = SynchronizationRecord.from_metadata(metadata2)
+        sync_record2.num_synced_samples = 2000
+        log.add_synchronization_record(sync_record2)
 
         # Should only have one record with updated values
         assert len(log.synchronization_records) == 1
@@ -672,10 +676,11 @@ class TestIncrementalUpdates:
         audio_metadata = AudioProcessingMetadata(
             audio_file_name="test_audio",
             sample_rate=46875.0,
-            channel_1_rms=150.3,
             has_instantaneous_freq=True,
         )
-        original_log.update_audio_record(AudioProcessingRecord.from_metadata(audio_metadata))
+        audio_record = AudioProcessingRecord.from_metadata(audio_metadata)
+        audio_record.channel_1_rms = 150.3
+        original_log.update_audio_record(audio_record)
 
         bio_metadata = BiomechanicsImportMetadata(
             biomechanics_file="test.xlsx",
@@ -687,9 +692,10 @@ class TestIncrementalUpdates:
         for i in range(3):
             sync_metadata = SynchronizationMetadata(
                 sync_file_name=f"sync_{i}",
-                num_synced_samples=1000 + i,
             )
-            original_log.add_synchronization_record(SynchronizationRecord.from_metadata(sync_metadata))
+            sync_record = SynchronizationRecord.from_metadata(sync_metadata)
+            sync_record.num_synced_samples = 1000 + i
+            original_log.add_synchronization_record(sync_record)
 
         for i in range(3):
             cycles_metadata = MovementCyclesMetadata(

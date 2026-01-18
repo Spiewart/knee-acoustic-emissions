@@ -442,16 +442,6 @@ class AudioProcessingMetadata(BaseModel):
     firmware_version: Optional[int] = None
     file_time: Optional[datetime] = None
     
-    # QC metrics (per-channel RMS and peak values)
-    channel_1_rms: Optional[float] = None
-    channel_2_rms: Optional[float] = None
-    channel_3_rms: Optional[float] = None
-    channel_4_rms: Optional[float] = None
-    channel_1_peak: Optional[float] = None
-    channel_2_peak: Optional[float] = None
-    channel_3_peak: Optional[float] = None
-    channel_4_peak: Optional[float] = None
-    
     # Processing flags
     has_instantaneous_freq: bool = False
     
@@ -513,7 +503,6 @@ class BiomechanicsImportMetadata(BaseModel):
     
     # Data characteristics
     duration_seconds: Optional[float] = None
-    num_data_points: Optional[int] = None
     sample_rate: Optional[float] = None
     
     # Time range
@@ -569,7 +558,6 @@ class SynchronizationMetadata(BaseModel):
     aligned_bio_stomp_time: Optional[float] = None  # seconds (synced coords)
     
     # Synchronized data characteristics
-    num_synced_samples: Optional[int] = None
     duration_seconds: Optional[float] = None
     
     # QC results
@@ -586,9 +574,6 @@ class SynchronizationMetadata(BaseModel):
     rms_time: Optional[float] = None
     onset_time: Optional[float] = None
     freq_time: Optional[float] = None
-    rms_energy: Optional[float] = None
-    onset_magnitude: Optional[float] = None
-    freq_energy: Optional[float] = None
     method_agreement_span: Optional[float] = None
     
     # Biomechanics-guided detection metadata
@@ -602,14 +587,6 @@ class SynchronizationMetadata(BaseModel):
         """Validate pass number is non-negative if provided."""
         if value is not None and value < 0:
             raise ValueError("pass_number must be non-negative")
-        return value
-    
-    @field_validator("num_synced_samples")
-    @classmethod
-    def validate_num_samples(cls, value: Optional[int]) -> Optional[int]:
-        """Validate sample count is positive if provided."""
-        if value is not None and value <= 0:
-            raise ValueError("num_synced_samples must be positive")
         return value
 
 
@@ -634,11 +611,7 @@ class MovementCyclesMetadata(BaseModel):
     outlier_cycles: int = 0
     
     # QC parameters
-    acoustic_threshold: Optional[float] = None
-    
-    # Output information
-    output_directory: Optional[str] = None
-    plots_created: bool = False
+    qc_acoustic_threshold: Optional[float] = None
     
     # Aggregate statistics (across clean cycles)
     mean_cycle_duration_s: Optional[float] = None
