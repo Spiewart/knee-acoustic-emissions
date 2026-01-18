@@ -411,16 +411,3 @@ class MovementCycle(FullMovementCycleMetadata):
 
     data: SynchronizedData
 
-
-
-
-# Legacy processing log models - now in src.metadata
-# Import them here for backward compatibility with existing code
-from src.metadata import (
-    AudioProcessing as AudioProcessingMetadata,
-    BiomechanicsImport as BiomechanicsImportMetadata,
-    Synchronization as SynchronizationMetadata,
-    MovementCycles as MovementCyclesMetadata,
-    MovementCycle as MovementCycleMetadata,
-)
-

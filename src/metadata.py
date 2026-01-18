@@ -104,24 +104,7 @@ class AudioProcessing:
             raise ValueError(f"num_channels must be 1-4, got {value}")
         return value
     
-    @classmethod
-    def from_metadata(cls, metadata: 'AudioProcessing') -> 'AudioProcessing':
-        """Backward compatibility: create from metadata (now a no-op since unified).
-        
-        This method exists for backward compatibility with code that used the old
-        two-step pattern (create metadata, then wrap in record). Since AudioProcessing
-        is now a unified class that combines both metadata and record functionality,
-        this simply returns the input unchanged.
-        
-        This method can be removed in a future major version once all calling code
-        has been migrated to use the unified class directly.
-        """
-        return metadata
-    
-    @property
-    def _metadata(self) -> 'AudioProcessing':
-        """Backward compatibility: return self as metadata."""
-        return self
+
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for Excel export."""
@@ -209,15 +192,7 @@ class BiomechanicsImport:
             raise ValueError("sample_rate must be positive")
         return value
     
-    @classmethod
-    def from_metadata(cls, metadata: 'BiomechanicsImport') -> 'BiomechanicsImport':
-        """Backward compatibility: create from metadata (now a no-op since unified)."""
-        return metadata
-    
-    @property
-    def _metadata(self) -> 'BiomechanicsImport':
-        """Backward compatibility: return self as metadata."""
-        return self
+
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for Excel export."""
@@ -308,15 +283,7 @@ class Synchronization:
             raise ValueError("pass_number must be non-negative")
         return value
     
-    @classmethod
-    def from_metadata(cls, metadata: 'Synchronization') -> 'Synchronization':
-        """Backward compatibility: create from metadata (now a no-op since unified)."""
-        return metadata
-    
-    @property
-    def _metadata(self) -> 'Synchronization':
-        """Backward compatibility: return self as metadata."""
-        return self
+
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for Excel export."""
@@ -405,28 +372,9 @@ class MovementCycles:
             raise ValueError("cycle counts must be non-negative")
         return value
     
-    @classmethod
-    def from_metadata(cls, metadata: 'MovementCycles', per_cycle_details: Optional[List['MovementCycle']] = None) -> 'MovementCycles':
-        """Backward compatibility: create from metadata.
-        
-        Since metadata is now unified with the record, just update per_cycle_details if provided.
-        """
-        if per_cycle_details is not None:
-            metadata.per_cycle_details = per_cycle_details
-        return metadata
-    
-    @property
-    def _metadata(self) -> 'MovementCycles':
-        """Backward compatibility: return self as metadata."""
-        return self
-    
     @property
     def acoustic_threshold(self) -> Optional[float]:
-        """Backward compatibility: alias for qc_acoustic_threshold.
-        
-        The preferred field name is `qc_acoustic_threshold`. This property exists
-        for backward compatibility with code expecting the shorter name.
-        """
+        """Alias for qc_acoustic_threshold for convenience."""
         return self.qc_acoustic_threshold
 
     def to_dict(self) -> Dict[str, Any]:
@@ -512,32 +460,7 @@ class MovementCycle:
             raise ValueError("acoustic_auc must be non-negative")
         return value
     
-    @classmethod
-    def from_metadata(cls, metadata: 'MovementCycle', 
-                     ch1_rms: Optional[float] = None,
-                     ch2_rms: Optional[float] = None,
-                     ch3_rms: Optional[float] = None,
-                     ch4_rms: Optional[float] = None) -> 'MovementCycle':
-        """Backward compatibility: create from metadata.
-        
-        Since metadata is now unified with the record, just update channel RMS if provided.
-        """
-        if ch1_rms is not None:
-            metadata.ch1_rms = ch1_rms
-        if ch2_rms is not None:
-            metadata.ch2_rms = ch2_rms
-        if ch3_rms is not None:
-            metadata.ch3_rms = ch3_rms
-        if ch4_rms is not None:
-            metadata.ch4_rms = ch4_rms
-        return metadata
-    
-    @property
-    def _metadata(self) -> 'MovementCycle':
-        """Backward compatibility: return self as metadata."""
-        return self
-    
-    # Helper properties for backward compatibility and easy access to flattened data
+    # Helper properties for easy access to flattened data
     @property
     def audio_file_name(self) -> Optional[str]:
         """Get audio file name from embedded metadata."""
