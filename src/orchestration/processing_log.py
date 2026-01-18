@@ -1049,18 +1049,15 @@ def create_sync_record_from_data(
     if error:
         data["processing_status"] = "error"
         data["error_message"] = str(error)
-        # Validate and return early for error case
-        validated = SynchronizationMetadata(**data)
-        record = SynchronizationRecord.from_metadata(validated)
-        # Set data-derived fields
-        record.rms_energy = rms_energy
-        record.onset_magnitude = onset_magnitude
-        record.freq_energy = freq_energy
-        return record
+        # Include data-derived fields in unified class
+        data["rms_energy"] = rms_energy
+        data["onset_magnitude"] = onset_magnitude
+        data["freq_energy"] = freq_energy
+        return Synchronization(**data)
 
     data["processing_status"] = "success"
     # num_synced_samples is pure data-derived, duration_seconds is metadata
-    num_synced_samples = len(synced_df)
+    data["num_synced_samples"] = len(synced_df)
 
     if "tt" in synced_df.columns and len(synced_df) > 0:
         duration = synced_df["tt"].iloc[-1] - synced_df["tt"].iloc[0]
@@ -1069,17 +1066,12 @@ def create_sync_record_from_data(
         else:
             data["duration_seconds"] = float(duration)
 
-    # Validate using Pydantic model and create record
-    validated = SynchronizationMetadata(**data)
-    record = SynchronizationRecord.from_metadata(validated)
+    # Include all data-derived fields in unified Synchronization class
+    data["rms_energy"] = rms_energy
+    data["onset_magnitude"] = onset_magnitude
+    data["freq_energy"] = freq_energy
     
-    # Set pure data-derived fields directly (not in metadata)
-    record.num_synced_samples = num_synced_samples
-    record.rms_energy = rms_energy
-    record.onset_magnitude = onset_magnitude
-    record.freq_energy = freq_energy
-    
-    return record
+    return Synchronization(**data)
 
 
 def create_cycles_record_from_data(
@@ -1122,13 +1114,11 @@ def create_cycles_record_from_data(
     if error:
         data["processing_status"] = "error"
         data["error_message"] = str(error)
-        # Validate and return early for error case
-        validated = MovementCyclesMetadata(**data)
-        # Set output_directory and plots_created directly on record (not in metadata)
-        record = MovementCyclesRecord.from_metadata(validated, per_cycle_details=[])
-        record.output_directory = str(output_dir) if output_dir else None
-        record.plots_created = plots_created
-        return record
+        # Include data-derived fields in unified class
+        data["output_directory"] = str(output_dir) if output_dir else None
+        data["plots_created"] = plots_created
+        data["per_cycle_details"] = []
+        return MovementCycles(**data)
 
     data["processing_status"] = "success"
 
@@ -1310,15 +1300,16 @@ def create_cycles_record_from_data(
     if aucs:
         data["mean_acoustic_auc"] = float(np.nanmean(aucs))
 
-    # Validate using Pydantic model and create record
-    validated = MovementCyclesMetadata(**data)
+    # Include data-derived fields in unified MovementCycles class
+    data["output_directory"] = str(output_dir) if output_dir else None
+    data["plots_created"] = plots_created
+    data["per_cycle_details"] = details
+    
+    # Create unified MovementCycles object
+    cycles = MovementCycles(**data)
     
     # Now update all cycle records with the complete cycles_metadata
     for detail in details:
-        detail._metadata.cycles_metadata = validated
+        detail.cycles_metadata = cycles
     
-    record = MovementCyclesRecord.from_metadata(validated, per_cycle_details=details)
-    # Set data-derived fields directly (not in metadata)
-    record.output_directory = str(output_dir) if output_dir else None
-    record.plots_created = plots_created
-    return record
+    return cycles
