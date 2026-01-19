@@ -184,7 +184,8 @@ class ManeuverProcessingLog:
                             is_outlier = "outlier" in pkl_path.name.lower()
 
                             # Extract cycle metrics
-                            if "tt" in cycle_df.columns:
+                            tt_exists = "tt" in cycle_df.columns
+                            if tt_exists:
                                 tt_seconds = pd.to_numeric(cycle_df["tt"], errors="coerce").to_numpy()
                                 tt_seconds = tt_seconds[~np.isnan(tt_seconds)]
                                 if tt_seconds.size > 0:
@@ -193,21 +194,24 @@ class ManeuverProcessingLog:
                                     duration_s = float(end_s - start_s)
                                 else:
                                     start_s = end_s = duration_s = 0.0
+                                    tt_exists = False
                             else:
                                 start_s = end_s = duration_s = 0.0
 
-                            # Calculate AUC
-                            rel_tt = tt_seconds - start_s if tt_seconds.size > 0 else np.array([0.0])
-                            ch_names = [c for c in ["f_ch1", "f_ch2", "f_ch3", "f_ch4"] if c in cycle_df.columns]
-                            if not ch_names:
-                                ch_names = [c for c in ["ch1", "ch2", "ch3", "ch4"] if c in cycle_df.columns]
+                            # Calculate AUC (only if we have valid time data)
                             auc_total = 0.0
-                            for c in ch_names:
-                                y = np.abs(pd.to_numeric(cycle_df[c], errors="coerce").to_numpy())
-                                try:
-                                    auc_total += np.trapezoid(y, rel_tt)
-                                except AttributeError:
-                                    auc_total += np.trapz(y, rel_tt)
+                            if tt_exists:
+                                rel_tt = tt_seconds - start_s
+                                ch_names = [c for c in ["f_ch1", "f_ch2", "f_ch3", "f_ch4"] if c in cycle_df.columns]
+                                if not ch_names:
+                                    ch_names = [c for c in ["ch1", "ch2", "ch3", "ch4"] if c in cycle_df.columns]
+                                for c in ch_names:
+                                    y = np.abs(pd.to_numeric(cycle_df[c], errors="coerce").to_numpy())
+                                    try:
+                                        auc_total += np.trapezoid(y, rel_tt)
+                                    except AttributeError:
+                                        with np.errstate(all='ignore'):
+                                            auc_total += np.trapz(y, rel_tt)
 
                             # Calculate channel RMS
                             ch_rms = {}
@@ -1207,7 +1211,8 @@ def create_cycles_record_from_data(
             try:
                 auc_total += np.trapezoid(y, rel_tt)
             except AttributeError:
-                auc_total += np.trapz(y, rel_tt)
+                with np.errstate(all='ignore'):
+                    auc_total += np.trapz(y, rel_tt)
 
         return start_s, end_s, float(dur), float(auc_total)
 

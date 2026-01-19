@@ -104,8 +104,6 @@ class AudioProcessing:
             raise ValueError(f"num_channels must be 1-4, got {value}")
         return value
 
-
-
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for Excel export."""
         return {
