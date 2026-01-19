@@ -4,7 +4,6 @@ import pandas as pd
 import pytest
 from pathlib import Path
 from src.orchestration.processing_log import (
-    SynchronizationRecord,
     create_sync_record_from_data,
 )
 

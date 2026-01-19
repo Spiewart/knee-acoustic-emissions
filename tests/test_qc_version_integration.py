@@ -7,7 +7,7 @@ from src.models import (
     AcousticsFileMetadata,
     BiomechanicsFileMetadata,
     MicrophonePosition,
-    MovementCycleMetadata,
+    FullMovementCycleMetadata,
 )
 from src.qc_versions import (
     AUDIO_QC_VERSION,
@@ -57,7 +57,7 @@ class TestQCVersionIntegration:
         assert metadata.biomech_qc_version == 1  # Current version
 
     def test_cycle_metadata_includes_all_versions(self):
-        """MovementCycleMetadata should include all three QC versions."""
+        """FullMovementCycleMetadata should include all three QC versions."""
         from datetime import datetime, timedelta
 
         microphones = {
@@ -67,7 +67,7 @@ class TestQCVersionIntegration:
             4: MicrophonePosition(patellar_position="Suprapatellar", laterality="Lateral"),
         }
 
-        metadata = MovementCycleMetadata(
+        metadata = FullMovementCycleMetadata(
             id=0,
             cycle_index=0,
             cycle_acoustic_energy=100.0,
@@ -140,7 +140,7 @@ class TestQCVersionIntegration:
             4: MicrophonePosition(patellar_position="Suprapatellar", laterality="Lateral"),
         }
 
-        metadata = MovementCycleMetadata(
+        metadata = FullMovementCycleMetadata(
             id=0,
             cycle_index=0,
             cycle_acoustic_energy=100.0,

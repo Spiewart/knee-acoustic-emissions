@@ -4,13 +4,15 @@ import pandas as pd
 import pytest
 from pathlib import Path
 from datetime import datetime
+from src.metadata import (
+    AudioProcessing,
+    BiomechanicsImport,
+    Synchronization,
+    MovementCycles,
+)
 from src.orchestration.processing_log import (
     KneeProcessingLog,
     ManeuverProcessingLog,
-    AudioProcessingRecord,
-    BiomechanicsImportRecord,
-    SynchronizationRecord,
-    MovementCyclesRecord,
 )
 
 
@@ -38,24 +40,26 @@ def sample_maneuver_log(tmp_path):
     )
 
     # Add audio record
-    log.audio_record = AudioProcessingRecord(
+    audio = AudioProcessing(
         audio_file_name="test_audio.bin",
         processing_status="success",
         sample_rate=50000.0,
         duration_seconds=120.0,
     )
+    log.audio_record = audio
 
     # Add biomechanics record
-    log.biomechanics_record = BiomechanicsImportRecord(
+    bio = BiomechanicsImport(
         biomechanics_file="test_bio.xlsx",
         processing_status="success",
         num_recordings=3,
         duration_seconds=100.0,
     )
+    log.biomechanics_record = bio
 
     # Add synchronization records with stomp times
     for i in range(3):
-        sync_record = SynchronizationRecord(
+        sync = Synchronization(
             sync_file_name=f"sync_pass_{i}",
             pass_number=i,
             speed="slow" if i == 0 else "medium" if i == 1 else "fast",
@@ -68,18 +72,18 @@ def sample_maneuver_log(tmp_path):
             aligned_audio_stomp_time=10.0 + i,
             aligned_bio_stomp_time=10.0 + i,
         )
-        log.synchronization_records.append(sync_record)
+        log.synchronization_records.append(sync)
 
     # Add movement cycles records
     for i in range(3):
-        cycles_record = MovementCyclesRecord(
+        cycles = MovementCycles(
             sync_file_name=f"sync_pass_{i}",
             processing_status="success",
             total_cycles_extracted=10 + i,
             clean_cycles=8 + i,
             outlier_cycles=2,
         )
-        log.movement_cycles_records.append(cycles_record)
+        log.movement_cycles_records.append(cycles)
 
     return log
 
@@ -166,10 +170,12 @@ def test_knee_log_multiple_maneuvers(temp_knee_dir, sample_maneuver_log, tmp_pat
         log_created=datetime.now(),
         log_updated=datetime.now(),
     )
-    sts_log.audio_record = AudioProcessingRecord(
+    # Use unified metadata classes
+    sts_audio = AudioProcessing(
         audio_file_name="sts_audio.bin",
         processing_status="success",
     )
+    sts_log.audio_record = sts_audio
     knee_log.update_maneuver_summary("sit_to_stand", sts_log)
 
     assert len(knee_log.maneuver_summaries) == 2
@@ -191,15 +197,14 @@ def test_knee_log_replaces_existing_maneuver(temp_knee_dir, sample_maneuver_log)
     first_update = knee_log.maneuver_summaries[0]["Last Updated"]
 
     # Modify the log
-    sample_maneuver_log.movement_cycles_records.append(
-        MovementCyclesRecord(
-            sync_file_name="extra",
-            processing_status="success",
-            total_cycles_extracted=5,
-            clean_cycles=5,
-            outlier_cycles=0,
-        )
+    extra_cycles = MovementCycles(
+        sync_file_name="extra",
+        processing_status="success",
+        total_cycles_extracted=5,
+        clean_cycles=5,
+        outlier_cycles=0,
     )
+    sample_maneuver_log.movement_cycles_records.append(extra_cycles)
 
     # Update again
     knee_log.update_maneuver_summary("walk", sample_maneuver_log)
@@ -292,7 +297,7 @@ def test_knee_log_right_knee_stomp_selection(temp_knee_dir, tmp_path):
     )
 
     # Add sync record with right knee
-    sync_record = SynchronizationRecord(
+    sync = Synchronization(
         sync_file_name="sync_pass_1",
         processing_status="success",
         audio_stomp_time=5.0,
@@ -303,7 +308,7 @@ def test_knee_log_right_knee_stomp_selection(temp_knee_dir, tmp_path):
         aligned_audio_stomp_time=8.0,
         aligned_bio_stomp_time=8.0,
     )
-    log.synchronization_records.append(sync_record)
+    log.synchronization_records.append(sync)
 
     knee_log = KneeProcessingLog.get_or_create(
         study_id="1020",

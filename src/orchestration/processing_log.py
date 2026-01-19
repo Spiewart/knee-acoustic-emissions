@@ -4,11 +4,14 @@ This module provides a comprehensive logging system for participant processing,
 capturing information about audio conversion, biomechanics import, synchronization,
 and movement cycle extraction. Logs are saved as Excel files (.xlsx) in the
 maneuver directory and can be incrementally updated when re-processing.
+
+This module uses Pydantic dataclasses from src.metadata for validation and Excel export.
 """
 
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -17,6 +20,13 @@ from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional
 import numpy as np
 import pandas as pd
 
+from src.metadata import (
+    AudioProcessing,
+    BiomechanicsImport,
+    MovementCycle,
+    MovementCycles,
+    Synchronization,
+)
 from src.qc_versions import (
     get_audio_qc_version,
     get_biomech_qc_version,
@@ -30,289 +40,6 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
-class AudioProcessingRecord:
-    """Record of audio file processing and QC."""
-
-    # File identification
-    audio_file_name: str
-    audio_bin_file: Optional[str] = None
-    audio_pkl_file: Optional[str] = None
-
-    # Processing metadata
-    processing_date: Optional[datetime] = None
-    processing_status: str = "not_processed"  # not_processed, success, error
-    error_message: Optional[str] = None
-
-    # Audio file characteristics
-    sample_rate: Optional[float] = None  # Hz
-    num_channels: int = 4
-    duration_seconds: Optional[float] = None
-    file_size_mb: Optional[float] = None
-
-    # Header metadata
-    device_serial: Optional[str] = None
-    firmware_version: Optional[int] = None
-    file_time: Optional[datetime] = None
-
-    # QC metrics
-    channel_1_rms: Optional[float] = None
-    channel_2_rms: Optional[float] = None
-    channel_3_rms: Optional[float] = None
-    channel_4_rms: Optional[float] = None
-    channel_1_peak: Optional[float] = None
-    channel_2_peak: Optional[float] = None
-    channel_3_peak: Optional[float] = None
-    channel_4_peak: Optional[float] = None
-
-    # Instantaneous frequency added?
-    has_instantaneous_freq: bool = False
-
-    # Raw audio QC results (dropout and artifacts)
-    QC_not_passed: Optional[str] = None  # String representation of list of (start, end) tuples (any mic)
-
-    # Per-microphone QC results
-    QC_not_passed_mic_1: Optional[str] = None  # Bad intervals for microphone 1
-    QC_not_passed_mic_2: Optional[str] = None  # Bad intervals for microphone 2
-    QC_not_passed_mic_3: Optional[str] = None  # Bad intervals for microphone 3
-    QC_not_passed_mic_4: Optional[str] = None  # Bad intervals for microphone 4
-
-    # QC version tracking
-    audio_qc_version: int = field(default_factory=get_audio_qc_version)
-
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary for Excel export."""
-        return {
-            "Audio File": self.audio_file_name,
-            "Bin File": self.audio_bin_file,
-            "Pickle File": self.audio_pkl_file,
-            "Processing Date": self.processing_date,
-            "Status": self.processing_status,
-            "Error": self.error_message,
-            "Sample Rate (Hz)": self.sample_rate,
-            "Channels": self.num_channels,
-            "Duration (s)": self.duration_seconds,
-            "File Size (MB)": self.file_size_mb,
-            "Device Serial": self.device_serial,
-            "Firmware Version": self.firmware_version,
-            "Recording Time": self.file_time,
-            "Ch1 RMS": self.channel_1_rms,
-            "Ch2 RMS": self.channel_2_rms,
-            "Ch3 RMS": self.channel_3_rms,
-            "Ch4 RMS": self.channel_4_rms,
-            "Ch1 Peak": self.channel_1_peak,
-            "Ch2 Peak": self.channel_2_peak,
-            "Ch3 Peak": self.channel_3_peak,
-            "Ch4 Peak": self.channel_4_peak,
-            "Has Inst. Freq": self.has_instantaneous_freq,
-            "QC_not_passed": self.QC_not_passed,
-            "QC_not_passed_mic_1": self.QC_not_passed_mic_1,
-            "QC_not_passed_mic_2": self.QC_not_passed_mic_2,
-            "QC_not_passed_mic_3": self.QC_not_passed_mic_3,
-            "QC_not_passed_mic_4": self.QC_not_passed_mic_4,
-            "Audio QC Version": self.audio_qc_version,
-        }
-
-
-@dataclass
-class BiomechanicsImportRecord:
-    """Record of biomechanics data import."""
-
-    # File identification
-    biomechanics_file: str
-    sheet_name: Optional[str] = None
-
-    # Processing metadata
-    processing_date: Optional[datetime] = None
-    processing_status: str = "not_processed"  # not_processed, success, error
-    error_message: Optional[str] = None
-
-    # Import statistics
-    num_recordings: int = 0
-    num_passes: int = 0  # For walking
-
-    # Data characteristics
-    duration_seconds: Optional[float] = None
-    num_data_points: Optional[int] = None
-    sample_rate: Optional[float] = None
-
-    # Time range
-    start_time: Optional[float] = None
-    end_time: Optional[float] = None
-
-    # QC version tracking
-    biomech_qc_version: int = field(default_factory=get_biomech_qc_version)
-
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary for Excel export."""
-        return {
-            "Biomechanics File": self.biomechanics_file,
-            "Sheet Name": self.sheet_name,
-            "Processing Date": self.processing_date,
-            "Status": self.processing_status,
-            "Error": self.error_message,
-            "Num Recordings": self.num_recordings,
-            "Num Passes": self.num_passes,
-            "Duration (s)": self.duration_seconds,
-            "Num Data Points": self.num_data_points,
-            "Sample Rate (Hz)": self.sample_rate,
-            "Start Time (s)": self.start_time,
-            "End Time (s)": self.end_time,
-            "Biomech QC Version": self.biomech_qc_version,
-        }
-
-
-@dataclass
-class SynchronizationRecord:
-    """Record of audio-biomechanics synchronization."""
-
-    # File identification
-    sync_file_name: str
-    pass_number: Optional[int] = None  # For walking
-    speed: Optional[str] = None  # For walking
-
-    # Processing metadata
-    processing_date: Optional[datetime] = None
-    processing_status: str = "not_processed"  # not_processed, success, error
-    error_message: Optional[str] = None
-
-    # Synchronization details
-    audio_stomp_time: Optional[float] = None  # seconds (in audio time coords)
-    bio_left_stomp_time: Optional[float] = None  # seconds (in bio time coords)
-    bio_right_stomp_time: Optional[float] = None  # seconds (in bio time coords)
-    knee_side: Optional[str] = None  # "left" or "right"
-
-    # Alignment details
-    stomp_offset: Optional[float] = None  # seconds (bio_stomp - audio_stomp)
-    aligned_audio_stomp_time: Optional[float] = None  # seconds (in synced/bio coords)
-    aligned_bio_stomp_time: Optional[float] = None  # seconds (in synced/bio coords)
-
-    # Synchronized data characteristics
-    num_synced_samples: Optional[int] = None
-    duration_seconds: Optional[float] = None
-
-    # QC pass/fail flags
-    sync_qc_performed: bool = False
-    sync_qc_passed: Optional[bool] = None
-
-    # QC version tracking (sync uses audio QC version since it's audio-bio alignment)
-    audio_qc_version: int = field(default_factory=get_audio_qc_version)
-    biomech_qc_version: int = field(default_factory=get_biomech_qc_version)
-
-    # Detection methods (optional)
-    consensus_time: Optional[float] = None
-    consensus_methods: Optional[str] = None  # Methods used for consensus: "rms", "rms, onset", "rms, freq", etc.
-    rms_time: Optional[float] = None
-    onset_time: Optional[float] = None
-    freq_time: Optional[float] = None
-    rms_energy: Optional[float] = None
-    onset_magnitude: Optional[float] = None
-    freq_energy: Optional[float] = None
-    method_agreement_span: Optional[float] = None  # max(method_times) - min(method_times) for methods in consensus
-
-    # Biomechanics-guided detection metadata
-    audio_stomp_method: Optional[str] = None  # "consensus" or "biomechanics-guided"
-    selected_time: Optional[float] = None  # Selected peak time (seconds) when biomechanics-guided
-    contra_selected_time: Optional[float] = None  # Contralateral peak time (seconds) when biomechanics-guided
-
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary for Excel export."""
-        return {
-            "Sync File": self.sync_file_name,
-            "Pass Number": self.pass_number,
-            "Speed": self.speed,
-            "Processing Date": self.processing_date,
-            "Status": self.processing_status,
-            "Error": self.error_message,
-            "Audio Stomp (s)": self.audio_stomp_time,
-            "Bio Left Stomp (s)": self.bio_left_stomp_time,
-            "Bio Right Stomp (s)": self.bio_right_stomp_time,
-            "Knee Side": self.knee_side,
-            "Stomp Offset (s)": self.stomp_offset,
-            "Aligned Audio Stomp (s)": self.aligned_audio_stomp_time,
-            "Aligned Bio Stomp (s)": self.aligned_bio_stomp_time,
-            "Num Samples": self.num_synced_samples,
-            "Duration (s)": self.duration_seconds,
-            "Sync QC Done": self.sync_qc_performed,
-            "Sync QC Passed": self.sync_qc_passed,
-            "Audio QC Version": self.audio_qc_version,
-            "Biomech QC Version": self.biomech_qc_version,
-            # Detection method details
-            "Consensus (s)": self.consensus_time,
-            "Consensus Methods": self.consensus_methods,
-            "RMS Detect (s)": self.rms_time,
-            "Onset Detect (s)": self.onset_time,
-            "Freq Detect (s)": self.freq_time,
-            "RMS Energy": self.rms_energy,
-            "Onset Magnitude": self.onset_magnitude,
-            "Freq Energy": self.freq_energy,
-            "Method Agreement Span (s)": self.method_agreement_span,
-            # Biomechanics-guided detection metadata
-            "Detection Method": self.audio_stomp_method,
-            "Selected Time (s)": self.selected_time,
-            "Contra Selected Time (s)": self.contra_selected_time,
-        }
-
-
-@dataclass
-class MovementCyclesRecord:
-    """Record of movement cycle extraction and QC."""
-
-    # Source file
-    sync_file_name: str
-
-    # Processing metadata
-    processing_date: Optional[datetime] = None
-    processing_status: str = "not_processed"  # not_processed, success, error
-    error_message: Optional[str] = None
-
-    # Extraction results
-    total_cycles_extracted: int = 0
-    clean_cycles: int = 0
-    outlier_cycles: int = 0
-
-    # QC parameters
-    acoustic_threshold: Optional[float] = None
-
-    # Output files
-    output_directory: Optional[str] = None
-    plots_created: bool = False
-
-    # Aggregates across clean cycles
-    mean_cycle_duration_s: Optional[float] = None
-    median_cycle_duration_s: Optional[float] = None
-    min_cycle_duration_s: Optional[float] = None
-    max_cycle_duration_s: Optional[float] = None
-    mean_acoustic_auc: Optional[float] = None
-
-    # Detailed per-cycle metrics (flattened later into a sheet)
-    per_cycle_details: list[Dict[str, Any]] = field(default_factory=list)
-
-    # QC version tracking
-    cycle_qc_version: int = field(default_factory=get_cycle_qc_version)
-
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary for Excel export."""
-        return {
-            "Source Sync File": self.sync_file_name,
-            "Processing Date": self.processing_date,
-            "Status": self.processing_status,
-            "Error": self.error_message,
-            "Total Cycles": self.total_cycles_extracted,
-            "Clean Cycles": self.clean_cycles,
-            "Outlier Cycles": self.outlier_cycles,
-            "Acoustic Threshold": self.acoustic_threshold,
-            "Output Directory": self.output_directory,
-            "Plots Created": self.plots_created,
-            "Mean Duration (s)": self.mean_cycle_duration_s,
-            "Median Duration (s)": self.median_cycle_duration_s,
-            "Min Duration (s)": self.min_cycle_duration_s,
-            "Max Duration (s)": self.max_cycle_duration_s,
-            "Mean Acoustic AUC": self.mean_acoustic_auc,
-            "Cycle QC Version": self.cycle_qc_version,
-        }
-
-
-@dataclass
 class ManeuverProcessingLog:
     """Complete processing log for a knee/maneuver combination."""
 
@@ -323,26 +50,26 @@ class ManeuverProcessingLog:
     maneuver_directory: Path
 
     # Processing stages
-    audio_record: Optional[AudioProcessingRecord] = None
-    biomechanics_record: Optional[BiomechanicsImportRecord] = None
-    synchronization_records: List[SynchronizationRecord] = field(default_factory=list)
-    movement_cycles_records: List[MovementCyclesRecord] = field(default_factory=list)
+    audio_record: Optional[AudioProcessing] = None
+    biomechanics_record: Optional[BiomechanicsImport] = None
+    synchronization_records: List[Synchronization] = field(default_factory=list)
+    movement_cycles_records: List[MovementCycles] = field(default_factory=list)
 
     # Overall metadata
     log_created: Optional[datetime] = None
     log_updated: Optional[datetime] = None
 
-    def update_audio_record(self, record: AudioProcessingRecord) -> None:
+    def update_audio_record(self, record: AudioProcessing) -> None:
         """Update audio processing record."""
         self.audio_record = record
         self.log_updated = datetime.now()
 
-    def update_biomechanics_record(self, record: BiomechanicsImportRecord) -> None:
+    def update_biomechanics_record(self, record: BiomechanicsImport) -> None:
         """Update biomechanics import record."""
         self.biomechanics_record = record
         self.log_updated = datetime.now()
 
-    def add_synchronization_record(self, record: SynchronizationRecord) -> None:
+    def add_synchronization_record(self, record: Synchronization) -> None:
         """Add or update a synchronization record."""
         # Check if we already have a record for this file
         for i, existing in enumerate(self.synchronization_records):
@@ -355,7 +82,7 @@ class ManeuverProcessingLog:
         self.synchronization_records.append(record)
         self.log_updated = datetime.now()
 
-    def add_movement_cycles_record(self, record: MovementCyclesRecord) -> None:
+    def add_movement_cycles_record(self, record: MovementCycles) -> None:
         """Add or update a movement cycles record."""
         # Normalize names so re-processing replaces existing rows even if
         # extensions differ (e.g., "file.pkl" vs "file").
@@ -373,7 +100,7 @@ class ManeuverProcessingLog:
         # New record
         self.movement_cycles_records.append(record)
         # Dedupe by normalized sync file name, keep the latest
-        seen: dict[str, MovementCyclesRecord] = {}
+        seen: dict[str, MovementCycles] = {}
         for rec in self.movement_cycles_records:
             seen[_norm(rec.sync_file_name)] = rec
         self.movement_cycles_records = list(seen.values())
@@ -439,13 +166,95 @@ class ManeuverProcessingLog:
         else:
             sheets["Movement Cycles"] = pd.DataFrame([{"Note": "No movement cycles recorded"}])
 
-        # Optional: Per-cycle details aggregated across all movement cycle analyses
+        # Regenerate per-cycle details from disk for all movement cycle records
+        # This ensures all passes are included even if per_cycle_details were not
+        # persisted in memory across save/load cycles
         details_rows: list[Dict[str, Any]] = []
         for rec in self.movement_cycles_records:
-            for row in getattr(rec, "per_cycle_details", []) or []:
-                # include linkage back to the MovementCyclesRecord
-                row = {**row, "Source Sync File": rec.sync_file_name}
-                details_rows.append(row)
+            # Try to regenerate from disk if output_directory exists
+            if rec.output_directory and Path(rec.output_directory).exists():
+                try:
+                    output_dir = Path(rec.output_directory)
+                    all_pkls = sorted(output_dir.rglob("*.pkl"))
+                    cycle_pkls = [p for p in all_pkls if p.name.startswith(f"{rec.sync_file_name}_")]
+
+                    for pkl_path in cycle_pkls:
+                        try:
+                            cycle_df = pd.read_pickle(pkl_path)
+                            is_outlier = "outlier" in pkl_path.name.lower()
+
+                            # Extract cycle metrics
+                            tt_exists = "tt" in cycle_df.columns
+                            if tt_exists:
+                                tt_seconds = pd.to_numeric(cycle_df["tt"], errors="coerce").to_numpy()
+                                tt_seconds = tt_seconds[~np.isnan(tt_seconds)]
+                                if tt_seconds.size > 0:
+                                    start_s = float(tt_seconds[0])
+                                    end_s = float(tt_seconds[-1])
+                                    duration_s = float(end_s - start_s)
+                                else:
+                                    start_s = end_s = duration_s = 0.0
+                                    tt_exists = False
+                            else:
+                                start_s = end_s = duration_s = 0.0
+
+                            # Calculate AUC (only if we have valid time data)
+                            auc_total = 0.0
+                            if tt_exists:
+                                rel_tt = tt_seconds - start_s
+                                ch_names = [c for c in ["f_ch1", "f_ch2", "f_ch3", "f_ch4"] if c in cycle_df.columns]
+                                if not ch_names:
+                                    ch_names = [c for c in ["ch1", "ch2", "ch3", "ch4"] if c in cycle_df.columns]
+                                for c in ch_names:
+                                    y = np.abs(pd.to_numeric(cycle_df[c], errors="coerce").to_numpy())
+                                    try:
+                                        auc_total += np.trapezoid(y, rel_tt)
+                                    except AttributeError:
+                                        with np.errstate(all='ignore'):
+                                            auc_total += np.trapz(y, rel_tt)
+
+                            # Calculate channel RMS
+                            ch_rms = {}
+                            for n in [1, 2, 3, 4]:
+                                col = f"f_ch{n}" if f"f_ch{n}" in cycle_df.columns else (f"ch{n}" if f"ch{n}" in cycle_df.columns else None)
+                                if col:
+                                    arr = pd.to_numeric(cycle_df[col], errors="coerce").to_numpy()
+                                    ch_rms[n] = float(np.sqrt(np.nanmean(arr ** 2)))
+
+                            # Build row with context
+                            row = {
+                                "Study ID": self.study_id,
+                                "Knee Side": self.knee_side,
+                                "Maneuver": self.maneuver,
+                                "Sync File": rec.sync_file_name,
+                                "Pass Number": rec.pass_number,
+                                "Speed": rec.speed,
+                                "Cycle File": str(pkl_path),
+                                "Is Outlier": is_outlier,
+                                "Start (s)": start_s,
+                                "End (s)": end_s,
+                                "Duration (s)": duration_s,
+                                "Acoustic AUC": auc_total,
+                                "Ch1 RMS": ch_rms.get(1),
+                                "Ch2 RMS": ch_rms.get(2),
+                                "Ch3 RMS": ch_rms.get(3),
+                                "Ch4 RMS": ch_rms.get(4),
+                            }
+                            details_rows.append(row)
+                        except Exception as e:
+                            logger.warning(f"Failed to load cycle from {pkl_path}: {e}")
+                            continue
+                except Exception as e:
+                    logger.warning(f"Failed to regenerate cycles for {rec.sync_file_name}: {e}")
+            else:
+                # Fallback to in-memory per_cycle_details if available
+                for cycle_record in getattr(rec, "per_cycle_details", []) or []:
+                    row = cycle_record.to_dict()
+                    row["Study ID"] = self.study_id
+                    row["Knee Side"] = self.knee_side
+                    row["Maneuver"] = self.maneuver
+                    details_rows.append(row)
+
         if details_rows:
             sheets["Cycle Details"] = pd.DataFrame(details_rows)
 
@@ -495,34 +304,34 @@ class ManeuverProcessingLog:
                 audio_df = pd.read_excel(filepath, sheet_name="Audio")
                 if len(audio_df) > 0 and "Audio File" in audio_df.columns:
                     row = audio_df.iloc[0]
-                    log.audio_record = AudioProcessingRecord(
+                    log.audio_record = AudioProcessing(
                         audio_file_name=row.get("Audio File", ""),
-                        audio_bin_file=row.get("Bin File"),
-                        audio_pkl_file=row.get("Pickle File"),
+                        audio_bin_file=str(row.get("Bin File")) if pd.notna(row.get("Bin File")) else None,
+                        audio_pkl_file=str(row.get("Pickle File")) if pd.notna(row.get("Pickle File")) else None,
                         processing_date=pd.to_datetime(row["Processing Date"]) if pd.notna(row.get("Processing Date")) else None,
                         processing_status=row.get("Status", "not_processed"),
-                        error_message=row.get("Error"),
-                        sample_rate=row.get("Sample Rate (Hz)"),
+                        error_message=str(row.get("Error")) if pd.notna(row.get("Error")) else None,
+                        sample_rate=row.get("Sample Rate (Hz)") if pd.notna(row.get("Sample Rate (Hz)")) else None,
                         num_channels=int(row.get("Channels", 4)),
-                        duration_seconds=row.get("Duration (s)"),
-                        file_size_mb=row.get("File Size (MB)"),
+                        duration_seconds=row.get("Duration (s)") if pd.notna(row.get("Duration (s)")) else None,
+                        file_size_mb=row.get("File Size (MB)") if pd.notna(row.get("File Size (MB)")) else None,
                         device_serial=str(row.get("Device Serial")) if pd.notna(row.get("Device Serial")) else None,
                         firmware_version=int(row["Firmware Version"]) if pd.notna(row.get("Firmware Version")) else None,
                         file_time=pd.to_datetime(row["Recording Time"]) if pd.notna(row.get("Recording Time")) else None,
-                        channel_1_rms=row.get("Ch1 RMS"),
-                        channel_2_rms=row.get("Ch2 RMS"),
-                        channel_3_rms=row.get("Ch3 RMS"),
-                        channel_4_rms=row.get("Ch4 RMS"),
-                        channel_1_peak=row.get("Ch1 Peak"),
-                        channel_2_peak=row.get("Ch2 Peak"),
-                        channel_3_peak=row.get("Ch3 Peak"),
-                        channel_4_peak=row.get("Ch4 Peak"),
                         has_instantaneous_freq=bool(row.get("Has Inst. Freq", False)),
-                        QC_not_passed=row.get("QC_not_passed"),
-                        QC_not_passed_mic_1=row.get("QC_not_passed_mic_1"),
-                        QC_not_passed_mic_2=row.get("QC_not_passed_mic_2"),
-                        QC_not_passed_mic_3=row.get("QC_not_passed_mic_3"),
-                        QC_not_passed_mic_4=row.get("QC_not_passed_mic_4"),
+                        qc_not_passed=str(row.get("QC_not_passed")) if pd.notna(row.get("QC_not_passed")) else None,
+                        qc_not_passed_mic_1=str(row.get("QC_not_passed_mic_1")) if pd.notna(row.get("QC_not_passed_mic_1")) else None,
+                        qc_not_passed_mic_2=str(row.get("QC_not_passed_mic_2")) if pd.notna(row.get("QC_not_passed_mic_2")) else None,
+                        qc_not_passed_mic_3=str(row.get("QC_not_passed_mic_3")) if pd.notna(row.get("QC_not_passed_mic_3")) else None,
+                        qc_not_passed_mic_4=str(row.get("QC_not_passed_mic_4")) if pd.notna(row.get("QC_not_passed_mic_4")) else None,
+                        channel_1_rms=row.get("Ch1 RMS") if pd.notna(row.get("Ch1 RMS")) else None,
+                        channel_2_rms=row.get("Ch2 RMS") if pd.notna(row.get("Ch2 RMS")) else None,
+                        channel_3_rms=row.get("Ch3 RMS") if pd.notna(row.get("Ch3 RMS")) else None,
+                        channel_4_rms=row.get("Ch4 RMS") if pd.notna(row.get("Ch4 RMS")) else None,
+                        channel_1_peak=row.get("Ch1 Peak") if pd.notna(row.get("Ch1 Peak")) else None,
+                        channel_2_peak=row.get("Ch2 Peak") if pd.notna(row.get("Ch2 Peak")) else None,
+                        channel_3_peak=row.get("Ch3 Peak") if pd.notna(row.get("Ch3 Peak")) else None,
+                        channel_4_peak=row.get("Ch4 Peak") if pd.notna(row.get("Ch4 Peak")) else None,
                     )
             except Exception as e:
                 logger.warning(f"Could not load audio record: {e}")
@@ -532,19 +341,19 @@ class ManeuverProcessingLog:
                 bio_df = pd.read_excel(filepath, sheet_name="Biomechanics")
                 if len(bio_df) > 0 and "Biomechanics File" in bio_df.columns:
                     row = bio_df.iloc[0]
-                    log.biomechanics_record = BiomechanicsImportRecord(
+                    log.biomechanics_record = BiomechanicsImport(
                         biomechanics_file=row.get("Biomechanics File", ""),
-                        sheet_name=row.get("Sheet Name"),
+                        sheet_name=str(row.get("Sheet Name")) if pd.notna(row.get("Sheet Name")) else None,
                         processing_date=pd.to_datetime(row["Processing Date"]) if pd.notna(row.get("Processing Date")) else None,
                         processing_status=row.get("Status", "not_processed"),
-                        error_message=row.get("Error"),
+                        error_message=str(row.get("Error")) if pd.notna(row.get("Error")) else None,
                         num_recordings=int(row.get("Num Recordings", 0)),
                         num_passes=int(row.get("Num Passes", 0)),
-                        duration_seconds=row.get("Duration (s)"),
+                        duration_seconds=row.get("Duration (s)") if pd.notna(row.get("Duration (s)")) else None,
                         num_data_points=int(row["Num Data Points"]) if pd.notna(row.get("Num Data Points")) else None,
-                        sample_rate=row.get("Sample Rate (Hz)"),
-                        start_time=row.get("Start Time (s)"),
-                        end_time=row.get("End Time (s)"),
+                        sample_rate=row.get("Sample Rate (Hz)") if pd.notna(row.get("Sample Rate (Hz)")) else None,
+                        start_time=row.get("Start Time (s)") if pd.notna(row.get("Start Time (s)")) else None,
+                        end_time=row.get("End Time (s)") if pd.notna(row.get("End Time (s)")) else None,
                     )
             except Exception as e:
                 logger.warning(f"Could not load biomechanics record: {e}")
@@ -554,36 +363,38 @@ class ManeuverProcessingLog:
                 sync_df = pd.read_excel(filepath, sheet_name="Synchronization")
                 if len(sync_df) > 0 and "Sync File" in sync_df.columns:
                     for _, row in sync_df.iterrows():
-                        record = SynchronizationRecord(
+                        record = Synchronization(
                             sync_file_name=row.get("Sync File", ""),
                             pass_number=int(row["Pass Number"]) if pd.notna(row.get("Pass Number")) else None,
-                            speed=row.get("Speed"),
+                            speed=str(row.get("Speed")) if pd.notna(row.get("Speed")) else None,
                             processing_date=pd.to_datetime(row["Processing Date"]) if pd.notna(row.get("Processing Date")) else None,
                             processing_status=row.get("Status", "not_processed"),
-                            error_message=row.get("Error"),
-                            audio_stomp_time=row.get("Audio Stomp (s)"),
-                            bio_left_stomp_time=row.get("Bio Left Stomp (s)"),
-                            bio_right_stomp_time=row.get("Bio Right Stomp (s)"),
-                            knee_side=row.get("Knee Side"),
-                            stomp_offset=row.get("Stomp Offset (s)"),
-                            aligned_audio_stomp_time=row.get("Aligned Audio Stomp (s)"),
-                            aligned_bio_stomp_time=row.get("Aligned Bio Stomp (s)"),
+                            error_message=str(row.get("Error")) if pd.notna(row.get("Error")) else None,
+                            audio_stomp_time=row.get("Audio Stomp (s)") if pd.notna(row.get("Audio Stomp (s)")) else None,
+                            bio_left_stomp_time=row.get("Bio Left Stomp (s)") if pd.notna(row.get("Bio Left Stomp (s)")) else None,
+                            bio_right_stomp_time=row.get("Bio Right Stomp (s)") if pd.notna(row.get("Bio Right Stomp (s)")) else None,
+                            knee_side=str(row.get("Knee Side")) if pd.notna(row.get("Knee Side")) else None,
+                            stomp_offset=row.get("Stomp Offset (s)") if pd.notna(row.get("Stomp Offset (s)")) else None,
+                            aligned_audio_stomp_time=row.get("Aligned Audio Stomp (s)") if pd.notna(row.get("Aligned Audio Stomp (s)")) else None,
+                            aligned_bio_stomp_time=row.get("Aligned Bio Stomp (s)") if pd.notna(row.get("Aligned Bio Stomp (s)")) else None,
                             num_synced_samples=int(row["Num Samples"]) if pd.notna(row.get("Num Samples")) else None,
-                            duration_seconds=row.get("Duration (s)"),
+                            duration_seconds=row.get("Duration (s)") if pd.notna(row.get("Duration (s)")) else None,
                             sync_qc_performed=bool(row.get("Sync QC Done", False)),
                             sync_qc_passed=bool(row["Sync QC Passed"]) if pd.notna(row.get("Sync QC Passed")) else None,
                             audio_qc_version=int(row["Audio QC Version"]) if pd.notna(row.get("Audio QC Version")) else get_audio_qc_version(),
                             biomech_qc_version=int(row["Biomech QC Version"]) if pd.notna(row.get("Biomech QC Version")) else get_biomech_qc_version(),
-                            # Load detection method details if present (backward compatible with older logs)
-                            consensus_time=row.get("Consensus (s)"),
-                            consensus_methods=row.get("Consensus Methods"),
-                            rms_time=row.get("RMS Detect (s)"),
-                            onset_time=row.get("Onset Detect (s)"),
-                            freq_time=row.get("Freq Detect (s)"),
-                            rms_energy=row.get("RMS Energy"),
-                            onset_magnitude=row.get("Onset Magnitude"),
-                            freq_energy=row.get("Freq Energy"),
-                            method_agreement_span=row.get("Method Agreement Span (s)"),
+                            consensus_time=row.get("Consensus (s)") if pd.notna(row.get("Consensus (s)")) else None,
+                            consensus_methods=str(row.get("Consensus Methods")) if pd.notna(row.get("Consensus Methods")) else None,
+                            rms_time=row.get("RMS Detect (s)") if pd.notna(row.get("RMS Detect (s)")) else None,
+                            onset_time=row.get("Onset Detect (s)") if pd.notna(row.get("Onset Detect (s)")) else None,
+                            freq_time=row.get("Freq Detect (s)") if pd.notna(row.get("Freq Detect (s)")) else None,
+                            rms_energy=row.get("RMS Energy") if pd.notna(row.get("RMS Energy")) else None,
+                            onset_magnitude=row.get("Onset Magnitude") if pd.notna(row.get("Onset Magnitude")) else None,
+                            freq_energy=row.get("Freq Energy") if pd.notna(row.get("Freq Energy")) else None,
+                            method_agreement_span=row.get("Method Agreement Span (s)") if pd.notna(row.get("Method Agreement Span (s)")) else None,
+                            audio_stomp_method=str(row.get("Detection Method")) if pd.notna(row.get("Detection Method")) else None,
+                            selected_time=row.get("Selected Time (s)") if pd.notna(row.get("Selected Time (s)")) else None,
+                            contra_selected_time=row.get("Contra Selected Time (s)") if pd.notna(row.get("Contra Selected Time (s)")) else None,
                         )
                         log.synchronization_records.append(record)
             except Exception as e:
@@ -594,16 +405,19 @@ class ManeuverProcessingLog:
                 cycles_df = pd.read_excel(filepath, sheet_name="Movement Cycles")
                 if len(cycles_df) > 0 and "Source Sync File" in cycles_df.columns:
                     for _, row in cycles_df.iterrows():
-                        record = MovementCyclesRecord(
+                        record = MovementCycles(
                             sync_file_name=row.get("Source Sync File", ""),
+                            pass_number=int(row["Pass Number"]) if pd.notna(row.get("Pass Number")) else None,
+                            speed=str(row.get("Speed")) if pd.notna(row.get("Speed")) else None,
+                            knee_side=str(row.get("Knee Side")) if pd.notna(row.get("Knee Side")) else None,
                             processing_date=pd.to_datetime(row["Processing Date"]) if pd.notna(row.get("Processing Date")) else None,
                             processing_status=row.get("Status", "not_processed"),
-                            error_message=row.get("Error"),
+                            error_message=str(row.get("Error")) if pd.notna(row.get("Error")) else None,
                             total_cycles_extracted=int(row.get("Total Cycles", 0)),
                             clean_cycles=int(row.get("Clean Cycles", 0)),
                             outlier_cycles=int(row.get("Outlier Cycles", 0)),
-                            acoustic_threshold=row.get("Acoustic Threshold"),
-                            output_directory=row.get("Output Directory"),
+                            qc_acoustic_threshold=row.get("Acoustic Threshold") if pd.notna(row.get("Acoustic Threshold")) else None,
+                            output_directory=str(row.get("Output Directory")) if pd.notna(row.get("Output Directory")) else None,
                             plots_created=bool(row.get("Plots Created", False)),
                             mean_cycle_duration_s=float(row.get("Mean Duration (s)")) if pd.notna(row.get("Mean Duration (s)")) else None,
                             median_cycle_duration_s=float(row.get("Median Duration (s)")) if pd.notna(row.get("Median Duration (s)")) else None,
@@ -615,19 +429,12 @@ class ManeuverProcessingLog:
             except Exception as e:
                 logger.warning(f"Could not load movement cycles records: {e}")
 
-            # Load optional Cycle Details sheet
-            try:
-                details_df = pd.read_excel(filepath, sheet_name="Cycle Details")
-                if len(details_df) > 0 and "Source Sync File" in details_df.columns:
-                    # Attach rows to corresponding MovementCyclesRecord by sync file
-                    grouped = details_df.groupby("Source Sync File")
-                    for rec in log.movement_cycles_records:
-                        if rec.sync_file_name in grouped.groups:
-                            sub = grouped.get_group(rec.sync_file_name)
-                            rec.per_cycle_details = sub.drop(columns=[c for c in ["Source Sync File"] if c in sub.columns]).to_dict(orient="records")
-            except Exception:
-                # Optional sheet may not exist
-                pass
+            # Note: Do NOT load Cycle Details from Excel. Cycle details are always regenerated
+            # from cycle pickle files during the cycles stage to ensure proper metadata
+            # (pass_number, speed, knee_side context). Loading from Excel can result in
+            # orphaned rows with missing context if they were created before all metadata
+            # fields were available. Cycle Details will be regenerated fresh when cycles
+            # are processed and the log is re-saved.
 
             return log
 
@@ -905,6 +712,7 @@ class KneeProcessingLog:
 
 
 # Helper functions to create records from processing data
+# These functions now use Pydantic dataclasses for validation and Excel export
 
 
 def create_audio_record_from_data(
@@ -914,8 +722,8 @@ def create_audio_record_from_data(
     audio_pkl_path: Optional[Path] = None,
     metadata: Optional[Dict[str, Any]] = None,
     error: Optional[Exception] = None,
-) -> AudioProcessingRecord:
-    """Create an AudioProcessingRecord from processing data.
+) -> AudioProcessing:
+    """Create an AudioProcessing record from processing data with Pydantic validation.
 
     Args:
         audio_file_name: Name of the audio file
@@ -926,53 +734,58 @@ def create_audio_record_from_data(
         error: Exception if processing failed
 
     Returns:
-        AudioProcessingRecord instance
+        AudioProcessing instance (validated through Pydantic)
+
+    Raises:
+        ValidationError: If data doesn't meet Pydantic dataclass requirements
     """
-    record = AudioProcessingRecord(
-        audio_file_name=audio_file_name,
-        audio_bin_file=str(audio_bin_path) if audio_bin_path else None,
-        audio_pkl_file=str(audio_pkl_path) if audio_pkl_path else None,
-        processing_date=datetime.now(),
-    )
+    # Build data dict for Pydantic validation
+    data: Dict[str, Any] = {
+        "audio_file_name": audio_file_name,
+        "audio_bin_file": str(audio_bin_path) if audio_bin_path else None,
+        "audio_pkl_file": str(audio_pkl_path) if audio_pkl_path else None,
+        "processing_date": datetime.now(),
+        "processing_status": "error" if error else "not_processed",
+        "error_message": str(error) if error else None,
+    }
 
     if error:
-        record.processing_status = "error"
-        record.error_message = str(error)
-        return record
+        # Early return on error - validate and return
+        return AudioProcessing(**data)
 
-    record.processing_status = "success"
+    data["processing_status"] = "success"
 
     # Extract metadata if available
     if metadata:
         # Normalize sample rate from metadata
         meta_fs = metadata.get("fs")
         if isinstance(meta_fs, (int, float)):
-            record.sample_rate = float(meta_fs)
+            data["sample_rate"] = float(meta_fs)
         # Normalize firmware version
         fv = metadata.get("devFirmwareVersion")
         if isinstance(fv, (int, float)):
-            record.firmware_version = int(fv)
+            data["firmware_version"] = int(fv)
         # Normalize device serial: handle list/tuple
         ds = metadata.get("deviceSerial")
         if isinstance(ds, (list, tuple)) and ds:
-            record.device_serial = str(ds[0])
+            data["device_serial"] = str(ds[0])
         elif ds is not None:
-            record.device_serial = str(ds)
+            data["device_serial"] = str(ds)
         # Recording time passthrough
-        record.file_time = metadata.get("fileTime")
+        data["file_time"] = metadata.get("fileTime")
 
     # Calculate statistics from DataFrame
     if audio_df is not None:
-        # Duration
+        # Duration (metadata field - used for QC, represents recording metadata)
         if "tt" in audio_df.columns:
-            duration = audio_df["tt"].iloc[-1] - audio_df["tt"].iloc[0]
-            if hasattr(duration, 'total_seconds'):
-                record.duration_seconds = duration.total_seconds()
+            dur = audio_df["tt"].iloc[-1] - audio_df["tt"].iloc[0]
+            if hasattr(dur, 'total_seconds'):
+                data["duration_seconds"] = dur.total_seconds()
             else:
-                record.duration_seconds = float(duration)
+                data["duration_seconds"] = float(dur)
 
         # Sample rate from data (robust median) if not in metadata
-        if (record.sample_rate is None) and (len(audio_df) > 1) and ("tt" in audio_df.columns):
+        if (data.get("sample_rate") is None) and (len(audio_df) > 1) and ("tt" in audio_df.columns):
             try:
                 tt = audio_df["tt"]
                 if hasattr(tt, "dt"):
@@ -983,52 +796,35 @@ def create_audio_record_from_data(
                 if tt_s.size >= 2:
                     dt_med = float(np.median(np.diff(tt_s)))
                     sr = (1.0 / dt_med) if dt_med > 0 else None
-                    # Round to nearest 100 for stability
-                    record.sample_rate = float(int(round(sr / 100.0)) * 100) if sr else None
+                    # Round to nearest 100 Hz for stability
+                    # (typical audio board sample rates: 46800, 46900, 47000)
+                    SAMPLE_RATE_ROUNDING = 100
+                    data["sample_rate"] = float(int(round(sr / SAMPLE_RATE_ROUNDING)) * SAMPLE_RATE_ROUNDING) if sr else None
             except Exception:
                 pass
 
-        # Optional: if both metadata and tt-derived present and differ significantly, prefer tt-derived
-        # but only adjust if within typical audio ranges
-        if (record.sample_rate is not None) and (len(audio_df) > 1) and ("tt" in audio_df.columns):
-            try:
-                tt = audio_df["tt"]
-                if hasattr(tt, "dt"):
-                    tt_s = tt.dt.total_seconds().astype(float).to_numpy()
-                else:
-                    tt_s = pd.to_numeric(tt, errors="coerce").astype(float).to_numpy()
-                tt_s = tt_s[~np.isnan(tt_s)]
-                if tt_s.size >= 2:
-                    dt_med = float(np.median(np.diff(tt_s)))
-                    sr_tt = (1.0 / dt_med) if dt_med > 0 else None
-                    if sr_tt:
-                        # If off by >5%, use tt-derived, rounded
-                        if abs(sr_tt - record.sample_rate) / record.sample_rate > 0.05:
-                            record.sample_rate = float(int(round(sr_tt / 100.0)) * 100)
-            except Exception:
-                pass
-
-        # Channel statistics
+        # Channel statistics (pure data-derived)
+        # Note: These are computed from the actual audio data and stored directly
+        # in the dataclass fields rather than in a separate metadata model.
+        # This design consolidates all information (metadata + derived stats) in one place.
         for ch_num in range(1, 5):
             ch_name = f"ch{ch_num}"
             if ch_name in audio_df.columns:
                 ch_data = audio_df[ch_name].values
-                rms = float(np.sqrt(np.mean(ch_data ** 2)))
-                peak = float(np.max(np.abs(ch_data)))
-
-                setattr(record, f"channel_{ch_num}_rms", rms)
-                setattr(record, f"channel_{ch_num}_peak", peak)
+                data[f"channel_{ch_num}_rms"] = float(np.sqrt(np.mean(ch_data ** 2)))
+                data[f"channel_{ch_num}_peak"] = float(np.max(np.abs(ch_data)))
 
         # Check for instantaneous frequency columns
-        record.has_instantaneous_freq = any(
+        data["has_instantaneous_freq"] = any(
             col.startswith("f_ch") for col in audio_df.columns
         )
 
     # File size
     if audio_bin_path and audio_bin_path.exists():
-        record.file_size_mb = audio_bin_path.stat().st_size / (1024 * 1024)
+        data["file_size_mb"] = audio_bin_path.stat().st_size / (1024 * 1024)
 
-    return record
+    # Create and return validated Pydantic dataclass
+    return AudioProcessing(**data)
 
 
 def create_biomechanics_record_from_data(
@@ -1036,8 +832,8 @@ def create_biomechanics_record_from_data(
     recordings: List['BiomechanicsRecording'],
     sheet_name: Optional[str] = None,
     error: Optional[Exception] = None,
-) -> BiomechanicsImportRecord:
-    """Create a BiomechanicsImportRecord from import data.
+) -> BiomechanicsImport:
+    """Create a BiomechanicsImport record from import data.
 
     Args:
         biomechanics_file: Path to biomechanics Excel file
@@ -1046,21 +842,22 @@ def create_biomechanics_record_from_data(
         error: Exception if import failed
 
     Returns:
-        BiomechanicsImportRecord instance
+        BiomechanicsImport instance
     """
-    record = BiomechanicsImportRecord(
-        biomechanics_file=str(biomechanics_file),
-        sheet_name=sheet_name,
-        processing_date=datetime.now(),
-    )
+    # Build data dictionary
+    data = {
+        "biomechanics_file": str(biomechanics_file),
+        "sheet_name": sheet_name,
+        "processing_date": datetime.now(),
+    }
 
     if error:
-        record.processing_status = "error"
-        record.error_message = str(error)
-        return record
+        data["processing_status"] = "error"
+        data["error_message"] = str(error)
+        return BiomechanicsImport(**data)
 
-    record.processing_status = "success"
-    record.num_recordings = len(recordings)
+    data["processing_status"] = "success"
+    data["num_recordings"] = len(recordings)
 
     if recordings:
         # Count passes (for walking)
@@ -1068,13 +865,13 @@ def create_biomechanics_record_from_data(
         for rec in recordings:
             if hasattr(rec, 'pass_number') and rec.pass_number is not None:
                 pass_numbers.add(rec.pass_number)
-        record.num_passes = len(pass_numbers)
+        data["num_passes"] = len(pass_numbers)
 
         # Get statistics from first recording
         first_rec = recordings[0]
         if hasattr(first_rec, 'data') and isinstance(first_rec.data, pd.DataFrame):
             df = first_rec.data
-            record.num_data_points = len(df)
+            data["num_data_points"] = len(df)
 
             # Identify time-like column
             time_col: Optional[str] = None
@@ -1102,21 +899,21 @@ def create_biomechanics_record_from_data(
                 if times.size >= 2:
                     # Normalize to start at zero to avoid huge absolute timestamps
                     times = times - times[0]
-                    record.start_time = 0.0
-                    record.end_time = float(times[-1])
-                    record.duration_seconds = float(times[-1])
+                    data["start_time"] = 0.0
+                    data["end_time"] = float(times[-1])
+                    data["duration_seconds"] = float(times[-1])
                     dt = float(np.median(np.diff(times)))
                     if dt and dt > 0:
                         sr = float(1.0 / dt)
                         # Round to nearest common biomechanics sampling rates
                         candidates = np.array([60, 100, 120], dtype=float)
                         nearest = int(candidates[np.argmin(np.abs(candidates - sr))])
-                        record.sample_rate = float(nearest)
+                        data["sample_rate"] = float(nearest)
             # Final fallback: infer duration from rows if sample_rate known elsewhere (rare)
-            if record.duration_seconds is None and record.sample_rate and record.sample_rate > 0:
-                record.duration_seconds = float(len(df) / record.sample_rate)
+            if data.get("duration_seconds") is None and data.get("sample_rate") and data["sample_rate"] > 0:
+                data["duration_seconds"] = float(len(df) / data["sample_rate"])
 
-    return record
+    return BiomechanicsImport(**data)
 
 
 def create_sync_record_from_data(
@@ -1130,7 +927,7 @@ def create_sync_record_from_data(
     speed: Optional[str] = None,
     detection_results: Optional[Dict[str, Any]] = None,
     error: Optional[Exception] = None,
-) -> SynchronizationRecord:
+) -> Synchronization:
     """Create a SynchronizationRecord from sync data.
 
     Args:
@@ -1193,42 +990,49 @@ def create_sync_record_from_data(
         # Bio stomp remains at its original position (synced timeline is in bio coords)
         aligned_bio_stomp = bio_stomp_s
 
-    record = SynchronizationRecord(
-        sync_file_name=sync_file_name,
-        pass_number=pass_number,
-        speed=speed,
-        processing_date=datetime.now(),
-        audio_stomp_time=audio_stomp_s,
-        bio_left_stomp_time=bio_left_s,
-        bio_right_stomp_time=bio_right_s,
-        knee_side=knee_side,
-        stomp_offset=stomp_offset,
-        aligned_audio_stomp_time=aligned_audio_stomp,
-        aligned_bio_stomp_time=aligned_bio_stomp,
-    )
+    # Build data dictionary
+    data = {
+        "sync_file_name": sync_file_name,
+        "pass_number": pass_number,
+        "speed": speed,
+        "processing_date": datetime.now(),
+        "audio_stomp_time": audio_stomp_s,
+        "bio_left_stomp_time": bio_left_s,
+        "bio_right_stomp_time": bio_right_s,
+        "knee_side": knee_side,
+        "stomp_offset": stomp_offset,
+        "aligned_audio_stomp_time": aligned_audio_stomp,
+        "aligned_bio_stomp_time": aligned_bio_stomp,
+    }
 
     # Populate detection method details if provided
+    # Store energy/magnitude as separate data-derived fields (not metadata)
+    rms_energy = None
+    onset_magnitude = None
+    freq_energy = None
+
     if detection_results:
         try:
-            record.consensus_time = _to_seconds(detection_results.get("consensus_time"))
+            data["consensus_time"] = _to_seconds(detection_results.get("consensus_time"))
             # Extract which methods contributed to consensus
             consensus_methods_list = detection_results.get("consensus_methods", [])
             if consensus_methods_list:
-                record.consensus_methods = ", ".join(consensus_methods_list)
+                data["consensus_methods"] = ", ".join(consensus_methods_list)
 
-            record.rms_time = _to_seconds(detection_results.get("rms_time"))
-            record.onset_time = _to_seconds(detection_results.get("onset_time"))
-            record.freq_time = _to_seconds(detection_results.get("freq_time"))
-            # Energies/magnitudes may already be floats
-            record.rms_energy = (
+            data["rms_time"] = _to_seconds(detection_results.get("rms_time"))
+            data["onset_time"] = _to_seconds(detection_results.get("onset_time"))
+            data["freq_time"] = _to_seconds(detection_results.get("freq_time"))
+
+            # Energies/magnitudes are data-derived, not metadata
+            rms_energy = (
                 float(detection_results.get("rms_energy"))
                 if detection_results.get("rms_energy") is not None else None
             )
-            record.onset_magnitude = (
+            onset_magnitude = (
                 float(detection_results.get("onset_magnitude"))
                 if detection_results.get("onset_magnitude") is not None else None
             )
-            record.freq_energy = (
+            freq_energy = (
                 float(detection_results.get("freq_energy"))
                 if detection_results.get("freq_energy") is not None else None
             )
@@ -1237,39 +1041,49 @@ def create_sync_record_from_data(
             # Get times for methods that contributed
             method_times_used = []
             if consensus_methods_list:
-                if "rms" in consensus_methods_list and record.rms_time is not None:
-                    method_times_used.append(record.rms_time)
-                if "onset" in consensus_methods_list and record.onset_time is not None:
-                    method_times_used.append(record.onset_time)
-                if "freq" in consensus_methods_list and record.freq_time is not None:
-                    method_times_used.append(record.freq_time)
+                if "rms" in consensus_methods_list and data.get("rms_time") is not None:
+                    method_times_used.append(data["rms_time"])
+                if "onset" in consensus_methods_list and data.get("onset_time") is not None:
+                    method_times_used.append(data["onset_time"])
+                if "freq" in consensus_methods_list and data.get("freq_time") is not None:
+                    method_times_used.append(data["freq_time"])
 
             if method_times_used:
-                record.method_agreement_span = float(max(method_times_used) - min(method_times_used))
+                data["method_agreement_span"] = float(max(method_times_used) - min(method_times_used))
 
             # Biomechanics-guided detection metadata
-            record.audio_stomp_method = detection_results.get("audio_stomp_method")
-            record.selected_time = _to_seconds(detection_results.get("selected_time"))
-            record.contra_selected_time = _to_seconds(detection_results.get("contra_selected_time"))
+            data["audio_stomp_method"] = detection_results.get("audio_stomp_method")
+            data["selected_time"] = _to_seconds(detection_results.get("selected_time"))
+            data["contra_selected_time"] = _to_seconds(detection_results.get("contra_selected_time"))
         except Exception as e:
             logger.debug(f"Failed to populate detection_results in sync record: {e}")
 
     if error:
-        record.processing_status = "error"
-        record.error_message = str(error)
-        return record
+        data["processing_status"] = "error"
+        data["error_message"] = str(error)
+        # Include data-derived fields in unified class
+        data["rms_energy"] = rms_energy
+        data["onset_magnitude"] = onset_magnitude
+        data["freq_energy"] = freq_energy
+        return Synchronization(**data)
 
-    record.processing_status = "success"
-    record.num_synced_samples = len(synced_df)
+    data["processing_status"] = "success"
+    # num_synced_samples is pure data-derived, duration_seconds is metadata
+    data["num_synced_samples"] = len(synced_df)
 
     if "tt" in synced_df.columns and len(synced_df) > 0:
         duration = synced_df["tt"].iloc[-1] - synced_df["tt"].iloc[0]
         if hasattr(duration, 'total_seconds'):
-            record.duration_seconds = duration.total_seconds()
+            data["duration_seconds"] = duration.total_seconds()
         else:
-            record.duration_seconds = float(duration)
+            data["duration_seconds"] = float(duration)
 
-    return record
+    # Include all data-derived fields in unified Synchronization class
+    data["rms_energy"] = rms_energy
+    data["onset_magnitude"] = onset_magnitude
+    data["freq_energy"] = freq_energy
+
+    return Synchronization(**data)
 
 
 def create_cycles_record_from_data(
@@ -1280,7 +1094,11 @@ def create_cycles_record_from_data(
     acoustic_threshold: Optional[float] = None,
     plots_created: bool = False,
     error: Optional[Exception] = None,
-) -> MovementCyclesRecord:
+    # Optional context from upstream processing
+    audio_record: Optional[AudioProcessing] = None,
+    biomech_record: Optional[BiomechanicsImport] = None,
+    sync_record: Optional[Synchronization] = None,
+) -> MovementCycles:
     """Create a MovementCyclesRecord from cycle extraction data.
 
     Args:
@@ -1291,24 +1109,49 @@ def create_cycles_record_from_data(
         acoustic_threshold: Acoustic threshold used for QC
         plots_created: Whether plots were created
         error: Exception if extraction failed
+        audio_record: Optional audio processing record for context
+        biomech_record: Optional biomechanics import record for context
+        sync_record: Optional synchronization record for context
 
     Returns:
         MovementCyclesRecord instance
     """
-    record = MovementCyclesRecord(
-        sync_file_name=sync_file_name,
-        processing_date=datetime.now(),
-        acoustic_threshold=acoustic_threshold,
-        output_directory=str(output_dir) if output_dir else None,
-        plots_created=plots_created,
-    )
+    def _infer_pass_number_from_name(name: str) -> Optional[int]:
+        match = re.search(r"Pass(\d{2,4})", name, re.IGNORECASE)
+        if match:
+            try:
+                return int(match.group(1))
+            except ValueError:
+                return None
+        return None
+
+    # Build data dictionary
+    data = {
+        "sync_file_name": sync_file_name,
+        "processing_date": datetime.now(),
+        "qc_acoustic_threshold": acoustic_threshold,  # Renamed field
+    }
+
+    # Propagate pass/speed/knee context when available
+    if sync_record:
+        data["pass_number"] = sync_record.pass_number
+        data["speed"] = sync_record.speed
+        data["knee_side"] = sync_record.knee_side
+    else:
+        data["pass_number"] = _infer_pass_number_from_name(sync_file_name)
+        data["speed"] = None
+        data["knee_side"] = None
 
     if error:
-        record.processing_status = "error"
-        record.error_message = str(error)
-        return record
+        data["processing_status"] = "error"
+        data["error_message"] = str(error)
+        # Include data-derived fields in unified class
+        data["output_directory"] = str(output_dir) if output_dir else None
+        data["plots_created"] = plots_created
+        data["per_cycle_details"] = []
+        return MovementCycles(**data)
 
-    record.processing_status = "success"
+    data["processing_status"] = "success"
 
     # If output_dir provided, derive cycles from .pkl files only to avoid counting plots
     pkl_cycles: list[Path] = []
@@ -1323,15 +1166,15 @@ def create_cycles_record_from_data(
 
     if pkl_cycles:
         # Count total cycles for this synced file only
-        record.total_cycles_extracted = len(pkl_cycles)
+        data["total_cycles_extracted"] = len(pkl_cycles)
         # Preserve clean/outlier counts from inputs if available
-        record.clean_cycles = len(clean_cycles)
-        record.outlier_cycles = len(outlier_cycles)
+        data["clean_cycles"] = len(clean_cycles)
+        data["outlier_cycles"] = len(outlier_cycles)
     else:
         # Fallback to in-memory lists
-        record.clean_cycles = len(clean_cycles)
-        record.outlier_cycles = len(outlier_cycles)
-        record.total_cycles_extracted = len(clean_cycles) + len(outlier_cycles)
+        data["clean_cycles"] = len(clean_cycles)
+        data["outlier_cycles"] = len(outlier_cycles)
+        data["total_cycles_extracted"] = len(clean_cycles) + len(outlier_cycles)
 
     # Helper to compute duration (s) and acoustic AUC for one cycle
     def _cycle_metrics(cycle_df: pd.DataFrame) -> tuple[float, float, float, float]:
@@ -1368,36 +1211,60 @@ def create_cycles_record_from_data(
             try:
                 auc_total += np.trapezoid(y, rel_tt)
             except AttributeError:
-                auc_total += np.trapz(y, rel_tt)
+                with np.errstate(all='ignore'):
+                    auc_total += np.trapz(y, rel_tt)
 
         return start_s, end_s, float(dur), float(auc_total)
 
     # Build per-cycle details and aggregates for clean cycles
-    details: list[Dict[str, Any]] = []
+    details: list[MovementCycle] = []
     durations: list[float] = []
     aucs: list[float] = []
+
+    # Extract context information from upstream records
+    audio_metadata = audio_record if audio_record else None
+    biomech_metadata = biomech_record if biomech_record else None
+    sync_metadata = sync_record if sync_record else None
+
+    # We'll create cycles_metadata after calculating aggregates
+    # For now, keep it as None for individual cycles
 
     def _append_cycles(cycles: List[pd.DataFrame], is_outlier: bool) -> None:
         for idx, cdf in enumerate(cycles):
             s, e, d, auc = _cycle_metrics(cdf)
-            row: Dict[str, Any] = {
-                "Cycle Index": idx,
-                "Is Outlier": is_outlier,
-                "Start (s)": s,
-                "End (s)": e,
-                "Duration (s)": d,
-                "Acoustic AUC": auc,
-            }
-            # Optional channel RMS per cycle (filtered preferred)
+
+            # Calculate channel RMS values (data-derived)
+            ch_rms = {}
             for n in [1, 2, 3, 4]:
                 col = f"f_ch{n}" if f"f_ch{n}" in cdf.columns else (f"ch{n}" if f"ch{n}" in cdf.columns else None)
                 if col:
                     arr = pd.to_numeric(cdf[col], errors="coerce").to_numpy()
-                    row[f"Ch{n} RMS"] = float(np.sqrt(np.nanmean(arr ** 2)))
-            details.append(row)
+                    ch_rms[n] = float(np.sqrt(np.nanmean(arr ** 2)))
+
+            # Create MovementCycle directly with embedded upstream metadata
+            cycle_record = MovementCycle(
+                cycle_index=idx,
+                is_outlier=is_outlier,
+                start_time_s=s,
+                end_time_s=e,
+                duration_s=d,
+                acoustic_auc=auc,
+                ch1_rms=ch_rms.get(1),
+                ch2_rms=ch_rms.get(2),
+                ch3_rms=ch_rms.get(3),
+                ch4_rms=ch_rms.get(4),
+                # Embed upstream metadata models
+                audio_metadata=audio_metadata,
+                biomech_metadata=biomech_metadata,
+                sync_metadata=sync_metadata,
+                cycles_metadata=None,  # Will be set after aggregate calculation
+            )
+
+            details.append(cycle_record)
             if not is_outlier:
                 durations.append(d)
                 aucs.append(auc)
+
     # Build details from .pkl files if present; otherwise from provided cycles
     if pkl_cycles:
         for pidx, p in enumerate(sorted(pkl_cycles)):
@@ -1406,36 +1273,63 @@ def create_cycles_record_from_data(
             except Exception:
                 continue
             s, e, d, auc = _cycle_metrics(cdf)
-            row: Dict[str, Any] = {
-                "Cycle File": str(p),
-                "Cycle Index": pidx,
-                # Heuristic: infer outliers by filename
-                "Is Outlier": ("outlier" in p.name.lower()),
-                "Start (s)": s,
-                "End (s)": e,
-                "Duration (s)": d,
-                "Acoustic AUC": auc,
-            }
+            is_outlier = "outlier" in p.name.lower()
+
+            # Calculate channel RMS values (data-derived)
+            ch_rms = {}
             for n in [1, 2, 3, 4]:
                 col = f"f_ch{n}" if f"f_ch{n}" in cdf.columns else (f"ch{n}" if f"ch{n}" in cdf.columns else None)
                 if col:
                     arr = pd.to_numeric(cdf[col], errors="coerce").to_numpy()
-                    row[f"Ch{n} RMS"] = float(np.sqrt(np.nanmean(arr ** 2)))
-            details.append(row)
-            if not row["Is Outlier"]:
+                    ch_rms[n] = float(np.sqrt(np.nanmean(arr ** 2)))
+
+            # Create MovementCycle directly with embedded upstream metadata
+            cycle_record = MovementCycle(
+                cycle_index=pidx,
+                is_outlier=is_outlier,
+                cycle_file=str(p),
+                start_time_s=s,
+                end_time_s=e,
+                duration_s=d,
+                acoustic_auc=auc,
+                ch1_rms=ch_rms.get(1),
+                ch2_rms=ch_rms.get(2),
+                ch3_rms=ch_rms.get(3),
+                ch4_rms=ch_rms.get(4),
+                # Embed upstream metadata models
+                audio_metadata=audio_metadata,
+                biomech_metadata=biomech_metadata,
+                sync_metadata=sync_metadata,
+                cycles_metadata=None,  # Will be set after aggregate calculation
+            )
+
+            details.append(cycle_record)
+            if not is_outlier:
                 durations.append(d)
                 aucs.append(auc)
     else:
         _append_cycles(clean_cycles, is_outlier=False)
         _append_cycles(outlier_cycles, is_outlier=True)
 
-    record.per_cycle_details = details
+    # Calculate aggregate statistics
     if durations:
-        record.mean_cycle_duration_s = float(np.nanmean(durations))
-        record.median_cycle_duration_s = float(np.nanmedian(durations))
-        record.min_cycle_duration_s = float(np.nanmin(durations))
-        record.max_cycle_duration_s = float(np.nanmax(durations))
+        data["mean_cycle_duration_s"] = float(np.nanmean(durations))
+        data["median_cycle_duration_s"] = float(np.nanmedian(durations))
+        data["min_cycle_duration_s"] = float(np.nanmin(durations))
+        data["max_cycle_duration_s"] = float(np.nanmax(durations))
     if aucs:
-        record.mean_acoustic_auc = float(np.nanmean(aucs))
+        data["mean_acoustic_auc"] = float(np.nanmean(aucs))
 
-    return record
+    # Include data-derived fields in unified MovementCycles class
+    data["output_directory"] = str(output_dir) if output_dir else None
+    data["plots_created"] = plots_created
+    data["per_cycle_details"] = details
+
+    # Create unified MovementCycles object
+    cycles = MovementCycles(**data)
+
+    # Now update all cycle records with the complete cycles_metadata
+    for detail in details:
+        detail.cycles_metadata = cycles
+
+    return cycles

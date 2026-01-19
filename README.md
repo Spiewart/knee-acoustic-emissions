@@ -26,14 +26,27 @@ acoustic_emissions_processing/
 Data Models
 -----------
 
-- **StudyMetadata**: Optional study identifiers (`id`, `study`, `study_id`) carried through all recordings.
-- **ScriptedManeuverMetadata**: Canonical `scripted_maneuver` (alias `maneuver`) plus `speed`, `pass_number`, and optional `pass_data` (walk event sheet); walk fields are enforced for models that set `require_walk_details=True`.
+### Data Validation Architecture
+
+This project uses unified Pydantic dataclasses (`src/metadata.py`) as the single source of truth for data validation:
+
+**Processing Log Metadata** (Pydantic dataclasses in `src/metadata.py`):
+- **AudioProcessing**: Audio file processing and QC metadata (validation + Excel export)
+- **BiomechanicsImport**: Biomechanics data import tracking (validation + Excel export)
+- **Synchronization**: Audio-biomechanics synchronization details (validation + Excel export)
+- **MovementCycles**: Movement cycle extraction and QC metadata (validation + Excel export)
+- **MovementCycle**: Individual movement cycle metadata with embedded upstream processing info (validation + Excel export)
+
+**Recording Models** (Pydantic BaseModels in `src/models.py`, used during processing):
 - **AcousticsFileMetadata / AcousticsRecording**: Audio-specific fields (`audio_file_name`, microphones 1-4, optional QC/timestamps/notes) layered on top of scripted maneuver + knee metadata.
 - **BiomechanicsFileMetadata / BiomechanicsRecording**: Biomechanics file metadata (`biomech_file_name`, system, sync times, QC) with required walk details.
+- **FullMovementCycleMetadata**: Complete cycle metadata inheriting from file metadata classes (for sync QC and data processing workflows).
 - **SynchronizedRecording**: Combines acoustics + biomechanics metadata and data after alignment.
-- **MovementCycleMetadata / MovementCycle**: Per-cycle metadata (cycle IDs, energy, QC, notes, periodic noise detection, sync quality) plus the synchronized data slice used for aggregation/DB export.
+- **MovementCycle**: Per-cycle metadata plus the synchronized data slice used for aggregation/DB export (includes data field).
 
-See [MIGRATION.md](MIGRATION.md) for detailed module mappings, [QC_VERSIONING.md](docs/QC_VERSIONING.md) for QA/QC version tracking, and [CYCLE_QC.md](docs/CYCLE_QC.md) for movement cycle quality control details.
+**Key Design Principle**: Pydantic dataclasses in `metadata.py` unify validation and Excel export in a single definition. They contain metadata and recording properties (file names, QC parameters, timestamps, sample rates) plus data-derived statistics (channel RMS values, per-sample counts) for comprehensive logging.
+
+See [ai_instructions.md](ai_instructions.md) for detailed information on adding new fields to models, [MIGRATION.md](MIGRATION.md) for module mappings, [QC_VERSIONING.md](docs/QC_VERSIONING.md) for QA/QC version tracking, and [CYCLE_QC.md](docs/CYCLE_QC.md) for movement cycle quality control details.
 
 Prerequisites
 -----------
@@ -89,6 +102,21 @@ Common Commands
 - Plot per-channel waveforms: `ae-plot-per-channel ./outputs/file.pkl`
 - Add instantaneous frequency: `ae-add-inst-freq ./outputs/file.pkl`
 - Compute spectrograms: `ae-compute-spectrogram ./outputs/file.pkl`
+
+### Pipeline (participant directory)
+- Run full pipeline (bin→sync→cycles):
+  `ae-process-directory "/path/to/root" --entrypoint bin --participant 1013`
+- Run from sync stage (sync→cycles):
+  `ae-process-directory "/path/to/root" --entrypoint sync --participant 1013 --maneuver walk --knee left`
+- Cycles only (expects existing Synced files):
+  `ae-process-directory "/path/to/root" --entrypoint cycles --participant 1013 --maneuver walk --knee left`
+
+Debug logging
+-------------
+- Use `--log-level DEBUG` to enable verbose logs.
+- Optionally capture to a file with `--log /tmp/ae_run.log`.
+- Example (sync→cycles with debug):
+  `ae-process-directory "/path/to/root" --entrypoint sync --participant 1013 --maneuver walk --knee left --log-level DEBUG --log /tmp/ae_run.log`
 
 Edge-Case Behavior
 ------------------

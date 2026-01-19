@@ -80,6 +80,13 @@ def main() -> None:
         help="Optional path to write detailed log file",
     )
     parser.add_argument(
+        "--log-level",
+        type=str,
+        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+        default="INFO",
+        help="Logging level (default: INFO)",
+    )
+    parser.add_argument(
         "--entrypoint",
         type=str,
         choices=["bin", "sync", "cycles"],
@@ -106,7 +113,8 @@ def main() -> None:
 
     # Set up logging
     log_file = Path(args.log) if args.log else None
-    setup_logging(log_file)
+    log_level = getattr(logging, args.log_level.upper(), logging.INFO)
+    setup_logging(log_file, log_level)
 
     # Handle single-file sync
     if args.sync_single:

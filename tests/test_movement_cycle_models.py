@@ -1,4 +1,4 @@
-"""Test suite for MovementCycleMetadata and MovementCycle models."""
+"""Test suite for FullMovementCycleMetadata and MovementCycle models."""
 
 from datetime import timedelta
 
@@ -10,8 +10,8 @@ from pydantic import ValidationError
 from src.models import (
     MicrophonePosition,
     MovementCycle,
-    MovementCycleMetadata,
     SynchronizedData,
+    FullMovementCycleMetadata,
 )
 
 
@@ -29,7 +29,7 @@ def microphones() -> dict[int, MicrophonePosition]:
 
 @pytest.fixture
 def base_kwargs(microphones: dict[int, MicrophonePosition]) -> dict:
-    """Base keyword args for MovementCycleMetadata creation."""
+    """Base keyword args for FullMovementCycleMetadata creation."""
 
     return {
         "scripted_maneuver": "walk",
@@ -72,52 +72,52 @@ def sample_synchronized_df() -> pd.DataFrame:
     )
 
 
-class TestMovementCycleMetadata:
-    """Validation coverage for MovementCycleMetadata."""
+class TestFullMovementCycleMetadata:
+    """Validation coverage for FullMovementCycleMetadata."""
 
     def test_walk_requires_speed_and_pass_number(self, base_kwargs: dict) -> None:
         missing_speed = {**base_kwargs, "speed": None}
         with pytest.raises(ValidationError):
-            MovementCycleMetadata(**missing_speed)
+            FullMovementCycleMetadata(**missing_speed)
 
         missing_pass = {**base_kwargs, "pass_number": None}
         with pytest.raises(ValidationError):
-            MovementCycleMetadata(**missing_pass)
+            FullMovementCycleMetadata(**missing_pass)
 
     def test_walk_negative_pass_number_fails(self, base_kwargs: dict) -> None:
         with pytest.raises(ValidationError):
-            MovementCycleMetadata(**{**base_kwargs, "pass_number": -1})
+            FullMovementCycleMetadata(**{**base_kwargs, "pass_number": -1})
 
     def test_non_walk_forces_speed_none(self, base_kwargs: dict) -> None:
         data = {**base_kwargs, "scripted_maneuver": "sit_to_stand", "pass_number": None, "speed": None}
-        MovementCycleMetadata(**data)
+        FullMovementCycleMetadata(**data)
 
         with pytest.raises(ValidationError):
-            MovementCycleMetadata(**{**data, "speed": "slow"})
+            FullMovementCycleMetadata(**{**data, "speed": "slow"})
 
     def test_maneuver_alias_is_accepted(self, base_kwargs: dict) -> None:
         payload = {**base_kwargs, "maneuver": "walk"}
-        meta = MovementCycleMetadata(**payload)
+        meta = FullMovementCycleMetadata(**payload)
         assert meta.scripted_maneuver == "walk"
         assert meta.maneuver == "walk"
 
     def test_cycle_index_and_id_non_negative(self, base_kwargs: dict) -> None:
-        MovementCycleMetadata(**base_kwargs)
+        FullMovementCycleMetadata(**base_kwargs)
         with pytest.raises(ValidationError):
-            MovementCycleMetadata(**{**base_kwargs, "cycle_index": -1})
+            FullMovementCycleMetadata(**{**base_kwargs, "cycle_index": -1})
         with pytest.raises(ValidationError):
-            MovementCycleMetadata(**{**base_kwargs, "id": -5})
+            FullMovementCycleMetadata(**{**base_kwargs, "id": -5})
 
     def test_cycle_acoustic_energy_and_qc_required(self, base_kwargs: dict) -> None:
         missing_energy = base_kwargs.copy()
         missing_energy.pop("cycle_acoustic_energy")
         with pytest.raises(ValidationError):
-            MovementCycleMetadata(**missing_energy)
+            FullMovementCycleMetadata(**missing_energy)
 
         missing_qc = base_kwargs.copy()
         missing_qc.pop("cycle_qc_pass")
         with pytest.raises(ValidationError):
-            MovementCycleMetadata(**missing_qc)
+            FullMovementCycleMetadata(**missing_qc)
 
 
 class TestMovementCycle:

@@ -16,12 +16,14 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 import numpy as np
 import pandas as pd
 
+from src.metadata import (
+    AudioProcessing,
+    BiomechanicsImport,
+    Synchronization,
+    MovementCycles,
+)
 from src.orchestration.processing_log import (
-    AudioProcessingRecord,
-    BiomechanicsImportRecord,
     ManeuverProcessingLog,
-    MovementCyclesRecord,
-    SynchronizationRecord,
     create_audio_record_from_data,
     create_sync_record_from_data,
 )
@@ -47,7 +49,7 @@ def test_basic_functionality():
 
         # Test 2: Add audio record
         print("  ✓ Adding audio record...")
-        audio_record = AudioProcessingRecord(
+        audio_record = AudioProcessing(
             audio_file_name="test_audio",
             processing_status="success",
             sample_rate=46875.0,
@@ -57,7 +59,7 @@ def test_basic_functionality():
 
         # Test 3: Add biomechanics record
         print("  ✓ Adding biomechanics record...")
-        bio_record = BiomechanicsImportRecord(
+        bio_record = BiomechanicsImport(
             biomechanics_file="test.xlsx",
             num_recordings=3,
         )
@@ -67,7 +69,7 @@ def test_basic_functionality():
         # Test 4: Add sync records
         print("  ✓ Adding synchronization records...")
         for i in range(3):
-            sync_record = SynchronizationRecord(
+            sync_record = Synchronization(
                 sync_file_name=f"sync_{i}",
                 num_synced_samples=1000,
             )
@@ -77,7 +79,7 @@ def test_basic_functionality():
         # Test 5: Add cycles records
         print("  ✓ Adding movement cycles records...")
         for i in range(3):
-            cycles_record = MovementCyclesRecord(
+            cycles_record = MovementCycles(
                 sync_file_name=f"sync_{i}",
                 clean_cycles=10,
                 outlier_cycles=2,
@@ -101,10 +103,11 @@ def test_basic_functionality():
 
         # Test 8: Update existing sync record
         print("  ✓ Testing incremental update...")
-        loaded_log.add_synchronization_record(SynchronizationRecord(
+        sync_record_update = Synchronization(
             sync_file_name="sync_0",
             num_synced_samples=2000,  # Updated value
-        ))
+        )
+        loaded_log.add_synchronization_record(sync_record_update)
         assert len(loaded_log.synchronization_records) == 3  # Still 3
         assert loaded_log.synchronization_records[0].num_synced_samples == 2000
 

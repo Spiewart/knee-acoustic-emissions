@@ -13,6 +13,159 @@ This project processes acoustic emissions data from knee joint recordings during
 
 ---
 
+## Data Validation Architecture
+
+**CRITICAL: Unified Pydantic Dataclasses as Single Source of Truth**
+
+This project uses unified Pydantic dataclasses (`src/metadata.py`) that combine validation and Excel export in a single definition.
+
+### Unified Pydantic Dataclasses (`src/metadata.py`)
+
+**Purpose**: Single-class definitions that provide both Pydantic validation AND Excel export functionality. These are the single source of truth for all processing metadata.
+
+**Location**: `src/metadata.py`
+
+**Key Classes**:
+- `AudioProcessing`: Audio file processing and QC metadata (replaces AudioProcessingMetadata + AudioProcessingRecord)
+- `BiomechanicsImport`: Biomechanics data import tracking (replaces BiomechanicsImportMetadata + BiomechanicsImportRecord)
+- `Synchronization`: Audio-biomechanics synchronization details (replaces SynchronizationMetadata + SynchronizationRecord)
+- `MovementCycles`: Movement cycle extraction and QC metadata (replaces MovementCyclesMetadata + MovementCyclesRecord)
+- `MovementCycle`: Individual movement cycle with embedded upstream processing info
+
+**Field Guidelines**:
+- ✅ **Include**: File names, processing status, QC parameters, timestamps, recording characteristics (sample rate, duration), QC version tracking
+- ✅ **Include**: Data-derived statistics (channel RMS/peak values, per-sample counts) - now part of the unified class
+- ❌ **Exclude**: Large data objects, complex nested structures that can't be exported to Excel
+
+**Field Naming**: All fields use `snake_case` for direct mapping to database columns and Excel headers.
+
+**Creation Pattern**:
+```python
+# Direct instantiation with validation
+audio = AudioProcessing(
+    audio_file_name="recording.bin",
+    processing_status="success",
+    sample_rate=46875.0,  # Validated by Pydantic
+    duration_seconds=120.5,
+    channel_1_rms=150.3,  # Data-derived field, included in same class
+    channel_2_rms=145.8,
+)
+
+# Export to Excel (built-in to_dict method)
+excel_dict = audio.to_dict()
+```
+
+### Adding New Fields: SIMPLIFIED WORKFLOW
+
+**When adding fields to metadata, you only update ONE location:**
+
+1. **Add to Pydantic dataclass** (`src/metadata.py`):
+   ```python
+   @dataclass
+   class AudioProcessing:
+       # Add new field
+       new_qc_parameter: Optional[float] = None
+
+       # Add validator if needed
+       @field_validator("new_qc_parameter")
+       @classmethod
+       def validate_new_parameter(cls, value: Optional[float]) -> Optional[float]:
+           if value is not None and value < 0:
+               raise ValueError("new_qc_parameter must be non-negative")
+           return value
+   ```
+
+2. **Update to_dict() for Excel export**:
+   ```python
+   def to_dict(self) -> Dict[str, Any]:
+       return {
+           "New QC Parameter": self.new_qc_parameter,
+           # ... other fields
+       }
+   ```
+
+3. **Update helper functions** (`src/orchestration/processing_log.py`):
+   ```python
+   def create_audio_record_from_data(data: dict) -> AudioProcessing:
+       return AudioProcessing(
+           new_qc_parameter=data.get("new_qc_parameter"),
+           # ... other fields
+       )
+   ```
+
+4. **Update load_from_excel()** to read from Excel.
+
+### File Metadata Classes (`src/models.py`)
+
+**Purpose**: Base classes for file-level metadata used during synchronization workflows.
+
+**Location**: `src/models.py`
+
+**Key Classes**:
+- `AcousticsFileMetadata`: Audio file metadata with microphone positions
+- `BiomechanicsFileMetadata`: Biomechanics file metadata with system info
+- `FullMovementCycleMetadata`: Complete cycle metadata with file metadata inheritance (for sync QC and data processing workflows)
+- `SynchronizedRecording`: Combined acoustics + biomechanics with data
+- `MovementCycle`: Movement cycle with synchronized data field (for processing workflows)
+
+**Note**: These BaseModel classes are separate from the unified Pydantic dataclasses in `metadata.py`. They are used for:
+1. Synchronization QC workflows that need inheritance from multiple file metadata classes
+2. Carrying actual data (DataFrame) objects during processing (not suitable for Excel export)
+
+### Key Differences
+
+**Old Architecture (deprecated)**:
+- Two separate classes: Pydantic BaseModel for validation + Python dataclass for Excel export
+- Complex `from_metadata()` pattern
+- Fields split across two definitions
+- Easy to get out of sync
+
+**New Architecture (current)**:
+- Single Pydantic @dataclass combining validation + export
+- Direct instantiation
+- All fields in one place
+- Single source of truth
+   def to_dict(self):
+       return {
+           "Ch5 RMS": self.channel_5_rms,
+           # ... other fields
+       }
+
+   # C. Update helper functions to calculate and set the field
+   # D. Update load_from_excel() to read and set directly on record
+   ```
+
+### Helper Functions
+
+**Location**: `src/orchestration/processing_log.py`
+
+Helper functions create records with proper validation:
+- `create_audio_record_from_data()`: Calculates duration/stats → validates → creates record → sets channel stats
+- `create_biomechanics_record_from_data()`: Similar pattern
+- `create_sync_record_from_data()`: Similar pattern
+- `create_cycles_record_from_data()`: Similar pattern
+
+**Pattern**: All helpers build a data dict → validate through Pydantic → create record from metadata → set data-derived fields separately.
+
+### Excel Loading
+
+Excel files contain BOTH metadata and data-derived fields. The `load_from_excel()` function:
+1. Reads all fields from Excel
+2. Separates metadata fields from data-derived fields
+3. Creates Pydantic metadata model with metadata fields only
+4. Creates record from validated metadata
+5. Sets data-derived fields directly on record
+
+### Testing Guidelines
+
+When writing tests:
+- Create Pydantic metadata models first (validates fields)
+- Use `Record.from_metadata()` to create records
+- Set data-derived fields separately if needed
+- Never create records without validated metadata
+
+---
+
 ## Virtual Environment Setup
 
 ### Requirements
@@ -93,6 +246,11 @@ Pydantic models for data validation:
 - **`read_audio_board_file.py`**: Core translator for `.bin` files → DataFrames + JSON metadata
 
 - **`process_participant_directory.py`**: Orchestrates full participant data processing
+
+### Debug logging for CLI runs
+- `ae-process-directory` accepts `--log-level DEBUG` for verbose output and `--log /path/to/file.log` to write logs to disk.
+- Example (sync → cycles with debug):
+  `ae-process-directory "/path/to/root" --entrypoint sync --participant 1013 --maneuver walk --knee left --log-level DEBUG --log /tmp/ae_run.log`
 
 - **`plot_per_channel.py`**: Generates per-channel waveform visualizations
 

@@ -13,12 +13,14 @@ from datetime import datetime
 import numpy as np
 import pandas as pd
 
+from src.metadata import (
+    AudioProcessing,
+    BiomechanicsImport,
+    Synchronization,
+    MovementCycles,
+)
 from src.orchestration.processing_log import (
-    AudioProcessingRecord,
-    BiomechanicsImportRecord,
     ManeuverProcessingLog,
-    MovementCyclesRecord,
-    SynchronizationRecord,
     create_audio_record_from_data,
     create_biomechanics_record_from_data,
     create_cycles_record_from_data,
@@ -26,12 +28,12 @@ from src.orchestration.processing_log import (
 )
 
 
-class TestAudioProcessingRecord:
-    """Tests for AudioProcessingRecord."""
+class TestAudioProcessing:
+    """Tests for AudioProcessing metadata."""
 
     def test_create_record(self):
         """Test creating an audio processing record."""
-        record = AudioProcessingRecord(
+        record = AudioProcessing(
             audio_file_name="test_audio",
             processing_status="success",
             sample_rate=46875.0,
@@ -45,7 +47,7 @@ class TestAudioProcessingRecord:
 
     def test_to_dict(self):
         """Test converting record to dictionary."""
-        record = AudioProcessingRecord(
+        record = AudioProcessing(
             audio_file_name="test_audio",
             processing_status="success",
             sample_rate=46875.0,
@@ -64,7 +66,7 @@ class TestAudioProcessingRecord:
 
     def test_default_values(self):
         """Test that default values are set correctly."""
-        record = AudioProcessingRecord(audio_file_name="test")
+        record = AudioProcessing(audio_file_name="test")
 
         assert record.processing_status == "not_processed"
         assert record.num_channels == 4
@@ -73,12 +75,12 @@ class TestAudioProcessingRecord:
         assert record.audio_qc_version == 1
 
 
-class TestBiomechanicsImportRecord:
-    """Tests for BiomechanicsImportRecord."""
+class TestBiomechanicsImport:
+    """Tests for BiomechanicsImport metadata."""
 
     def test_create_record(self):
         """Test creating a biomechanics import record."""
-        record = BiomechanicsImportRecord(
+        record = BiomechanicsImport(
             biomechanics_file="AOA1011_Biomechanics_Full_Set.xlsx",
             processing_status="success",
             num_recordings=3,
@@ -92,7 +94,7 @@ class TestBiomechanicsImportRecord:
 
     def test_to_dict(self):
         """Test converting record to dictionary."""
-        record = BiomechanicsImportRecord(
+        record = BiomechanicsImport(
             biomechanics_file="test.xlsx",
             sheet_name="Walk0001",
             num_recordings=5,
@@ -107,12 +109,12 @@ class TestBiomechanicsImportRecord:
         assert data["Biomech QC Version"] == 1
 
 
-class TestSynchronizationRecord:
-    """Tests for SynchronizationRecord."""
+class TestSynchronization:
+    """Tests for Synchronization metadata."""
 
     def test_create_record(self):
         """Test creating a synchronization record."""
-        record = SynchronizationRecord(
+        record = Synchronization(
             sync_file_name="left_walk_slow_pass1",
             pass_number=1,
             speed="slow",
@@ -129,7 +131,7 @@ class TestSynchronizationRecord:
 
     def test_to_dict(self):
         """Test converting record to dictionary."""
-        record = SynchronizationRecord(
+        record = Synchronization(
             sync_file_name="test_sync",
             processing_status="success",
             num_synced_samples=1000,
@@ -146,12 +148,12 @@ class TestSynchronizationRecord:
         assert data["Biomech QC Version"] == 1
 
 
-class TestMovementCyclesRecord:
-    """Tests for MovementCyclesRecord."""
+class TestMovementCycles:
+    """Tests for MovementCycles metadata."""
 
     def test_create_record(self):
         """Test creating a movement cycles record."""
-        record = MovementCyclesRecord(
+        record = MovementCycles(
             sync_file_name="test_sync",
             total_cycles_extracted=12,
             clean_cycles=10,
@@ -165,7 +167,7 @@ class TestMovementCyclesRecord:
 
     def test_to_dict(self):
         """Test converting record to dictionary."""
-        record = MovementCyclesRecord(
+        record = MovementCycles(
             sync_file_name="test_sync",
             clean_cycles=8,
             outlier_cycles=2,
@@ -208,12 +210,12 @@ class TestManeuverProcessingLog:
             maneuver_directory=tmp_path,
         )
 
-        audio_record = AudioProcessingRecord(
+        record = AudioProcessing(
             audio_file_name="test_audio",
             processing_status="success",
         )
 
-        log.update_audio_record(audio_record)
+        log.update_audio_record(record)
 
         assert log.audio_record is not None
         assert log.audio_record.audio_file_name == "test_audio"
@@ -228,7 +230,7 @@ class TestManeuverProcessingLog:
             maneuver_directory=tmp_path,
         )
 
-        sync_record = SynchronizationRecord(
+        sync_record = Synchronization(
             sync_file_name="test_sync",
             processing_status="success",
         )
@@ -248,14 +250,14 @@ class TestManeuverProcessingLog:
         )
 
         # Add first record
-        sync_record1 = SynchronizationRecord(
+        sync_record1 = Synchronization(
             sync_file_name="test_sync",
             num_synced_samples=1000,
         )
         log.add_synchronization_record(sync_record1)
 
         # Add second record with same name
-        sync_record2 = SynchronizationRecord(
+        sync_record2 = Synchronization(
             sync_file_name="test_sync",
             num_synced_samples=2000,
         )
@@ -274,7 +276,7 @@ class TestManeuverProcessingLog:
             maneuver_directory=tmp_path,
         )
 
-        cycles_record = MovementCyclesRecord(
+        cycles_record = MovementCycles(
             sync_file_name="test_sync",
             clean_cycles=10,
             outlier_cycles=2,
@@ -297,15 +299,17 @@ class TestManeuverProcessingLog:
         )
 
         # Add some data
-        log.update_audio_record(AudioProcessingRecord(
+        audio = AudioProcessing(
             audio_file_name="test_audio",
             processing_status="success",
-        ))
+        )
+        log.update_audio_record(audio)
 
-        log.add_synchronization_record(SynchronizationRecord(
+        sync = Synchronization(
             sync_file_name="test_sync",
             processing_status="success",
-        ))
+        )
+        log.add_synchronization_record(sync)
 
         # Save to Excel
         excel_path = tmp_path / "test_log.xlsx"
@@ -326,16 +330,18 @@ class TestManeuverProcessingLog:
             log_updated=datetime.now(),
         )
 
-        original_log.update_audio_record(AudioProcessingRecord(
+        audio = AudioProcessing(
             audio_file_name="test_audio",
             sample_rate=46875.0,
             processing_status="success",
-        ))
+        )
+        original_log.update_audio_record(audio)
 
-        original_log.add_synchronization_record(SynchronizationRecord(
+        sync = Synchronization(
             sync_file_name="test_sync",
             num_synced_samples=1000,
-        ))
+        )
+        original_log.add_synchronization_record(sync)
 
         excel_path = tmp_path / "test_log.xlsx"
         original_log.save_to_excel(excel_path)
@@ -383,9 +389,10 @@ class TestManeuverProcessingLog:
             maneuver_directory=tmp_path,
             log_created=datetime.now(),
         )
-        original_log.update_audio_record(AudioProcessingRecord(
+        audio = AudioProcessing(
             audio_file_name="original_audio",
-        ))
+        )
+        original_log.update_audio_record(audio)
         original_log.save_to_excel()
 
         # Get or create should load existing
@@ -563,15 +570,17 @@ class TestIncrementalUpdates:
         )
 
         # Add sync record
-        log.add_synchronization_record(SynchronizationRecord(
+        sync_record = Synchronization(
             sync_file_name="test_sync",
             num_synced_samples=1000,
-        ))
+        )
+        log.add_synchronization_record(sync_record)
 
         # Update audio record
-        log.update_audio_record(AudioProcessingRecord(
+        audio = AudioProcessing(
             audio_file_name="new_audio",
-        ))
+        )
+        log.update_audio_record(audio)
 
         # Sync record should still be there
         assert len(log.synchronization_records) == 1
@@ -589,18 +598,20 @@ class TestIncrementalUpdates:
         )
 
         # Add first sync record
-        log.add_synchronization_record(SynchronizationRecord(
+        sync_record1 = Synchronization(
             sync_file_name="test_sync",
-            num_synced_samples=1000,
             duration_seconds=10.0,
-        ))
+            num_synced_samples=1000,
+        )
+        log.add_synchronization_record(sync_record1)
 
         # Update with new data for same file
-        log.add_synchronization_record(SynchronizationRecord(
+        sync_record2 = Synchronization(
             sync_file_name="test_sync",
-            num_synced_samples=2000,
             duration_seconds=20.0,
-        ))
+            num_synced_samples=2000,
+        )
+        log.add_synchronization_record(sync_record2)
 
         # Should only have one record with updated values
         assert len(log.synchronization_records) == 1
@@ -619,31 +630,35 @@ class TestIncrementalUpdates:
         )
 
         # Add all types of records
-        original_log.update_audio_record(AudioProcessingRecord(
+        audio = AudioProcessing(
             audio_file_name="test_audio",
             sample_rate=46875.0,
-            channel_1_rms=150.3,
             has_instantaneous_freq=True,
-        ))
+            channel_1_rms=150.3,
+        )
+        original_log.update_audio_record(audio)
 
-        original_log.update_biomechanics_record(BiomechanicsImportRecord(
+        bio = BiomechanicsImport(
             biomechanics_file="test.xlsx",
             num_recordings=3,
             num_passes=9,
-        ))
+        )
+        original_log.update_biomechanics_record(bio)
 
         for i in range(3):
-            original_log.add_synchronization_record(SynchronizationRecord(
+            sync = Synchronization(
                 sync_file_name=f"sync_{i}",
                 num_synced_samples=1000 + i,
-            ))
+            )
+            original_log.add_synchronization_record(sync)
 
         for i in range(3):
-            original_log.add_movement_cycles_record(MovementCyclesRecord(
+            cycles = MovementCycles(
                 sync_file_name=f"sync_{i}",
                 clean_cycles=10 + i,
                 outlier_cycles=2,
-            ))
+            )
+            original_log.add_movement_cycles_record(cycles)
 
         # Save and load
         excel_path = tmp_path / "test_log.xlsx"

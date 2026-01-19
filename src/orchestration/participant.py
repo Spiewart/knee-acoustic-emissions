@@ -135,12 +135,9 @@ def parse_participant_directory(participant_dir: Path, knee: Optional[str] = Non
     """
 
     study_id = get_study_id_from_directory(participant_dir)
-    logging.info("Processing participant with Study ID: %s", study_id)
+    logging.info("Processing participant %s", study_id)
 
     check_participant_dir_for_required_files(participant_dir, knee=knee, maneuver=maneuver)
-    logging.info(
-        "All required files found for participant %s", study_id
-    )
 
     # Get the biomechanics file path
     motion_capture_dir = participant_dir / "Motion Capture"
@@ -164,29 +161,19 @@ def parse_participant_directory(participant_dir: Path, knee: Optional[str] = Non
 
     for knee_side in knees_to_process:
         knee_dir = participant_dir / f"{knee_side} Knee"
-        logging.info(
-            "Processing %s Knee for participant %s",
-            knee_side,
-            study_id
-        )
+        logging.info("Processing %s knee", knee_side)
         knee_synced_data, _ = _process_knee_maneuvers(
             knee_dir, biomechanics_file, knee_side, maneuver=maneuver
         )
         all_synced_data.extend(knee_synced_data)
 
     # If we got here, all processing succeeded - now write all files
-    logging.info(
-        "All maneuvers processed successfully for participant %s. "
-        "Writing %d output files...",
-        study_id,
-        len(all_synced_data),
-    )
+    logging.info("Writing %d synchronized files", len(all_synced_data))
     for output_path, synced_df, _ in all_synced_data:
         output_path.parent.mkdir(parents=True, exist_ok=True)
         synced_df.to_pickle(output_path)
-        logging.info("Saved synchronized data to %s", output_path)
 
-    logging.info("Completed processing participant %s", study_id)
+    logging.info("Completed participant %s", study_id)
 
 
 def _save_or_update_processing_log(
@@ -584,11 +571,7 @@ def _process_walk_speed(
         )
 
         if not recordings:
-            logging.info(
-                "No biomechanics recordings found for %s at speed %s",
-                "walk",
-                speed,
-            )
+            # No recordings found - this is expected in some cases
             return synced_data, viz_data, []
 
         # Process each pass/recording at this speed
@@ -1233,9 +1216,7 @@ def _find_maneuver_dir(knee_dir: Path, maneuver_key: str) -> Optional[Path]:
             continue
         norm = _normalize_folder_name(child.name)
         if norm in aliases:
-            logging.debug("Matched maneuver directory: %s for key: %s", child, maneuver_key)
             return child
-    logging.debug("No match found for maneuver key: %s in %s", maneuver_key, knee_dir)
     return None
 
 
@@ -1261,10 +1242,8 @@ def _load_acoustics_file_names(participant_dir: Path) -> dict[tuple[str, str], s
                 )
                 # The legend stores base name without extension
                 mapping[(knee, maneuver_key)] = meta.file_name
-            except Exception as exc:  # pylint: disable=broad-except
-                logging.debug(
-                    "Legend lookup failed for %s/%s: %s", knee, maneuver_key, exc
-                )
+            except Exception:  # pylint: disable=broad-except
+                # Silently skip missing entries - legend is best-effort
                 continue
 
     return mapping
@@ -1409,13 +1388,13 @@ def find_participant_directories(path: Path) -> list[Path]:
     return sorted(participant_dirs)
 
 
-def setup_logging(log_file: Optional[Path] = None) -> None:
+def setup_logging(log_file: Optional[Path] = None, log_level: int = logging.INFO) -> None:
     """Configure logging to both console and optional file.
 
     Args:
         log_file: Optional path to write log file
+        log_level: Logging level (e.g., logging.DEBUG)
     """
-    log_level = logging.INFO
     log_format = "%(asctime)s %(levelname)s: %(message)s"
 
     # Configure root logger
@@ -1472,20 +1451,16 @@ def _process_bin_stage(participant_dir: Path, knee: Optional[str] = None, maneuv
     # Normalize maneuver shorthand to internal format
     maneuver = _normalize_maneuver(maneuver)
     file_name_map = _load_acoustics_file_names(participant_dir)
-    if file_name_map:
-        logging.info("Legend-derived audio base names: %s", {k: v for k, v in file_name_map.items()})
     produced: list[Path] = []
     produced_dfs: list[pd.DataFrame] = []
     for knee_side in ["Left", "Right"]:
         if knee and knee_side.lower() != knee.lower():
-            logging.debug("Skipping knee %s due to filter: %s", knee_side, knee)
             continue
         knee_dir = participant_dir / f"{knee_side} Knee"
         if not knee_dir.exists():
             continue
         for maneuver_key in ["walk", "sit_to_stand", "flexion_extension"]:
             if maneuver and maneuver_key != maneuver:
-                logging.debug("Skipping maneuver %s due to filter: %s", maneuver_key, maneuver)
                 continue
             maneuver_dir = _find_maneuver_dir(knee_dir, maneuver_key)
             if maneuver_dir is None:
@@ -1511,21 +1486,6 @@ def _process_bin_stage(participant_dir: Path, knee: Optional[str] = None, maneuv
                 if len(alt_bin_files) == 1:
                     bin_path = alt_bin_files[0]
                     audio_base_path = bin_path.with_suffix("")
-                    if legend_base:
-                        logging.info(
-                            "Using fallback .bin %s for %s/%s (legend expected %s.bin)",
-                            bin_path.name,
-                            knee_side,
-                            maneuver_key,
-                            legend_base,
-                        )
-                    else:
-                        logging.info(
-                            "Using .bin file %s for %s/%s (no legend entry found)",
-                            bin_path.name,
-                            knee_side,
-                            maneuver_key,
-                        )
                 elif len(alt_bin_files) > 1:
                     logging.error(
                         "Multiple .bin files found in %s; please keep only one: %s",
@@ -1576,29 +1536,7 @@ def _process_bin_stage(participant_dir: Path, knee: Optional[str] = None, maneuv
                 # Run per-microphone QC
                 per_mic_bad_intervals = run_raw_audio_qc_per_mic(df)
 
-                if dropout_intervals:
-                    logging.info(
-                        "Detected %d dropout interval(s) in %s",
-                        len(dropout_intervals),
-                        bin_path.name,
-                    )
-                if artifact_intervals:
-                    logging.info(
-                        "Detected %d artifact interval(s) in %s",
-                        len(artifact_intervals),
-                        bin_path.name,
-                    )
-
-                # Log per-mic results if any failures detected
-                for ch, intervals in per_mic_bad_intervals.items():
-                    if intervals:
-                        logging.info(
-                            "Channel %s: %d bad interval(s)",
-                            ch,
-                            len(intervals),
-                        )
-
-                # Store QC results for logging
+                                # Store QC results for logging
                 qc_not_passed = str(bad_intervals) if bad_intervals else None
 
                 # Store per-mic QC results (map channel names to mic numbers)
@@ -1626,8 +1564,6 @@ def _process_bin_stage(participant_dir: Path, knee: Optional[str] = None, maneuv
                 df_with_freq.to_pickle(out_with_freq)
                 produced.append(out_with_freq)
                 produced_dfs.append(df_with_freq)  # Store DF to avoid reloading
-                logging.debug("QC completed for %s/%s", knee_side, maneuver_key)
-                logging.debug("Produced file: %s", out_with_freq)
 
                 # Update processing log with QC results
                 _save_or_update_processing_log(
@@ -1653,8 +1589,6 @@ def _process_bin_stage(participant_dir: Path, knee: Optional[str] = None, maneuv
             except Exception as e:  # pylint: disable=broad-except
                 logging.error("Failed frequency augmentation for %s: %s", base_pkl, e)
                 continue
-    logging.debug("Produced files: %s", produced)
-    logging.debug("Produced %d DataFrames in memory", len(produced_dfs))
     return produced, produced_dfs
 
 
@@ -1744,14 +1678,8 @@ def process_participant(participant_dir: Path, entrypoint: Literal["bin", "sync"
             if knee is None and maneuver is None:
                 check_participant_dir_for_required_files(participant_dir)
             else:
-                logging.debug(
-                    "Skipping full directory validation due to filters (knee=%s, maneuver=%s)",
-                    knee, maneuver
-                )
+                # Skip full validation with filters - check top-level folders only
                 participant_dir_has_top_level_folders(participant_dir, knee=knee)
-        logging.info(
-            "Directory validation passed for participant #%s", study_id
-        )
 
         # Biomechanics validation (best-effort) — skip for bin-only stage
         motion_capture_dir = participant_dir / "Motion Capture"
@@ -1855,6 +1783,16 @@ def process_participant(participant_dir: Path, entrypoint: Literal["bin", "sync"
                                     maneuver_directory=maneuver_dir,
                                 )
 
+                                # Retrieve the synchronization record to propagate pass/speed/knee context
+                                sync_record = None
+                                try:
+                                    sync_record = next(
+                                        (rec for rec in log.synchronization_records if rec.sync_file_name == synced_file.stem),
+                                        None,
+                                    )
+                                except Exception:
+                                    sync_record = None
+
                                 cycles_record = create_cycles_record_from_data(
                                     sync_file_name=synced_file.stem,
                                     clean_cycles=clean_cycles,
@@ -1862,6 +1800,7 @@ def process_participant(participant_dir: Path, entrypoint: Literal["bin", "sync"
                                     output_dir=output_dir,
                                     acoustic_threshold=100.0,  # Default threshold
                                     plots_created=True,
+                                    sync_record=sync_record,
                                 )
                                 log.add_movement_cycles_record(cycles_record)
 
