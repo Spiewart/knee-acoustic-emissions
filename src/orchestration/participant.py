@@ -1388,13 +1388,13 @@ def find_participant_directories(path: Path) -> list[Path]:
     return sorted(participant_dirs)
 
 
-def setup_logging(log_file: Optional[Path] = None) -> None:
+def setup_logging(log_file: Optional[Path] = None, log_level: int = logging.INFO) -> None:
     """Configure logging to both console and optional file.
 
     Args:
         log_file: Optional path to write log file
+        log_level: Logging level (e.g., logging.DEBUG)
     """
-    log_level = logging.INFO
     log_format = "%(asctime)s %(levelname)s: %(message)s"
 
     # Configure root logger
@@ -1783,6 +1783,16 @@ def process_participant(participant_dir: Path, entrypoint: Literal["bin", "sync"
                                     maneuver_directory=maneuver_dir,
                                 )
 
+                                # Retrieve the synchronization record to propagate pass/speed/knee context
+                                sync_record = None
+                                try:
+                                    sync_record = next(
+                                        (rec for rec in log.synchronization_records if rec.sync_file_name == synced_file.stem),
+                                        None,
+                                    )
+                                except Exception:
+                                    sync_record = None
+
                                 cycles_record = create_cycles_record_from_data(
                                     sync_file_name=synced_file.stem,
                                     clean_cycles=clean_cycles,
@@ -1790,6 +1800,7 @@ def process_participant(participant_dir: Path, entrypoint: Literal["bin", "sync"
                                     output_dir=output_dir,
                                     acoustic_threshold=100.0,  # Default threshold
                                     plots_created=True,
+                                    sync_record=sync_record,
                                 )
                                 log.add_movement_cycles_record(cycles_record)
 

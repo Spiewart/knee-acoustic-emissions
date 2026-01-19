@@ -103,6 +103,21 @@ Common Commands
 - Add instantaneous frequency: `ae-add-inst-freq ./outputs/file.pkl`
 - Compute spectrograms: `ae-compute-spectrogram ./outputs/file.pkl`
 
+### Pipeline (participant directory)
+- Run full pipeline (bin→sync→cycles):
+  `ae-process-directory "/path/to/root" --entrypoint bin --participant 1013`
+- Run from sync stage (sync→cycles):
+  `ae-process-directory "/path/to/root" --entrypoint sync --participant 1013 --maneuver walk --knee left`
+- Cycles only (expects existing Synced files):
+  `ae-process-directory "/path/to/root" --entrypoint cycles --participant 1013 --maneuver walk --knee left`
+
+Debug logging
+-------------
+- Use `--log-level DEBUG` to enable verbose logs.
+- Optionally capture to a file with `--log /tmp/ae_run.log`.
+- Example (sync→cycles with debug):
+  `ae-process-directory "/path/to/root" --entrypoint sync --participant 1013 --maneuver walk --knee left --log-level DEBUG --log /tmp/ae_run.log`
+
 Edge-Case Behavior
 ------------------
 

@@ -28,7 +28,7 @@ from src.biomechanics.quality_control import (
     get_default_min_rom,
     validate_knee_angle_waveform,
 )
-from src.models import MicrophonePosition, FullMovementCycleMetadata
+from src.models import FullMovementCycleMetadata, MicrophonePosition
 
 logger = logging.getLogger(__name__)
 
@@ -294,7 +294,7 @@ def _build_cycle_metadata_for_cycle(
     result: _CycleResult,
     context: dict[str, Any],
 ) -> FullMovementCycleMetadata:
-    return MovementCycleMetadata(
+    return FullMovementCycleMetadata(
         id=result.index,
         cycle_index=result.index,
         cycle_acoustic_energy=float(result.energy),
@@ -719,28 +719,31 @@ def perform_sync_qc(
     # Compute per-cycle metadata (retain original ordering)
     clean_ids = {id(cycle) for cycle in clean_cycles}
     cycle_results: list[_CycleResult] = []
-    
+
     # Import cycle QC functions locally to avoid circular imports
     # TODO: Consider refactoring module structure to avoid this pattern
     # (e.g., moving shared types to a separate module)
-    from src.audio.cycle_qc import check_cycle_periodic_noise, validate_acoustic_waveform
-    
+    from src.audio.cycle_qc import (
+        check_cycle_periodic_noise,
+        validate_acoustic_waveform,
+    )
+
     for idx, cycle_df in enumerate(cycles):
         energy = qc._compute_cycle_acoustic_energy(cycle_df)
-        
+
         # Run cycle-level audio QC (periodic noise detection)
         periodic_noise_results = check_cycle_periodic_noise(cycle_df)
         periodic_noise_detected = any(periodic_noise_results.values())
-        
+
         # Run waveform-based sync quality validation (replaces phase-based)
         waveform_valid, validation_reason = validate_acoustic_waveform(
-            cycle_df, 
+            cycle_df,
             maneuver=maneuver
         )
         # Convert waveform validation to sync quality score (1.0 if valid, 0.0 if not)
         sync_quality_score = 1.0 if waveform_valid else 0.0
         sync_qc_pass = waveform_valid
-        
+
         cycle_results.append(
             _CycleResult(
                 cycle=cycle_df,
@@ -916,7 +919,7 @@ def perform_sync_qc(
         f"{len(final_outlier_cycles)} outliers (after raw audio QC check)"
     )
 
-    # Set output directory
+    # Set output directory (flat structure: MovementCycles/clean|outliers)
     base_dir = Path(output_dir) if output_dir is not None else synced_pkl_path.parent
     output_dir = base_dir / "MovementCycles"
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -978,6 +981,33 @@ def _infer_speed_from_path(path: Path) -> Optional[str]:
         return "medium"
     elif "fast" in path_str:
         return "fast"
+
+    return None
+
+
+def _infer_pass_number_from_path(path: Path) -> Optional[int]:
+    """Infer pass number from file path.
+
+    For walking maneuvers, synced files are named like:
+    Left_walk_Pass0001_slow.pkl
+
+    Args:
+        path: Path to synchronized pickle file.
+
+    Returns:
+        Pass number (1-9999) for walk maneuvers, None otherwise.
+    """
+    import re
+
+    # Look for pattern like "Pass0001", "Pass0002", etc.
+    path_str = str(path)
+    match = re.search(r'Pass(\d{4})', path_str, re.IGNORECASE)
+    if match:
+        pass_num_str = match.group(1)
+        try:
+            return int(pass_num_str)
+        except ValueError:
+            return None
 
     return None
 

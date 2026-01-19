@@ -65,7 +65,7 @@ excel_dict = audio.to_dict()
    class AudioProcessing:
        # Add new field
        new_qc_parameter: Optional[float] = None
-       
+
        # Add validator if needed
        @field_validator("new_qc_parameter")
        @classmethod
@@ -130,7 +130,7 @@ excel_dict = audio.to_dict()
            "Ch5 RMS": self.channel_5_rms,
            # ... other fields
        }
-   
+
    # C. Update helper functions to calculate and set the field
    # D. Update load_from_excel() to read and set directly on record
    ```
@@ -246,6 +246,11 @@ Pydantic models for data validation:
 - **`read_audio_board_file.py`**: Core translator for `.bin` files → DataFrames + JSON metadata
 
 - **`process_participant_directory.py`**: Orchestrates full participant data processing
+
+### Debug logging for CLI runs
+- `ae-process-directory` accepts `--log-level DEBUG` for verbose output and `--log /path/to/file.log` to write logs to disk.
+- Example (sync → cycles with debug):
+  `ae-process-directory "/path/to/root" --entrypoint sync --participant 1013 --maneuver walk --knee left --log-level DEBUG --log /tmp/ae_run.log`
 
 - **`plot_per_channel.py`**: Generates per-channel waveform visualizations
 
