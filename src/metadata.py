@@ -26,67 +26,367 @@ from src.qc_versions import (
 )
 
 
-@dataclass
-class AudioProcessing:
+@dataclass(kw_only=True)
+class StudyMetadata:
+    """Base metadata class containing study information.
+    
+    All other metadata classes inherit from this to ensure consistent
+    study and participant identification across all processing stages.
+    """
+    
+    # Study identification
+    study: Literal["AOA", "preOA", "SMoCK"]
+    study_id: int  # Participant ID within the study (e.g., 1011 from #AOA1011)
+    
+    @field_validator("study_id")
+    @classmethod
+    def validate_study_id(cls, value: int) -> int:
+        """Validate study ID is positive."""
+        if value <= 0:
+            raise ValueError("study_id must be positive")
+        return value
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for Excel export."""
+        return {
+            "Study": self.study,
+            "Study ID": self.study_id,
+        }
+
+
+@dataclass(kw_only=True)
+class BiomechanicsMetadata(StudyMetadata):
+    """Metadata for biomechanics data linked to acoustic recording.
+    
+    Inherits from StudyMetadata. Fields are conditionally required based on
+    whether biomechanics data is linked to the acoustic recording.
+    """
+    
+    # Biomechanics linkage (with default to avoid inheritance issues)
+    linked_biomechanics: bool = False
+    
+    # Conditionally required fields (required if linked_biomechanics is True)
+    biomechanics_file: Optional[str] = None
+    biomechanics_type: Optional[Literal["Gonio", "IMU", "Motion Analysis"]] = None
+    sync_method: Optional[Literal["flick", "stomp"]] = None
+    biomechanics_sample_rate: Optional[float] = None
+    biomechanics_notes: Optional[str] = None
+    
+    @field_validator("biomechanics_file", "biomechanics_type", "sync_method", "biomechanics_sample_rate")
+    @classmethod
+    def validate_biomechanics_fields(cls, value: Optional[Any], info) -> Optional[Any]:
+        """Validate biomechanics fields are provided when linked_biomechanics is True."""
+        if info.data.get("linked_biomechanics") is True:
+            if value is None and info.field_name != "biomechanics_notes":
+                raise ValueError(f"{info.field_name} is required when linked_biomechanics is True")
+        else:
+            if value is not None:
+                raise ValueError(f"{info.field_name} must be None when linked_biomechanics is False")
+        return value
+    
+    @field_validator("sync_method")
+    @classmethod
+    def validate_sync_method_for_type(cls, value: Optional[str], info) -> Optional[str]:
+        """Validate sync_method matches biomechanics_type requirements."""
+        biomech_type = info.data.get("biomechanics_type")
+        if biomech_type and value:
+            if biomech_type in ["Motion Analysis", "IMU"] and value != "stomp":
+                raise ValueError(f"sync_method must be 'stomp' for biomechanics_type '{biomech_type}'")
+            elif biomech_type == "Gonio" and value != "flick":
+                raise ValueError("sync_method must be 'flick' for biomechanics_type 'Gonio'")
+        return value
+    
+    @field_validator("biomechanics_sample_rate")
+    @classmethod
+    def validate_biomechanics_sample_rate(cls, value: Optional[float]) -> Optional[float]:
+        """Validate biomechanics sample rate is positive if provided."""
+        if value is not None and value <= 0:
+            raise ValueError("biomechanics_sample_rate must be positive")
+        return value
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for Excel export."""
+        result = super().to_dict()
+        result.update({
+            "Linked Biomechanics": self.linked_biomechanics,
+            "Biomechanics File": self.biomechanics_file,
+            "Biomechanics Type": self.biomechanics_type,
+            "Sync Method": self.sync_method,
+            "Biomechanics Sample Rate (Hz)": self.biomechanics_sample_rate,
+            "Biomechanics Notes": self.biomechanics_notes,
+        })
+        return result
+
+
+@dataclass(kw_only=True)
+class AcousticsFile(BiomechanicsMetadata):
+    """Audio file metadata.
+    
+    Inherits from BiomechanicsMetadata and StudyMetadata.
+    Contains file-level information extracted from audio files.
+    """
+    
+    # File identification
+    audio_file_name: str
+    device_serial: str  # Pulled from file name
+    firmware_version: int  # Pulled from file name
+    file_time: datetime  # Pulled from file name
+    file_size_mb: float
+    
+    # Recording metadata
+    recording_date: datetime  # Date from audio file recording
+    recording_time: datetime  # Full datetime from audio file recording
+    
+    # Maneuver metadata
+    knee: Literal["right", "left"]
+    maneuver: Literal["fe", "sts", "walk"]
+    
+    # Audio characteristics
+    sample_rate: float = 46875.0
+    
+    # Microphone positions
+    mic_1_position: Literal["IPM", "IPL", "SPM", "SPL"]  # I=infra, S=supra, P=patellar, M=medial, L=lateral
+    mic_2_position: Literal["IPM", "IPL", "SPM", "SPL"]
+    mic_3_position: Literal["IPM", "IPL", "SPM", "SPL"]
+    mic_4_position: Literal["IPM", "IPL", "SPM", "SPL"]
+    
+    # Optional notes
+    mic_1_notes: Optional[str] = None
+    mic_2_notes: Optional[str] = None
+    mic_3_notes: Optional[str] = None
+    mic_4_notes: Optional[str] = None
+    notes: Optional[str] = None
+    
+    @field_validator("recording_time")
+    @classmethod
+    def validate_recording_time_matches_date(cls, value: datetime, info) -> datetime:
+        """Validate recording_time date component matches recording_date."""
+        recording_date = info.data.get("recording_date")
+        if recording_date and value.date() != recording_date.date():
+            raise ValueError("recording_time date component must match recording_date")
+        return value
+    
+    @field_validator("sample_rate")
+    @classmethod
+    def validate_sample_rate(cls, value: float) -> float:
+        """Validate sample rate is positive."""
+        if value <= 0:
+            raise ValueError("sample_rate must be positive")
+        return value
+    
+    @field_validator("file_size_mb")
+    @classmethod
+    def validate_file_size(cls, value: float) -> float:
+        """Validate file size is non-negative."""
+        if value < 0:
+            raise ValueError("file_size_mb must be non-negative")
+        return value
+    
+    @field_validator("firmware_version")
+    @classmethod
+    def validate_firmware_version(cls, value: int) -> int:
+        """Validate firmware version is non-negative."""
+        if value < 0:
+            raise ValueError("firmware_version must be non-negative")
+        return value
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for Excel export."""
+        result = super().to_dict()
+        result.update({
+            "Audio File": self.audio_file_name,
+            "Device Serial": self.device_serial,
+            "Firmware Version": self.firmware_version,
+            "File Time": self.file_time,
+            "File Size (MB)": self.file_size_mb,
+            "Recording Date": self.recording_date,
+            "Recording Time": self.recording_time,
+            "Knee": self.knee,
+            "Maneuver": self.maneuver,
+            "Sample Rate (Hz)": self.sample_rate,
+            "Mic 1 Position": self.mic_1_position,
+            "Mic 2 Position": self.mic_2_position,
+            "Mic 3 Position": self.mic_3_position,
+            "Mic 4 Position": self.mic_4_position,
+            "Mic 1 Notes": self.mic_1_notes,
+            "Mic 2 Notes": self.mic_2_notes,
+            "Mic 3 Notes": self.mic_3_notes,
+            "Mic 4 Notes": self.mic_4_notes,
+            "Notes": self.notes,
+        })
+        return result
+
+
+@dataclass(kw_only=True)
+class SynchronizationMetadata(AcousticsFile):
+    """Synchronization metadata for audio-biomechanics alignment.
+    
+    Inherits from AcousticsFile. Contains sync event times and
+    detection method details.
+    """
+    
+    # Sync times (in original time coordinates)
+    audio_sync_time: timedelta
+    bio_left_sync_time: Optional[timedelta] = None
+    bio_right_sync_time: Optional[timedelta] = None
+    
+    # Visual sync times (from biomechanics QC)
+    audio_visual_sync_time: Optional[timedelta] = None
+    audio_visual_sync_time_contralateral: Optional[timedelta] = None
+    
+    # Alignment details
+    sync_offset: timedelta
+    aligned_audio_sync_time: timedelta
+    aligned_bio_sync_time: timedelta
+    
+    # Detection method
+    sync_method: Literal["consensus", "biomechanics"]
+    consensus_methods: Optional[str] = None  # Comma-separated if sync_method is "consensus"
+    
+    # Detection times (all required)
+    consensus_time: timedelta
+    rms_time: timedelta
+    onset_time: timedelta
+    freq_time: timedelta
+    biomechanics_time: Optional[timedelta] = None
+    biomechanics_time_contralateral: Optional[timedelta] = None
+    
+    @field_validator("bio_left_sync_time", "bio_right_sync_time")
+    @classmethod
+    def validate_bio_sync_time_for_knee(cls, value: Optional[timedelta], info) -> Optional[timedelta]:
+        """Validate bio sync time is provided for the recorded knee."""
+        knee = info.data.get("knee")
+        field_name = info.field_name
+        
+        if knee == "left" and field_name == "bio_left_sync_time":
+            if value is None:
+                raise ValueError("bio_left_sync_time is required when knee is 'left'")
+        elif knee == "right" and field_name == "bio_right_sync_time":
+            if value is None:
+                raise ValueError("bio_right_sync_time is required when knee is 'right'")
+        
+        return value
+    
+    @field_validator("consensus_methods")
+    @classmethod
+    def validate_consensus_methods(cls, value: Optional[str], info) -> Optional[str]:
+        """Validate consensus_methods is provided when sync_method is 'consensus'."""
+        sync_method = info.data.get("sync_method")
+        if sync_method == "consensus" and value is None:
+            raise ValueError("consensus_methods is required when sync_method is 'consensus'")
+        return value
+    
+    @field_validator("biomechanics_time")
+    @classmethod
+    def validate_biomechanics_time(cls, value: Optional[timedelta], info) -> Optional[timedelta]:
+        """Validate biomechanics_time is provided when sync_method is 'biomechanics'."""
+        sync_method = info.data.get("sync_method")
+        if sync_method == "biomechanics" and value is None:
+            raise ValueError("biomechanics_time is required when sync_method is 'biomechanics'")
+        return value
+    
+    @field_validator("biomechanics_time_contralateral")
+    @classmethod
+    def validate_biomechanics_time_contralateral(cls, value: Optional[timedelta], info) -> Optional[timedelta]:
+        """Validate biomechanics_time_contralateral when contralateral knee has bio_sync_time."""
+        knee = info.data.get("knee")
+        if knee == "left":
+            bio_sync = info.data.get("bio_right_sync_time")
+        else:
+            bio_sync = info.data.get("bio_left_sync_time")
+        
+        if bio_sync is not None and value is None:
+            raise ValueError("biomechanics_time_contralateral is required when contralateral knee has bio_sync_time")
+        
+        return value
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for Excel export."""
+        result = super().to_dict()
+        result.update({
+            "Audio Sync Time": self.audio_sync_time,
+            "Bio Left Sync Time": self.bio_left_sync_time,
+            "Bio Right Sync Time": self.bio_right_sync_time,
+            "Audio Visual Sync Time": self.audio_visual_sync_time,
+            "Audio Visual Sync Time Contralateral": self.audio_visual_sync_time_contralateral,
+            "Sync Offset": self.sync_offset,
+            "Aligned Audio Sync Time": self.aligned_audio_sync_time,
+            "Aligned Bio Sync Time": self.aligned_bio_sync_time,
+            "Sync Method": self.sync_method,
+            "Consensus Methods": self.consensus_methods,
+            "Consensus Time": self.consensus_time,
+            "RMS Time": self.rms_time,
+            "Onset Time": self.onset_time,
+            "Freq Time": self.freq_time,
+            "Biomechanics Time": self.biomechanics_time,
+            "Biomechanics Time Contralateral": self.biomechanics_time_contralateral,
+        })
+        return result
+
+
+@dataclass(kw_only=True)
+class AudioProcessing(AcousticsFile):
     """Audio file processing and QC metadata.
 
+    Inherits from AcousticsFile (which inherits from BiomechanicsMetadata and StudyMetadata).
     Consolidates audio processing information for logging and validation.
-    Combines AudioProcessingMetadata (validation) and AudioProcessingRecord (Excel export).
     Fields use snake_case for direct mapping to database columns and Excel headers.
     """
 
-    # File identification
-    audio_file_name: str
-    audio_bin_file: Optional[str] = None
-    audio_pkl_file: Optional[str] = None
-
-    # Processing metadata
-    processing_date: Optional[datetime] = None
+    # Processing metadata (required)
+    processing_date: datetime
     processing_status: Literal["not_processed", "success", "error"] = "not_processed"
     error_message: Optional[str] = None
 
     # Audio file characteristics
-    sample_rate: Optional[float] = None  # Hz
     num_channels: int = 4
     duration_seconds: Optional[float] = None
-    file_size_mb: Optional[float] = None
-
-    # Header metadata
-    device_serial: Optional[str] = None
-    firmware_version: Optional[int] = None
-    file_time: Optional[datetime] = None
-
-    # Data-derived fields (pure statistics from audio data)
-    channel_1_rms: Optional[float] = None
-    channel_2_rms: Optional[float] = None
-    channel_3_rms: Optional[float] = None
-    channel_4_rms: Optional[float] = None
-    channel_1_peak: Optional[float] = None
-    channel_2_peak: Optional[float] = None
-    channel_3_peak: Optional[float] = None
-    channel_4_peak: Optional[float] = None
-
-    # Processing flags
-    has_instantaneous_freq: bool = False
-
-    # Raw audio QC results (dropout and artifacts)
-    # String representation of list of (start, end) tuples
-    qc_not_passed: Optional[str] = None  # Any mic bad intervals
-    qc_not_passed_mic_1: Optional[str] = None
-    qc_not_passed_mic_2: Optional[str] = None
-    qc_not_passed_mic_3: Optional[str] = None
-    qc_not_passed_mic_4: Optional[str] = None
 
     # QC version tracking
     audio_qc_version: int = Field(default_factory=get_audio_qc_version)
 
-    @field_validator("sample_rate")
-    @classmethod
-    def validate_sample_rate(cls, value: Optional[float]) -> Optional[float]:
-        """Validate sample rate is positive if provided."""
-        if value is not None and value <= 0:
-            raise ValueError("sample_rate must be positive")
-        return value
+    # Raw audio QC results - Overall fail segments (consolidated)
+    qc_fail_segments: List[tuple[float, float]]  # Consolidated contiguous bad intervals
+    qc_fail_segments_ch1: List[tuple[float, float]]
+    qc_fail_segments_ch2: List[tuple[float, float]]
+    qc_fail_segments_ch3: List[tuple[float, float]]
+    qc_fail_segments_ch4: List[tuple[float, float]]
+
+    # Signal dropout QC
+    qc_signal_dropout: bool
+    qc_signal_dropout_segments: List[tuple[float, float]]
+    qc_signal_dropout_ch1: bool
+    qc_signal_dropout_segments_ch1: List[tuple[float, float]]
+    qc_signal_dropout_ch2: bool
+    qc_signal_dropout_segments_ch2: List[tuple[float, float]]
+    qc_signal_dropout_ch3: bool
+    qc_signal_dropout_segments_ch3: List[tuple[float, float]]
+    qc_signal_dropout_ch4: bool
+    qc_signal_dropout_segments_ch4: List[tuple[float, float]]
+
+    # Artifact QC
+    qc_artifact: bool
+    qc_artifact_type: Optional[Literal["intermittent", "continuous"]] = None
+    qc_artifact_segments: List[tuple[float, float]]
+    qc_artifact_ch1: bool
+    qc_artifact_type_ch1: Optional[Literal["intermittent", "continuous"]] = None
+    qc_artifact_segments_ch1: List[tuple[float, float]]
+    qc_artifact_ch2: bool
+    qc_artifact_type_ch2: Optional[Literal["intermittent", "continuous"]] = None
+    qc_artifact_segments_ch2: List[tuple[float, float]]
+    qc_artifact_ch3: bool
+    qc_artifact_type_ch3: Optional[Literal["intermittent", "continuous"]] = None
+    qc_artifact_segments_ch3: List[tuple[float, float]]
+    qc_artifact_ch4: bool
+    qc_artifact_type_ch4: Optional[Literal["intermittent", "continuous"]] = None
+    qc_artifact_segments_ch4: List[tuple[float, float]]
+
+    # Legacy QC fields (for backward compatibility, populated from new fields)
+    qc_not_passed: Optional[str] = None  # String repr of qc_fail_segments
+    qc_not_passed_mic_1: Optional[str] = None
+    qc_not_passed_mic_2: Optional[str] = None
+    qc_not_passed_mic_3: Optional[str] = None
+    qc_not_passed_mic_4: Optional[str] = None
 
     @field_validator("duration_seconds")
     @classmethod
@@ -106,75 +406,85 @@ class AudioProcessing:
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for Excel export."""
-        return {
-            "Audio File": self.audio_file_name,
-            "Bin File": self.audio_bin_file,
-            "Pickle File": self.audio_pkl_file,
+        result = super().to_dict()
+        result.update({
             "Processing Date": self.processing_date,
             "Status": self.processing_status,
             "Error": self.error_message,
-            "Sample Rate (Hz)": self.sample_rate,
             "Channels": self.num_channels,
             "Duration (s)": self.duration_seconds,
-            "File Size (MB)": self.file_size_mb,
-            "Device Serial": self.device_serial,
-            "Firmware Version": self.firmware_version,
-            "Recording Time": self.file_time,
-            "Ch1 RMS": self.channel_1_rms,
-            "Ch2 RMS": self.channel_2_rms,
-            "Ch3 RMS": self.channel_3_rms,
-            "Ch4 RMS": self.channel_4_rms,
-            "Ch1 Peak": self.channel_1_peak,
-            "Ch2 Peak": self.channel_2_peak,
-            "Ch3 Peak": self.channel_3_peak,
-            "Ch4 Peak": self.channel_4_peak,
-            "Has Inst. Freq": self.has_instantaneous_freq,
+            "Audio QC Version": self.audio_qc_version,
+            # QC fail segments
+            "QC Fail Segments": str(self.qc_fail_segments),
+            "QC Fail Segments Ch1": str(self.qc_fail_segments_ch1),
+            "QC Fail Segments Ch2": str(self.qc_fail_segments_ch2),
+            "QC Fail Segments Ch3": str(self.qc_fail_segments_ch3),
+            "QC Fail Segments Ch4": str(self.qc_fail_segments_ch4),
+            # Signal dropout
+            "QC Signal Dropout": self.qc_signal_dropout,
+            "QC Signal Dropout Segments": str(self.qc_signal_dropout_segments),
+            "QC Signal Dropout Ch1": self.qc_signal_dropout_ch1,
+            "QC Signal Dropout Segments Ch1": str(self.qc_signal_dropout_segments_ch1),
+            "QC Signal Dropout Ch2": self.qc_signal_dropout_ch2,
+            "QC Signal Dropout Segments Ch2": str(self.qc_signal_dropout_segments_ch2),
+            "QC Signal Dropout Ch3": self.qc_signal_dropout_ch3,
+            "QC Signal Dropout Segments Ch3": str(self.qc_signal_dropout_segments_ch3),
+            "QC Signal Dropout Ch4": self.qc_signal_dropout_ch4,
+            "QC Signal Dropout Segments Ch4": str(self.qc_signal_dropout_segments_ch4),
+            # Artifacts
+            "QC Artifact": self.qc_artifact,
+            "QC Artifact Type": self.qc_artifact_type,
+            "QC Artifact Segments": str(self.qc_artifact_segments),
+            "QC Artifact Ch1": self.qc_artifact_ch1,
+            "QC Artifact Type Ch1": self.qc_artifact_type_ch1,
+            "QC Artifact Segments Ch1": str(self.qc_artifact_segments_ch1),
+            "QC Artifact Ch2": self.qc_artifact_ch2,
+            "QC Artifact Type Ch2": self.qc_artifact_type_ch2,
+            "QC Artifact Segments Ch2": str(self.qc_artifact_segments_ch2),
+            "QC Artifact Ch3": self.qc_artifact_ch3,
+            "QC Artifact Type Ch3": self.qc_artifact_type_ch3,
+            "QC Artifact Segments Ch3": str(self.qc_artifact_segments_ch3),
+            "QC Artifact Ch4": self.qc_artifact_ch4,
+            "QC Artifact Type Ch4": self.qc_artifact_type_ch4,
+            "QC Artifact Segments Ch4": str(self.qc_artifact_segments_ch4),
+            # Legacy fields
             "QC_not_passed": self.qc_not_passed,
             "QC_not_passed_mic_1": self.qc_not_passed_mic_1,
             "QC_not_passed_mic_2": self.qc_not_passed_mic_2,
             "QC_not_passed_mic_3": self.qc_not_passed_mic_3,
             "QC_not_passed_mic_4": self.qc_not_passed_mic_4,
-            "Audio QC Version": self.audio_qc_version,
-        }
+        })
+        return result
 
 
-@dataclass
-class BiomechanicsImport:
+@dataclass(kw_only=True)
+class BiomechanicsImport(StudyMetadata):
     """Biomechanics data import metadata.
 
+    Inherits from StudyMetadata.
     Tracks biomechanics file import status and characteristics.
-    Combines BiomechanicsImportMetadata (validation) and BiomechanicsImportRecord (Excel export).
     Fields use snake_case for direct mapping to database columns and Excel headers.
     """
 
-    # File identification
+    # File identification (required)
     biomechanics_file: str
-    sheet_name: Optional[str] = None
+    sheet_name: str
 
-    # Processing metadata
-    processing_date: Optional[datetime] = None
-    processing_status: Literal["not_processed", "success", "error"] = "not_processed"
+    # Processing metadata (required)
+    processing_date: datetime
+    processing_status: Literal["not_processed", "success", "error"]
     error_message: Optional[str] = None
 
     # Import statistics
     num_recordings: int = 0
     num_passes: int = 0  # For walking maneuvers
 
-    # Data characteristics
-    duration_seconds: Optional[float] = None
-    sample_rate: Optional[float] = None
+    # Data characteristics (required)
+    duration_seconds: float  # Total duration of entire dataset (all passes)
+    sample_rate: float
+    num_data_points: int  # Total data points across entire dataset (all passes)
 
-    # Time range
-    start_time: Optional[float] = None
-    end_time: Optional[float] = None
-
-    # Data-derived field (pure statistic from biomech data)
-    num_data_points: Optional[int] = None
-
-    # QC version tracking
-    biomech_qc_version: int = Field(default_factory=get_biomech_qc_version)
-
-    @field_validator("num_recordings", "num_passes")
+    @field_validator("num_recordings", "num_passes", "num_data_points")
     @classmethod
     def validate_counts(cls, value: int) -> int:
         """Validate counts are non-negative."""
@@ -184,17 +494,24 @@ class BiomechanicsImport:
 
     @field_validator("sample_rate")
     @classmethod
-    def validate_sample_rate(cls, value: Optional[float]) -> Optional[float]:
-        """Validate sample rate is positive if provided."""
-        if value is not None and value <= 0:
+    def validate_sample_rate(cls, value: float) -> float:
+        """Validate sample rate is positive."""
+        if value <= 0:
             raise ValueError("sample_rate must be positive")
         return value
 
-
+    @field_validator("duration_seconds")
+    @classmethod
+    def validate_duration(cls, value: float) -> float:
+        """Validate duration is non-negative."""
+        if value < 0:
+            raise ValueError("duration_seconds must be non-negative")
+        return value
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for Excel export."""
-        return {
+        result = super().to_dict()
+        result.update({
             "Biomechanics File": self.biomechanics_file,
             "Sheet Name": self.sheet_name,
             "Processing Date": self.processing_date,
@@ -205,18 +522,17 @@ class BiomechanicsImport:
             "Duration (s)": self.duration_seconds,
             "Num Data Points": self.num_data_points,
             "Sample Rate (Hz)": self.sample_rate,
-            "Start Time (s)": self.start_time,
-            "End Time (s)": self.end_time,
-            "Biomech QC Version": self.biomech_qc_version,
-        }
+        })
+        return result
 
 
-@dataclass
-class Synchronization:
-    """Audio-biomechanics synchronization metadata.
+@dataclass(kw_only=True)
+class Synchronization(SynchronizationMetadata):
+    """Audio-biomechanics synchronization and movement cycle extraction metadata.
 
-    Tracks synchronization process and alignment details.
-    Combines SynchronizationMetadata (validation) and SynchronizationRecord (Excel export).
+    Inherits from SynchronizationMetadata (which inherits from AcousticsFile, BiomechanicsMetadata, StudyMetadata).
+    Merges synchronization tracking with movement cycle extraction (previously MovementCycles).
+    Tracks synchronization process, alignment details, and cycle extraction results.
     Fields use snake_case for direct mapping to database columns and Excel headers.
     """
 
@@ -225,53 +541,36 @@ class Synchronization:
     pass_number: Optional[int] = None  # For walking
     speed: Optional[Literal["slow", "normal", "fast", "medium"]] = None
 
-    # Processing metadata
-    processing_date: Optional[datetime] = None
+    # Processing metadata (required)
+    processing_date: datetime
     processing_status: Literal["not_processed", "success", "error"] = "not_processed"
     error_message: Optional[str] = None
 
-    # Synchronization details (in original time coordinates)
-    audio_stomp_time: Optional[float] = None  # seconds (audio time coords)
-    bio_left_stomp_time: Optional[float] = None  # seconds (bio time coords)
-    bio_right_stomp_time: Optional[float] = None  # seconds (bio time coords)
-    knee_side: Optional[Literal["left", "right"]] = None
+    # Synchronized data characteristics (required)
+    sync_duration: timedelta  # Total time of overlapped recording/biomechanics
 
-    # Alignment details (derived from sync)
-    stomp_offset: Optional[float] = None  # seconds (bio_stomp - audio_stomp)
-    aligned_audio_stomp_time: Optional[float] = None  # seconds (synced coords)
-    aligned_bio_stomp_time: Optional[float] = None  # seconds (synced coords)
+    # Movement cycle extraction results
+    total_cycles_extracted: int = 0
+    clean_cycles: int = 0
+    outlier_cycles: int = 0
 
-    # Data-derived field (pure statistic from synced data)
-    num_synced_samples: Optional[int] = None
+    # QC parameters
+    qc_acoustic_threshold: Optional[float] = None
 
-    # Synchronized data characteristics
-    duration_seconds: Optional[float] = None
+    # Per-cycle details list (for Cycle Details sheet in Excel) - required
+    per_cycle_details: List['MovementCycle'] = Field(default_factory=list)
 
-    # QC results
-    sync_qc_performed: bool = False
-    sync_qc_passed: Optional[bool] = None
+    # Aggregate statistics (across clean cycles) - required
+    mean_cycle_duration_s: float
+    median_cycle_duration_s: float
+    min_cycle_duration_s: float
+    max_cycle_duration_s: float
+    mean_acoustic_auc: float
 
-    # QC version tracking
+    # QC version tracking (required)
     audio_qc_version: int = Field(default_factory=get_audio_qc_version)
     biomech_qc_version: int = Field(default_factory=get_biomech_qc_version)
-
-    # Detection method details
-    consensus_time: Optional[float] = None
-    consensus_methods: Optional[str] = None  # Comma-separated method names
-    rms_time: Optional[float] = None
-    onset_time: Optional[float] = None
-    freq_time: Optional[float] = None
-    method_agreement_span: Optional[float] = None
-
-    # Data-derived fields (pure statistics from detection)
-    rms_energy: Optional[float] = None
-    onset_magnitude: Optional[float] = None
-    freq_energy: Optional[float] = None
-
-    # Biomechanics-guided detection metadata
-    audio_stomp_method: Optional[Literal["consensus", "biomechanics-guided"]] = None
-    selected_time: Optional[float] = None
-    contra_selected_time: Optional[float] = None
+    cycle_qc_version: int = Field(default_factory=get_cycle_qc_version)
 
     @field_validator("pass_number")
     @classmethod
@@ -280,90 +579,6 @@ class Synchronization:
         if value is not None and value < 0:
             raise ValueError("pass_number must be non-negative")
         return value
-
-
-
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary for Excel export."""
-        return {
-            "Sync File": self.sync_file_name,
-            "Pass Number": self.pass_number,
-            "Speed": self.speed,
-            "Processing Date": self.processing_date,
-            "Status": self.processing_status,
-            "Error": self.error_message,
-            "Audio Stomp (s)": self.audio_stomp_time,
-            "Bio Left Stomp (s)": self.bio_left_stomp_time,
-            "Bio Right Stomp (s)": self.bio_right_stomp_time,
-            "Knee Side": self.knee_side,
-            "Stomp Offset (s)": self.stomp_offset,
-            "Aligned Audio Stomp (s)": self.aligned_audio_stomp_time,
-            "Aligned Bio Stomp (s)": self.aligned_bio_stomp_time,
-            "Num Samples": self.num_synced_samples,
-            "Duration (s)": self.duration_seconds,
-            "Sync QC Done": self.sync_qc_performed,
-            "Sync QC Passed": self.sync_qc_passed,
-            "Audio QC Version": self.audio_qc_version,
-            "Biomech QC Version": self.biomech_qc_version,
-            "Consensus (s)": self.consensus_time,
-            "Consensus Methods": self.consensus_methods,
-            "RMS Detect (s)": self.rms_time,
-            "Onset Detect (s)": self.onset_time,
-            "Freq Detect (s)": self.freq_time,
-            "RMS Energy": self.rms_energy,
-            "Onset Magnitude": self.onset_magnitude,
-            "Freq Energy": self.freq_energy,
-            "Method Agreement Span (s)": self.method_agreement_span,
-            "Detection Method": self.audio_stomp_method,
-            "Selected Time (s)": self.selected_time,
-            "Contra Selected Time (s)": self.contra_selected_time,
-        }
-
-
-@dataclass
-class MovementCycles:
-    """Movement cycle extraction and QC metadata.
-
-    Tracks cycle extraction process and aggregate statistics.
-    Combines MovementCyclesMetadata (validation) and MovementCyclesRecord (Excel export).
-    Fields use snake_case for direct mapping to database columns and Excel headers.
-    """
-
-    # Source file
-    sync_file_name: str
-    pass_number: Optional[int] = None  # Optional for walk
-    speed: Optional[str] = None        # Optional for walk
-    knee_side: Optional[str] = None    # Context from sync
-
-    # Processing metadata
-    processing_date: Optional[datetime] = None
-    processing_status: Literal["not_processed", "success", "error"] = "not_processed"
-    error_message: Optional[str] = None
-
-    # Extraction results
-    total_cycles_extracted: int = 0
-    clean_cycles: int = 0
-    outlier_cycles: int = 0
-
-    # QC parameters
-    qc_acoustic_threshold: Optional[float] = None
-
-    # Data-derived fields (filesystem info)
-    output_directory: Optional[str] = None
-    plots_created: bool = False
-
-    # Per-cycle details list (for Cycle Details sheet in Excel)
-    per_cycle_details: List['MovementCycle'] = Field(default_factory=list)
-
-    # Aggregate statistics (across clean cycles)
-    mean_cycle_duration_s: Optional[float] = None
-    median_cycle_duration_s: Optional[float] = None
-    min_cycle_duration_s: Optional[float] = None
-    max_cycle_duration_s: Optional[float] = None
-    mean_acoustic_auc: Optional[float] = None
-
-    # QC version tracking
-    cycle_qc_version: int = Field(default_factory=get_cycle_qc_version)
 
     @field_validator("total_cycles_extracted", "clean_cycles", "outlier_cycles")
     @classmethod
@@ -380,65 +595,67 @@ class MovementCycles:
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for Excel export."""
-        return {
-            "Source Sync File": self.sync_file_name,
+        result = super().to_dict()
+        result.update({
+            "Sync File": self.sync_file_name,
             "Pass Number": self.pass_number,
             "Speed": self.speed,
-            "Knee Side": self.knee_side,
             "Processing Date": self.processing_date,
             "Status": self.processing_status,
             "Error": self.error_message,
+            "Sync Duration": self.sync_duration,
             "Total Cycles": self.total_cycles_extracted,
             "Clean Cycles": self.clean_cycles,
             "Outlier Cycles": self.outlier_cycles,
             "Acoustic Threshold": self.qc_acoustic_threshold,
-            "Output Directory": self.output_directory,
-            "Plots Created": self.plots_created,
             "Mean Duration (s)": self.mean_cycle_duration_s,
             "Median Duration (s)": self.median_cycle_duration_s,
             "Min Duration (s)": self.min_cycle_duration_s,
             "Max Duration (s)": self.max_cycle_duration_s,
             "Mean Acoustic AUC": self.mean_acoustic_auc,
+            "Audio QC Version": self.audio_qc_version,
+            "Biomech QC Version": self.biomech_qc_version,
             "Cycle QC Version": self.cycle_qc_version,
-        }
+        })
+        return result
 
 
-@dataclass
-class MovementCycle:
-    """Single movement cycle metadata with comprehensive upstream context.
+@dataclass(kw_only=True)
+class MovementCycle(AudioProcessing):
+    """Single movement cycle metadata.
 
-    Combines information from audio processing, biomechanics import, and synchronization
-    for a single extracted cycle. Uses composition pattern with embedded metadata objects
-    to avoid field duplication while maintaining access to all upstream processing context.
-
-    Combines MovementCycleMetadata (validation) and MovementCycleRecord (Excel export).
+    Inherits from AudioProcessing (which inherits from AcousticsFile, BiomechanicsMetadata, StudyMetadata).
+    Represents a single extracted movement cycle with all upstream processing context via inheritance.
     Fields use snake_case for direct mapping to database columns and Excel headers.
     """
 
-    # Cycle identification
+    # Cycle identification (required)
+    cycle_file: str  # Path to .pkl file
     cycle_index: int
-    is_outlier: bool = False
-    cycle_file: Optional[str] = None  # Path to .pkl file if saved
+    is_outlier: bool  # True if failed any QC (audio, biomech, or sync)
 
-    # Cycle temporal characteristics
-    start_time_s: Optional[float] = None  # Start time within synced recording
-    end_time_s: Optional[float] = None    # End time within synced recording
-    duration_s: Optional[float] = None
+    # Cycle temporal characteristics (all required, based on synchronized data)
+    start_time_s: float  # Start time within synced recording
+    end_time_s: float    # End time within synced recording
+    duration_s: float
 
-    # Acoustic characteristics (data-derived from cycle)
-    acoustic_auc: Optional[float] = None  # Total acoustic energy
+    # Audio timestamps (required)
+    audio_start_time: datetime
+    audio_end_time: datetime
 
-    # Data-derived per-channel RMS values
-    ch1_rms: Optional[float] = None
-    ch2_rms: Optional[float] = None
-    ch3_rms: Optional[float] = None
-    ch4_rms: Optional[float] = None
+    # Biomechanics timestamps (required)
+    bio_start_time: datetime
+    bio_end_time: datetime
 
-    # Upstream processing metadata (embedded objects for composition)
-    audio_metadata: Optional[AudioProcessing] = None
-    biomech_metadata: Optional[BiomechanicsImport] = None
-    sync_metadata: Optional[Synchronization] = None
-    cycles_metadata: Optional[MovementCycles] = None
+    # Biomechanics context (conditionally required for walk maneuver)
+    pass_number: Optional[int] = None
+    speed: Optional[Literal["slow", "normal", "fast", "medium"]] = None
+
+    # QC tracking (all required)
+    biomechanics_qc_version: int = Field(default_factory=get_biomech_qc_version)
+    biomechanics_qc_fail: bool = False
+    sync_qc_version: int = Field(default_factory=get_cycle_qc_version)
+    sync_qc_fail: bool = False
 
     @field_validator("cycle_index")
     @classmethod
@@ -450,255 +667,57 @@ class MovementCycle:
 
     @field_validator("duration_s", "start_time_s", "end_time_s")
     @classmethod
-    def validate_times(cls, value: Optional[float]) -> Optional[float]:
-        """Validate time values are non-negative if provided."""
-        if value is not None and value < 0:
+    def validate_times(cls, value: float) -> float:
+        """Validate time values are non-negative."""
+        if value < 0:
             raise ValueError("time values must be non-negative")
         return value
 
-    @field_validator("acoustic_auc")
+    @field_validator("is_outlier")
     @classmethod
-    def validate_auc(cls, value: Optional[float]) -> Optional[float]:
-        """Validate acoustic AUC is non-negative if provided."""
-        if value is not None and value < 0:
-            raise ValueError("acoustic_auc must be non-negative")
+    def validate_is_outlier(cls, value: bool, info) -> bool:
+        """Update is_outlier based on QC failures."""
+        # If any QC failed, should be marked as outlier
+        biomech_qc_fail = info.data.get("biomechanics_qc_fail", False)
+        sync_qc_fail = info.data.get("sync_qc_fail", False)
+        
+        # Get audio QC info from parent class fields
+        qc_signal_dropout = info.data.get("qc_signal_dropout", False)
+        qc_artifact = info.data.get("qc_artifact", False)
+        
+        if biomech_qc_fail or sync_qc_fail or qc_signal_dropout or qc_artifact:
+            return True
         return value
 
-    # Helper properties for easy access to flattened data
-    @property
-    def audio_file_name(self) -> Optional[str]:
-        """Get audio file name from embedded metadata."""
-        return self.audio_metadata.audio_file_name if self.audio_metadata else None
-
-    @property
-    def biomechanics_file(self) -> Optional[str]:
-        """Get biomechanics file name from embedded metadata."""
-        return self.biomech_metadata.biomechanics_file if self.biomech_metadata else None
-
-    @property
-    def sync_file_name(self) -> Optional[str]:
-        """Get sync file name from embedded metadata."""
-        return self.sync_metadata.sync_file_name if self.sync_metadata else None
-
-    def to_flat_dict(self) -> Dict[str, Any]:
-        """Convert to flattened dictionary for internal use.
-
-        Extracts key fields from embedded metadata objects and combines them with
-        cycle-specific fields into a single flat dictionary.
-        """
-        result = {
-            "cycle_index": self.cycle_index,
-            "is_outlier": self.is_outlier,
-            "cycle_file": self.cycle_file,
-            "start_time_s": self.start_time_s,
-            "end_time_s": self.end_time_s,
-            "duration_s": self.duration_s,
-            "acoustic_auc": self.acoustic_auc,
-            # Include channel RMS values
-            "ch1_rms": self.ch1_rms,
-            "ch2_rms": self.ch2_rms,
-            "ch3_rms": self.ch3_rms,
-            "ch4_rms": self.ch4_rms,
-        }
-
-        # Add audio metadata fields
-        if self.audio_metadata:
-            result.update({
-                "audio_file_name": self.audio_metadata.audio_file_name,
-                "audio_bin_file": self.audio_metadata.audio_bin_file,
-                "audio_pkl_file": self.audio_metadata.audio_pkl_file,
-                "audio_sample_rate": self.audio_metadata.sample_rate,
-                "audio_duration_seconds": self.audio_metadata.duration_seconds,
-                "audio_num_channels": self.audio_metadata.num_channels,
-                "audio_file_size_mb": self.audio_metadata.file_size_mb,
-                "audio_device_serial": self.audio_metadata.device_serial,
-                "audio_firmware_version": self.audio_metadata.firmware_version,
-                "audio_file_time": self.audio_metadata.file_time,
-                "audio_has_instantaneous_freq": self.audio_metadata.has_instantaneous_freq,
-                "audio_qc_version": self.audio_metadata.audio_qc_version,
-                "audio_processing_status": self.audio_metadata.processing_status,
-                "audio_processing_date": self.audio_metadata.processing_date,
-                "audio_error_message": self.audio_metadata.error_message,
-            })
-
-        # Add biomechanics metadata fields
-        if self.biomech_metadata:
-            result.update({
-                "biomechanics_file": self.biomech_metadata.biomechanics_file,
-                "biomech_sheet_name": self.biomech_metadata.sheet_name,
-                "biomech_sample_rate": self.biomech_metadata.sample_rate,
-                "biomech_duration_seconds": self.biomech_metadata.duration_seconds,
-                "biomech_num_recordings": self.biomech_metadata.num_recordings,
-                "biomech_num_passes": self.biomech_metadata.num_passes,
-                "biomech_start_time": self.biomech_metadata.start_time,
-                "biomech_end_time": self.biomech_metadata.end_time,
-                "biomech_num_data_points": self.biomech_metadata.num_data_points,
-                "biomech_qc_version": self.biomech_metadata.biomech_qc_version,
-                "biomech_processing_status": self.biomech_metadata.processing_status,
-                "biomech_processing_date": self.biomech_metadata.processing_date,
-                "biomech_error_message": self.biomech_metadata.error_message,
-            })
-
-        # Add synchronization metadata fields
-        if self.sync_metadata:
-            result.update({
-                "sync_file_name": self.sync_metadata.sync_file_name,
-                "pass_number": self.sync_metadata.pass_number,
-                "speed": self.sync_metadata.speed,
-                "audio_stomp_time": self.sync_metadata.audio_stomp_time,
-                "bio_left_stomp_time": self.sync_metadata.bio_left_stomp_time,
-                "bio_right_stomp_time": self.sync_metadata.bio_right_stomp_time,
-                "knee_side": self.sync_metadata.knee_side,
-                "stomp_offset": self.sync_metadata.stomp_offset,
-                "aligned_audio_stomp_time": self.sync_metadata.aligned_audio_stomp_time,
-                "aligned_bio_stomp_time": self.sync_metadata.aligned_bio_stomp_time,
-                "num_synced_samples": self.sync_metadata.num_synced_samples,
-                "sync_qc_performed": self.sync_metadata.sync_qc_performed,
-                "sync_qc_passed": self.sync_metadata.sync_qc_passed,
-                "sync_duration_seconds": self.sync_metadata.duration_seconds,
-                "consensus_time": self.sync_metadata.consensus_time,
-                "consensus_methods": self.sync_metadata.consensus_methods,
-                "rms_time": self.sync_metadata.rms_time,
-                "onset_time": self.sync_metadata.onset_time,
-                "freq_time": self.sync_metadata.freq_time,
-                "rms_energy": self.sync_metadata.rms_energy,
-                "onset_magnitude": self.sync_metadata.onset_magnitude,
-                "freq_energy": self.sync_metadata.freq_energy,
-                "method_agreement_span": self.sync_metadata.method_agreement_span,
-                "audio_stomp_method": self.sync_metadata.audio_stomp_method,
-                "selected_time": self.sync_metadata.selected_time,
-                "contra_selected_time": self.sync_metadata.contra_selected_time,
-                "sync_processing_status": self.sync_metadata.processing_status,
-                "sync_processing_date": self.sync_metadata.processing_date,
-                "sync_error_message": self.sync_metadata.error_message,
-            })
-
-        # Add cycles metadata fields
-        if self.cycles_metadata:
-            result.update({
-                "qc_acoustic_threshold": self.cycles_metadata.qc_acoustic_threshold,
-                "cycle_qc_version": self.cycles_metadata.cycle_qc_version,
-                "total_cycles_extracted": self.cycles_metadata.total_cycles_extracted,
-                "clean_cycles": self.cycles_metadata.clean_cycles,
-                "outlier_cycles": self.cycles_metadata.outlier_cycles,
-                "mean_cycle_duration_s": self.cycles_metadata.mean_cycle_duration_s,
-                "median_cycle_duration_s": self.cycles_metadata.median_cycle_duration_s,
-                "min_cycle_duration_s": self.cycles_metadata.min_cycle_duration_s,
-                "max_cycle_duration_s": self.cycles_metadata.max_cycle_duration_s,
-                "mean_acoustic_auc": self.cycles_metadata.mean_acoustic_auc,
-                "cycles_processing_status": self.cycles_metadata.processing_status,
-                "cycles_processing_date": self.cycles_metadata.processing_date,
-                "cycles_output_directory": self.cycles_metadata.output_directory,
-                "cycles_plots_created": self.cycles_metadata.plots_created,
-            })
-
-        return result
+    @field_validator("pass_number", "speed")
+    @classmethod
+    def validate_walk_fields(cls, value: Optional[Any], info) -> Optional[Any]:
+        """Validate pass_number and speed for walk maneuver."""
+        maneuver = info.data.get("maneuver")
+        if maneuver == "walk" and value is None:
+            field_name = info.field_name
+            raise ValueError(f"{field_name} is required when maneuver is 'walk'")
+        return value
 
     def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary for Excel export (Cycle Details sheet).
-
-        Uses the flattened representation and maps to Excel column names.
-        Includes all metadata fields from audio, biomechanics, sync, and cycles processing.
-        """
-        flat_dict = self.to_flat_dict()
-
-        result = {
-            # Cycle identification and basic metrics
-            "Cycle Index": flat_dict.get("cycle_index"),
-            "Is Outlier": flat_dict.get("is_outlier"),
-            "Cycle File": flat_dict.get("cycle_file"),
-            "Start (s)": flat_dict.get("start_time_s"),
-            "End (s)": flat_dict.get("end_time_s"),
-            "Duration (s)": flat_dict.get("duration_s"),
-            "Acoustic AUC": flat_dict.get("acoustic_auc"),
-
-            # Data-derived channel RMS values
-            "Ch1 RMS": flat_dict.get("ch1_rms"),
-            "Ch2 RMS": flat_dict.get("ch2_rms"),
-            "Ch3 RMS": flat_dict.get("ch3_rms"),
-            "Ch4 RMS": flat_dict.get("ch4_rms"),
-
-            # Sync metadata (maneuver context)
-            "Sync File": flat_dict.get("sync_file_name"),
-            "Pass Number": flat_dict.get("pass_number"),  # Optional, for walk only
-            "Speed": flat_dict.get("speed"),  # Optional, for walk only
-            "Knee Side": flat_dict.get("knee_side"),
-
-            # Audio file metadata
-            "Audio File": flat_dict.get("audio_file_name"),
-            "Audio Bin File": flat_dict.get("audio_bin_file"),
-            "Audio Pkl File": flat_dict.get("audio_pkl_file"),
-            "Audio Sample Rate (Hz)": flat_dict.get("audio_sample_rate"),
-            "Audio Duration (s)": flat_dict.get("audio_duration_seconds"),
-            "Audio Channels": flat_dict.get("audio_num_channels"),
-            "Audio Size (MB)": flat_dict.get("audio_file_size_mb"),
-            "Audio Device Serial": flat_dict.get("audio_device_serial"),
-            "Audio Firmware": flat_dict.get("audio_firmware_version"),
-            "Audio File Time": flat_dict.get("audio_file_time"),
-            "Audio Has Inst Freq": flat_dict.get("audio_has_instantaneous_freq"),
-            "Audio QC Version": flat_dict.get("audio_qc_version"),
-            "Audio Status": flat_dict.get("audio_processing_status"),
-            "Audio Processing Date": flat_dict.get("audio_processing_date"),
-            "Audio Error": flat_dict.get("audio_error_message"),
-
-            # Biomechanics file metadata
-            "Biomechanics File": flat_dict.get("biomechanics_file"),
-            "Biomech Sheet": flat_dict.get("biomech_sheet_name"),
-            "Biomech Sample Rate (Hz)": flat_dict.get("biomech_sample_rate"),
-            "Biomech Duration (s)": flat_dict.get("biomech_duration_seconds"),
-            "Biomech Num Recordings": flat_dict.get("biomech_num_recordings"),
-            "Biomech Num Passes": flat_dict.get("biomech_num_passes"),
-            "Biomech Start (s)": flat_dict.get("biomech_start_time"),
-            "Biomech End (s)": flat_dict.get("biomech_end_time"),
-            "Biomech Data Points": flat_dict.get("biomech_num_data_points"),
-            "Biomech QC Version": flat_dict.get("biomech_qc_version"),
-            "Biomech Status": flat_dict.get("biomech_processing_status"),
-            "Biomech Processing Date": flat_dict.get("biomech_processing_date"),
-            "Biomech Error": flat_dict.get("biomech_error_message"),
-
-            # Synchronization metadata
-            "Audio Stomp (s)": flat_dict.get("audio_stomp_time"),
-            "Bio Left Stomp (s)": flat_dict.get("bio_left_stomp_time"),
-            "Bio Right Stomp (s)": flat_dict.get("bio_right_stomp_time"),
-            "Stomp Offset (s)": flat_dict.get("stomp_offset"),
-            "Aligned Audio Stomp (s)": flat_dict.get("aligned_audio_stomp_time"),
-            "Aligned Bio Stomp (s)": flat_dict.get("aligned_bio_stomp_time"),
-            "Num Synced Samples": flat_dict.get("num_synced_samples"),
-            "Sync Duration (s)": flat_dict.get("sync_duration_seconds"),
-            "Sync QC Performed": flat_dict.get("sync_qc_performed"),
-            "Sync QC Passed": flat_dict.get("sync_qc_passed"),
-
-            # Detection method details
-            "Consensus Time (s)": flat_dict.get("consensus_time"),
-            "Consensus Methods": flat_dict.get("consensus_methods"),
-            "RMS Time (s)": flat_dict.get("rms_time"),
-            "Onset Time (s)": flat_dict.get("onset_time"),
-            "Freq Time (s)": flat_dict.get("freq_time"),
-            "RMS Energy": flat_dict.get("rms_energy"),
-            "Onset Magnitude": flat_dict.get("onset_magnitude"),
-            "Freq Energy": flat_dict.get("freq_energy"),
-            "Method Agreement Span (s)": flat_dict.get("method_agreement_span"),
-            "Detection Method": flat_dict.get("audio_stomp_method"),
-            "Selected Time (s)": flat_dict.get("selected_time"),
-            "Contra Selected Time (s)": flat_dict.get("contra_selected_time"),
-            "Sync Status": flat_dict.get("sync_processing_status"),
-            "Sync Processing Date": flat_dict.get("sync_processing_date"),
-            "Sync Error": flat_dict.get("sync_error_message"),
-
-            # Movement cycles aggregate metadata
-            "QC Acoustic Threshold": flat_dict.get("qc_acoustic_threshold"),
-            "Cycle QC Version": flat_dict.get("cycle_qc_version"),
-            "Total Cycles Extracted": flat_dict.get("total_cycles_extracted"),
-            "Total Clean Cycles": flat_dict.get("clean_cycles"),
-            "Total Outlier Cycles": flat_dict.get("outlier_cycles"),
-            "Mean Cycle Duration (s)": flat_dict.get("mean_cycle_duration_s"),
-            "Median Cycle Duration (s)": flat_dict.get("median_cycle_duration_s"),
-            "Min Cycle Duration (s)": flat_dict.get("min_cycle_duration_s"),
-            "Max Cycle Duration (s)": flat_dict.get("max_cycle_duration_s"),
-            "Mean Acoustic AUC": flat_dict.get("mean_acoustic_auc"),
-            "Cycles Status": flat_dict.get("cycles_processing_status"),
-            "Cycles Processing Date": flat_dict.get("cycles_processing_date"),
-            "Cycles Output Dir": flat_dict.get("cycles_output_directory"),
-            "Cycles Plots Created": flat_dict.get("cycles_plots_created"),
-        }
+        """Convert to dictionary for Excel export (Cycle Details sheet)."""
+        result = super().to_dict()
+        result.update({
+            "Cycle File": self.cycle_file,
+            "Cycle Index": self.cycle_index,
+            "Is Outlier": self.is_outlier,
+            "Start (s)": self.start_time_s,
+            "End (s)": self.end_time_s,
+            "Duration (s)": self.duration_s,
+            "Audio Start Time": self.audio_start_time,
+            "Audio End Time": self.audio_end_time,
+            "Bio Start Time": self.bio_start_time,
+            "Bio End Time": self.bio_end_time,
+            "Pass Number": self.pass_number,
+            "Speed": self.speed,
+            "Biomechanics QC Version": self.biomechanics_qc_version,
+            "Biomechanics QC Fail": self.biomechanics_qc_fail,
+            "Sync QC Version": self.sync_qc_version,
+            "Sync QC Fail": self.sync_qc_fail,
+        })
         return result
