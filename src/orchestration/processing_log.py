@@ -1275,6 +1275,9 @@ def create_cycles_record_from_data(
     audio_record: Optional[AudioProcessing] = None,
     biomech_record: Optional[BiomechanicsImport] = None,
     sync_record: Optional[Synchronization] = None,
+    metadata: Optional[Dict[str, Any]] = None,
+    study: str = "AOA",
+    study_id: int = 1,
 ) -> Synchronization:
     """Create a Synchronization record from cycle extraction data.
 
@@ -1288,7 +1291,10 @@ def create_cycles_record_from_data(
         error: Exception if extraction failed
         audio_record: Optional audio processing record for context
         biomech_record: Optional biomechanics import record for context
-        sync_record: Optional synchronization record for context
+        sync_record: Optional synchronization record for context (preferred)
+        metadata: Optional metadata dictionary
+        study: Study name (AOA, preOA, SMoCK)
+        study_id: Participant ID
 
     Returns:
         Synchronization instance
@@ -1302,29 +1308,107 @@ def create_cycles_record_from_data(
                 return None
         return None
 
-    # Build data dictionary
-    data = {
-        "sync_file_name": sync_file_name,
-        "processing_date": datetime.now(),
-        "qc_acoustic_threshold": acoustic_threshold,  # Renamed field
-    }
-
-    # Propagate pass/speed/knee context when available
+    # If we have a sync_record, use it as the base and update cycle-specific fields
     if sync_record:
-        data["pass_number"] = sync_record.pass_number
-        data["speed"] = sync_record.speed
-        data["knee_side"] = sync_record.knee_side
+        # Convert sync_record to dict and update cycle-specific fields
+        data = {
+            # Copy all fields from sync_record
+            **{k: getattr(sync_record, k) for k in sync_record.__dataclass_fields__.keys()},
+            # Update with cycle-specific values
+            "processing_date": datetime.now(),
+            "qc_acoustic_threshold": acoustic_threshold,
+        }
     else:
+        # Build from scratch like create_sync_record_from_data
+        # Get metadata from audio_record or use defaults
+        if audio_record:
+            data = {
+                "study": audio_record.study,
+                "study_id": audio_record.study_id,
+                "linked_biomechanics": audio_record.linked_biomechanics,
+                "biomechanics_file": audio_record.biomechanics_file,
+                "biomechanics_type": audio_record.biomechanics_type,
+                "biomechanics_sample_rate": audio_record.biomechanics_sample_rate,
+                "audio_file_name": audio_record.audio_file_name,
+                "device_serial": audio_record.device_serial,
+                "firmware_version": audio_record.firmware_version,
+                "file_time": audio_record.file_time,
+                "file_size_mb": audio_record.file_size_mb,
+                "recording_date": audio_record.recording_date,
+                "recording_time": audio_record.recording_time,
+                "knee": audio_record.knee,
+                "maneuver": audio_record.maneuver,
+                "sample_rate": audio_record.sample_rate,
+                "mic_1_position": audio_record.mic_1_position,
+                "mic_2_position": audio_record.mic_2_position,
+                "mic_3_position": audio_record.mic_3_position,
+                "mic_4_position": audio_record.mic_4_position,
+            }
+        else:
+            # Use defaults
+            data = {
+                "study": metadata.get("study", study) if metadata else study,
+                "study_id": metadata.get("study_id", study_id) if metadata else study_id,
+                "linked_biomechanics": False,
+                "biomechanics_file": None,
+                "biomechanics_type": None,
+                "biomechanics_sample_rate": None,
+                "audio_file_name": sync_file_name,
+                "device_serial": "unknown",
+                "firmware_version": 0,
+                "file_time": datetime.now(),
+                "file_size_mb": 0.0,
+                "recording_date": datetime.now(),
+                "recording_time": datetime.now(),
+                "knee": "left",
+                "maneuver": "walk",
+                "sample_rate": 46875.0,
+                "mic_1_position": "IPM",
+                "mic_2_position": "IPL",
+                "mic_3_position": "SPM",
+                "mic_4_position": "SPL",
+            }
+        
+        # Add SynchronizationMetadata fields
+        data.update({
+            "audio_sync_time": timedelta(0),
+            "bio_left_sync_time": timedelta(0),
+            "bio_right_sync_time": None,
+            "sync_offset": timedelta(0),
+            "aligned_audio_sync_time": timedelta(0),
+            "aligned_bio_sync_time": timedelta(0),
+            "sync_method": "consensus",
+            "consensus_time": timedelta(0),
+            "rms_time": timedelta(0),
+            "onset_time": timedelta(0),
+            "freq_time": timedelta(0),
+        })
+        
+        # Add Synchronization fields
+        data.update({
+            "sync_file_name": sync_file_name,
+            "processing_date": datetime.now(),
+            "sync_duration": timedelta(0),
+            "qc_acoustic_threshold": acoustic_threshold,
+        })
+
+    # Update pass/speed/knee context
+    if not sync_record:
         data["pass_number"] = _infer_pass_number_from_name(sync_file_name)
         data["speed"] = None
-        data["knee_side"] = None
 
     if error:
         data["processing_status"] = "error"
         data["error_message"] = str(error)
-        # Include data-derived fields in unified class
-        data["output_directory"] = str(output_dir) if output_dir else None
-        data["plots_created"] = plots_created
+        # Set defaults for required cycle stats
+        data["total_cycles_extracted"] = 0
+        data["clean_cycles"] = 0
+        data["outlier_cycles"] = 0
+        data["mean_cycle_duration_s"] = 0.0
+        data["median_cycle_duration_s"] = 0.0
+        data["min_cycle_duration_s"] = 0.0
+        data["max_cycle_duration_s"] = 0.0
+        data["mean_acoustic_auc"] = 0.0
         data["per_cycle_details"] = []
         return Synchronization(**data)
 
@@ -1494,8 +1578,16 @@ def create_cycles_record_from_data(
         data["median_cycle_duration_s"] = float(np.nanmedian(durations))
         data["min_cycle_duration_s"] = float(np.nanmin(durations))
         data["max_cycle_duration_s"] = float(np.nanmax(durations))
+    else:
+        data["mean_cycle_duration_s"] = 0.0
+        data["median_cycle_duration_s"] = 0.0
+        data["min_cycle_duration_s"] = 0.0
+        data["max_cycle_duration_s"] = 0.0
+    
     if aucs:
         data["mean_acoustic_auc"] = float(np.nanmean(aucs))
+    else:
+        data["mean_acoustic_auc"] = 0.0
 
     # Include data-derived fields in unified Synchronization class
     data["output_directory"] = str(output_dir) if output_dir else None
