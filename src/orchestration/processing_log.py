@@ -61,6 +61,11 @@ class ManeuverProcessingLog:
     # Overall metadata
     log_created: Optional[datetime] = None
     log_updated: Optional[datetime] = None
+    
+    @property
+    def movement_cycles_records(self) -> List[Synchronization]:
+        """Backward compatibility property - movement cycles are now part of synchronization records."""
+        return self.synchronization_records
 
     def update_audio_record(self, record: AudioProcessing) -> None:
         """Update audio processing record."""

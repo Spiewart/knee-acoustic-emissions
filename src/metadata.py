@@ -479,45 +479,45 @@ class BiomechanicsImport(StudyMetadata):
     Fields use snake_case for direct mapping to database columns and Excel headers.
     """
 
-    # File identification (required)
-    biomechanics_file: str
-    sheet_name: str
+    # File identification - optional for incremental creation
+    biomechanics_file: Optional[str] = None
+    sheet_name: Optional[str] = None
 
-    # Processing metadata (required)
-    processing_date: datetime
-    processing_status: Literal["not_processed", "success", "error"]
+    # Processing metadata - optional for incremental creation
+    processing_date: Optional[datetime] = None
+    processing_status: Literal["not_processed", "success", "error"] = "not_processed"
     error_message: Optional[str] = None
 
     # Import statistics
     num_recordings: int = 0
     num_passes: int = 0  # For walking maneuvers
 
-    # Data characteristics (required)
-    duration_seconds: float  # Total duration of entire dataset (all passes)
-    sample_rate: float
-    num_data_points: int  # Total data points across entire dataset (all passes)
+    # Data characteristics - optional for incremental creation
+    duration_seconds: Optional[float] = None  # Total duration of entire dataset (all passes)
+    sample_rate: Optional[float] = None
+    num_data_points: Optional[int] = None  # Total data points across entire dataset (all passes)
 
     @field_validator("num_recordings", "num_passes", "num_data_points")
     @classmethod
-    def validate_counts(cls, value: int) -> int:
-        """Validate counts are non-negative."""
-        if value < 0:
+    def validate_counts(cls, value: Optional[int]) -> Optional[int]:
+        """Validate counts are non-negative if provided."""
+        if value is not None and value < 0:
             raise ValueError("counts must be non-negative")
         return value
 
     @field_validator("sample_rate")
     @classmethod
-    def validate_sample_rate(cls, value: float) -> float:
-        """Validate sample rate is positive."""
-        if value <= 0:
+    def validate_sample_rate(cls, value: Optional[float]) -> Optional[float]:
+        """Validate sample rate is positive if provided."""
+        if value is not None and value <= 0:
             raise ValueError("sample_rate must be positive")
         return value
 
     @field_validator("duration_seconds")
     @classmethod
-    def validate_duration(cls, value: float) -> float:
-        """Validate duration is non-negative."""
-        if value < 0:
+    def validate_duration(cls, value: Optional[float]) -> Optional[float]:
+        """Validate duration is non-negative if provided."""
+        if value is not None and value < 0:
             raise ValueError("duration_seconds must be non-negative")
         return value
 
