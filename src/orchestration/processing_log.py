@@ -13,7 +13,7 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional
 
@@ -24,7 +24,6 @@ from src.metadata import (
     AudioProcessing,
     BiomechanicsImport,
     MovementCycle,
-    MovementCycles,
     Synchronization,
 )
 from src.qc_versions import (
@@ -53,7 +52,7 @@ class ManeuverProcessingLog:
     audio_record: Optional[AudioProcessing] = None
     biomechanics_record: Optional[BiomechanicsImport] = None
     synchronization_records: List[Synchronization] = field(default_factory=list)
-    movement_cycles_records: List[MovementCycles] = field(default_factory=list)
+    movement_cycles_records: List[Synchronization] = field(default_factory=list)
 
     # Overall metadata
     log_created: Optional[datetime] = None
@@ -82,7 +81,7 @@ class ManeuverProcessingLog:
         self.synchronization_records.append(record)
         self.log_updated = datetime.now()
 
-    def add_movement_cycles_record(self, record: MovementCycles) -> None:
+    def add_movement_cycles_record(self, record: Synchronization) -> None:
         """Add or update a movement cycles record."""
         # Normalize names so re-processing replaces existing rows even if
         # extensions differ (e.g., "file.pkl" vs "file").
@@ -100,7 +99,7 @@ class ManeuverProcessingLog:
         # New record
         self.movement_cycles_records.append(record)
         # Dedupe by normalized sync file name, keep the latest
-        seen: dict[str, MovementCycles] = {}
+        seen: dict[str, Synchronization] = {}
         for rec in self.movement_cycles_records:
             seen[_norm(rec.sync_file_name)] = rec
         self.movement_cycles_records = list(seen.values())
@@ -405,7 +404,7 @@ class ManeuverProcessingLog:
                 cycles_df = pd.read_excel(filepath, sheet_name="Movement Cycles")
                 if len(cycles_df) > 0 and "Source Sync File" in cycles_df.columns:
                     for _, row in cycles_df.iterrows():
-                        record = MovementCycles(
+                        record = Synchronization(
                             sync_file_name=row.get("Source Sync File", ""),
                             pass_number=int(row["Pass Number"]) if pd.notna(row.get("Pass Number")) else None,
                             speed=str(row.get("Speed")) if pd.notna(row.get("Speed")) else None,
@@ -927,6 +926,12 @@ def create_sync_record_from_data(
     speed: Optional[str] = None,
     detection_results: Optional[Dict[str, Any]] = None,
     error: Optional[Exception] = None,
+    # Additional context for required fields
+    audio_record: Optional[AudioProcessing] = None,
+    biomech_record: Optional[BiomechanicsImport] = None,
+    metadata: Optional[Dict[str, Any]] = None,
+    study: str = "AOA",  # Default to AOA
+    study_id: int = 1,  # Default to 1 (must be positive)
 ) -> Synchronization:
     """Create a SynchronizationRecord from sync data.
 
@@ -939,7 +944,13 @@ def create_sync_record_from_data(
         knee_side: "left" or "right"
         pass_number: Pass number (for walking)
         speed: Speed (for walking)
+        detection_results: Detection results dictionary
         error: Exception if sync failed
+        audio_record: Optional AudioProcessing record for metadata context
+        biomech_record: Optional BiomechanicsImport record for metadata context
+        metadata: Optional metadata dictionary
+        study: Study name (AOA, preOA, SMoCK)
+        study_id: Participant ID
 
     Returns:
         SynchronizationRecord instance with alignment details
@@ -990,22 +1001,175 @@ def create_sync_record_from_data(
         # Bio stomp remains at its original position (synced timeline is in bio coords)
         aligned_bio_stomp = bio_stomp_s
 
-    # Build data dictionary
+    # Build data dictionary with all required fields from inheritance chain
+    # Start with required StudyMetadata fields
+    if audio_record:
+        data_study = audio_record.study
+        data_study_id = audio_record.study_id
+    elif metadata:
+        data_study = metadata.get("study", study)
+        data_study_id = metadata.get("study_id", study_id)
+    else:
+        data_study = study
+        data_study_id = study_id
+    
+    # BiomechanicsMetadata fields
+    # Note: sync_method is redefined in SynchronizationMetadata, so we don't set it here
+    if biomech_record:
+        linked_biomechanics = True
+        biomechanics_file = biomech_record.biomechanics_file
+        biomechanics_type = biomech_record.biomechanics_type if hasattr(biomech_record, 'biomechanics_type') else "Gonio"
+        biomechanics_sample_rate = biomech_record.sample_rate if hasattr(biomech_record, 'sample_rate') else None
+    elif metadata and metadata.get("linked_biomechanics"):
+        linked_biomechanics = True
+        biomechanics_file = metadata.get("biomechanics_file", "unknown")
+        biomechanics_type = metadata.get("biomechanics_type", "Gonio")
+        biomechanics_sample_rate = metadata.get("biomechanics_sample_rate")
+    else:
+        linked_biomechanics = False
+        biomechanics_file = None
+        biomechanics_type = None
+        biomechanics_sample_rate = None
+    
+    # AcousticsFile fields
+    if audio_record:
+        audio_file_name = audio_record.audio_file_name
+        device_serial = audio_record.device_serial
+        firmware_version = audio_record.firmware_version
+        file_time = audio_record.file_time
+        file_size_mb = audio_record.file_size_mb
+        recording_date = audio_record.recording_date
+        recording_time = audio_record.recording_time
+        knee = audio_record.knee
+        maneuver = audio_record.maneuver
+        sample_rate = audio_record.sample_rate
+        mic_1_position = audio_record.mic_1_position
+        mic_2_position = audio_record.mic_2_position
+        mic_3_position = audio_record.mic_3_position
+        mic_4_position = audio_record.mic_4_position
+    elif metadata:
+        audio_file_name = metadata.get("audio_file_name", sync_file_name)
+        device_serial = metadata.get("device_serial", "unknown")
+        firmware_version = metadata.get("firmware_version", 0)
+        file_time = metadata.get("file_time", datetime.now())
+        file_size_mb = metadata.get("file_size_mb", 0.0)
+        recording_date = metadata.get("recording_date", datetime.now())
+        recording_time = metadata.get("recording_time", datetime.now())
+        knee = metadata.get("knee", knee_side if knee_side else "left")
+        maneuver = metadata.get("maneuver", "walk")
+        sample_rate = metadata.get("sample_rate", 46875.0)
+        mic_1_position = metadata.get("mic_1_position", "IPM")
+        mic_2_position = metadata.get("mic_2_position", "IPL")
+        mic_3_position = metadata.get("mic_3_position", "SPM")
+        mic_4_position = metadata.get("mic_4_position", "SPL")
+    else:
+        # Use defaults when no context is available
+        audio_file_name = sync_file_name
+        device_serial = "unknown"
+        firmware_version = 0
+        file_time = datetime.now()
+        file_size_mb = 0.0
+        recording_date = datetime.now()
+        recording_time = datetime.now()
+        knee = knee_side if knee_side else "left"
+        maneuver = "walk"
+        sample_rate = 46875.0
+        mic_1_position = "IPM"
+        mic_2_position = "IPL"
+        mic_3_position = "SPM"
+        mic_4_position = "SPL"
+    
+    # SynchronizationMetadata fields - sync times as timedeltas
+    # Convert from seconds to timedelta
+    def _to_timedelta(seconds: Optional[float]) -> timedelta:
+        """Convert seconds to timedelta, defaulting to 0 if None."""
+        return timedelta(seconds=seconds) if seconds is not None else timedelta(0)
+    
+    audio_sync_time = _to_timedelta(audio_stomp_s)
+    
+    # bio_left/right_sync_time is required based on knee side
+    # If not provided, use a default value to avoid validation error
+    if knee == "left":
+        bio_left_sync_time = _to_timedelta(bio_left_s) if bio_left_s is not None else timedelta(0)
+        bio_right_sync_time = _to_timedelta(bio_right_s) if bio_right_s is not None else None
+    elif knee == "right":
+        bio_right_sync_time = _to_timedelta(bio_right_s) if bio_right_s is not None else timedelta(0)
+        bio_left_sync_time = _to_timedelta(bio_left_s) if bio_left_s is not None else None
+    else:
+        # Default case - assume left
+        bio_left_sync_time = _to_timedelta(bio_left_s) if bio_left_s is not None else timedelta(0)
+        bio_right_sync_time = _to_timedelta(bio_right_s) if bio_right_s is not None else None
+    
+    sync_offset_td = _to_timedelta(stomp_offset)
+    aligned_audio_sync_time = _to_timedelta(aligned_audio_stomp)
+    aligned_bio_sync_time = _to_timedelta(aligned_bio_stomp)
+    
+    # Synchronization-specific fields
+    # Calculate sync_duration from synced_df
+    if "tt" in synced_df.columns and len(synced_df) > 0:
+        duration = synced_df["tt"].iloc[-1] - synced_df["tt"].iloc[0]
+        if hasattr(duration, 'total_seconds'):
+            sync_duration = duration
+        else:
+            sync_duration = timedelta(seconds=float(duration))
+    else:
+        sync_duration = timedelta(0)
+    
+    # Initialize aggregate statistics with defaults (will be populated from cycles if available)
+    mean_cycle_duration_s = 0.0
+    median_cycle_duration_s = 0.0
+    min_cycle_duration_s = 0.0
+    max_cycle_duration_s = 0.0
+    mean_acoustic_auc = 0.0
+    
+    # Build complete data dictionary
     data = {
+        # StudyMetadata
+        "study": data_study,
+        "study_id": data_study_id,
+        # BiomechanicsMetadata (note: sync_method is redefined in SynchronizationMetadata)
+        "linked_biomechanics": linked_biomechanics,
+        "biomechanics_file": biomechanics_file,
+        "biomechanics_type": biomechanics_type,
+        "biomechanics_sample_rate": biomechanics_sample_rate,
+        # AcousticsFile
+        "audio_file_name": audio_file_name,
+        "device_serial": device_serial,
+        "firmware_version": firmware_version,
+        "file_time": file_time,
+        "file_size_mb": file_size_mb,
+        "recording_date": recording_date,
+        "recording_time": recording_time,
+        "knee": knee,
+        "maneuver": maneuver,
+        "sample_rate": sample_rate,
+        "mic_1_position": mic_1_position,
+        "mic_2_position": mic_2_position,
+        "mic_3_position": mic_3_position,
+        "mic_4_position": mic_4_position,
+        # SynchronizationMetadata
+        "audio_sync_time": audio_sync_time,
+        "bio_left_sync_time": bio_left_sync_time,
+        "bio_right_sync_time": bio_right_sync_time,
+        "sync_offset": sync_offset_td,
+        "aligned_audio_sync_time": aligned_audio_sync_time,
+        "aligned_bio_sync_time": aligned_bio_sync_time,
+        "sync_method": "consensus",  # Detection method (consensus or biomechanics); will be overridden from detection_results if provided
+        # Synchronization
         "sync_file_name": sync_file_name,
         "pass_number": pass_number,
         "speed": speed,
         "processing_date": datetime.now(),
-        "audio_stomp_time": audio_stomp_s,
-        "bio_left_stomp_time": bio_left_s,
-        "bio_right_stomp_time": bio_right_s,
-        "knee_side": knee_side,
-        "stomp_offset": stomp_offset,
-        "aligned_audio_stomp_time": aligned_audio_stomp,
-        "aligned_bio_stomp_time": aligned_bio_stomp,
+        "sync_duration": sync_duration,
+        "mean_cycle_duration_s": mean_cycle_duration_s,
+        "median_cycle_duration_s": median_cycle_duration_s,
+        "min_cycle_duration_s": min_cycle_duration_s,
+        "max_cycle_duration_s": max_cycle_duration_s,
+        "mean_acoustic_auc": mean_acoustic_auc,
     }
 
     # Populate detection method details if provided
+    # These times need to be timedeltas for SynchronizationMetadata
     # Store energy/magnitude as separate data-derived fields (not metadata)
     rms_energy = None
     onset_magnitude = None
@@ -1013,15 +1177,21 @@ def create_sync_record_from_data(
 
     if detection_results:
         try:
-            data["consensus_time"] = _to_seconds(detection_results.get("consensus_time"))
+            consensus_time_s = _to_seconds(detection_results.get("consensus_time"))
+            rms_time_s = _to_seconds(detection_results.get("rms_time"))
+            onset_time_s = _to_seconds(detection_results.get("onset_time"))
+            freq_time_s = _to_seconds(detection_results.get("freq_time"))
+            
+            # Convert to timedeltas for metadata fields
+            data["consensus_time"] = _to_timedelta(consensus_time_s)
+            data["rms_time"] = _to_timedelta(rms_time_s)
+            data["onset_time"] = _to_timedelta(onset_time_s)
+            data["freq_time"] = _to_timedelta(freq_time_s)
+            
             # Extract which methods contributed to consensus
             consensus_methods_list = detection_results.get("consensus_methods", [])
             if consensus_methods_list:
                 data["consensus_methods"] = ", ".join(consensus_methods_list)
-
-            data["rms_time"] = _to_seconds(detection_results.get("rms_time"))
-            data["onset_time"] = _to_seconds(detection_results.get("onset_time"))
-            data["freq_time"] = _to_seconds(detection_results.get("freq_time"))
 
             # Energies/magnitudes are data-derived, not metadata
             rms_energy = (
@@ -1038,15 +1208,15 @@ def create_sync_record_from_data(
             )
 
             # Method agreement span: only for methods that contributed to consensus
-            # Get times for methods that contributed
+            # Get times for methods that contributed (in seconds for calculation)
             method_times_used = []
             if consensus_methods_list:
-                if "rms" in consensus_methods_list and data.get("rms_time") is not None:
-                    method_times_used.append(data["rms_time"])
-                if "onset" in consensus_methods_list and data.get("onset_time") is not None:
-                    method_times_used.append(data["onset_time"])
-                if "freq" in consensus_methods_list and data.get("freq_time") is not None:
-                    method_times_used.append(data["freq_time"])
+                if "rms" in consensus_methods_list and rms_time_s is not None:
+                    method_times_used.append(rms_time_s)
+                if "onset" in consensus_methods_list and onset_time_s is not None:
+                    method_times_used.append(onset_time_s)
+                if "freq" in consensus_methods_list and freq_time_s is not None:
+                    method_times_used.append(freq_time_s)
 
             if method_times_used:
                 data["method_agreement_span"] = float(max(method_times_used) - min(method_times_used))
@@ -1057,6 +1227,13 @@ def create_sync_record_from_data(
             data["contra_selected_time"] = _to_seconds(detection_results.get("contra_selected_time"))
         except Exception as e:
             logger.debug(f"Failed to populate detection_results in sync record: {e}")
+    else:
+        # If no detection_results provided, set required detection times to defaults
+        data["consensus_time"] = timedelta(0)
+        data["rms_time"] = timedelta(0)
+        data["onset_time"] = timedelta(0)
+        data["freq_time"] = timedelta(0)
+
 
     if error:
         data["processing_status"] = "error"
@@ -1098,8 +1275,8 @@ def create_cycles_record_from_data(
     audio_record: Optional[AudioProcessing] = None,
     biomech_record: Optional[BiomechanicsImport] = None,
     sync_record: Optional[Synchronization] = None,
-) -> MovementCycles:
-    """Create a MovementCyclesRecord from cycle extraction data.
+) -> Synchronization:
+    """Create a Synchronization record from cycle extraction data.
 
     Args:
         sync_file_name: Name of the source sync file
@@ -1114,7 +1291,7 @@ def create_cycles_record_from_data(
         sync_record: Optional synchronization record for context
 
     Returns:
-        MovementCyclesRecord instance
+        Synchronization instance
     """
     def _infer_pass_number_from_name(name: str) -> Optional[int]:
         match = re.search(r"Pass(\d{2,4})", name, re.IGNORECASE)
@@ -1149,7 +1326,7 @@ def create_cycles_record_from_data(
         data["output_directory"] = str(output_dir) if output_dir else None
         data["plots_created"] = plots_created
         data["per_cycle_details"] = []
-        return MovementCycles(**data)
+        return Synchronization(**data)
 
     data["processing_status"] = "success"
 
@@ -1320,13 +1497,13 @@ def create_cycles_record_from_data(
     if aucs:
         data["mean_acoustic_auc"] = float(np.nanmean(aucs))
 
-    # Include data-derived fields in unified MovementCycles class
+    # Include data-derived fields in unified Synchronization class
     data["output_directory"] = str(output_dir) if output_dir else None
     data["plots_created"] = plots_created
     data["per_cycle_details"] = details
 
-    # Create unified MovementCycles object
-    cycles = MovementCycles(**data)
+    # Create unified Synchronization object
+    cycles = Synchronization(**data)
 
     # Now update all cycle records with the complete cycles_metadata
     for detail in details:

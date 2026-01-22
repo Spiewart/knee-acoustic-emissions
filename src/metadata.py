@@ -75,13 +75,26 @@ class BiomechanicsMetadata(StudyMetadata):
     @field_validator("biomechanics_file", "biomechanics_type", "sync_method", "biomechanics_sample_rate")
     @classmethod
     def validate_biomechanics_fields(cls, value: Optional[Any], info) -> Optional[Any]:
-        """Validate biomechanics fields are provided when linked_biomechanics is True."""
+        """Validate biomechanics fields are provided when linked_biomechanics is True.
+        
+        Note: sync_method is redefined in SynchronizationMetadata with different semantics,
+        so we skip validation if it has non-biomechanics values.
+        """
+        field_name = info.field_name
+        
+        # Special handling for sync_method which is redefined in subclasses
+        if field_name == "sync_method":
+            # If value is not a biomechanics sync method, skip validation (subclass validator will handle it)
+            if value not in [None, "flick", "stomp"]:
+                return value
+        
         if info.data.get("linked_biomechanics") is True:
-            if value is None and info.field_name != "biomechanics_notes":
-                raise ValueError(f"{info.field_name} is required when linked_biomechanics is True")
+            if value is None and field_name != "biomechanics_notes":
+                raise ValueError(f"{field_name} is required when linked_biomechanics is True")
         else:
-            if value is not None:
-                raise ValueError(f"{info.field_name} must be None when linked_biomechanics is False")
+            if value is not None and field_name != "sync_method":
+                # Don't check sync_method here since it's redefined in subclasses
+                raise ValueError(f"{field_name} must be None when linked_biomechanics is False")
         return value
     
     @field_validator("sync_method")
