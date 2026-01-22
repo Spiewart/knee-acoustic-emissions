@@ -721,6 +721,7 @@ def create_audio_record_from_data(
     audio_pkl_path: Optional[Path] = None,
     metadata: Optional[Dict[str, Any]] = None,
     error: Optional[Exception] = None,
+    qc_data: Optional[Dict[str, Any]] = None,
 ) -> AudioProcessing:
     """Create an AudioProcessing record from processing data with Pydantic validation.
 
@@ -731,6 +732,7 @@ def create_audio_record_from_data(
         audio_pkl_path: Path to pickle file
         metadata: Optional metadata dictionary from audio reader
         error: Exception if processing failed
+        qc_data: Optional QC data dictionary containing QC results
 
     Returns:
         AudioProcessing instance (validated through Pydantic)
@@ -747,15 +749,55 @@ def create_audio_record_from_data(
         "processing_status": "error" if error else "not_processed",
         "error_message": str(error) if error else None,
     }
-
-    if error:
-        # Early return on error - validate and return
-        return AudioProcessing(**data)
-
-    data["processing_status"] = "success"
-
-    # Extract metadata if available
+    
+    # Initialize QC fields with default values (empty lists and False)
+    # These will be populated from qc_data if available
+    data.update({
+        # Overall fail segments
+        "qc_fail_segments": [],
+        "qc_fail_segments_ch1": [],
+        "qc_fail_segments_ch2": [],
+        "qc_fail_segments_ch3": [],
+        "qc_fail_segments_ch4": [],
+        # Signal dropout QC
+        "qc_signal_dropout": False,
+        "qc_signal_dropout_segments": [],
+        "qc_signal_dropout_ch1": False,
+        "qc_signal_dropout_segments_ch1": [],
+        "qc_signal_dropout_ch2": False,
+        "qc_signal_dropout_segments_ch2": [],
+        "qc_signal_dropout_ch3": False,
+        "qc_signal_dropout_segments_ch3": [],
+        "qc_signal_dropout_ch4": False,
+        "qc_signal_dropout_segments_ch4": [],
+        # Artifact QC
+        "qc_artifact": False,
+        "qc_artifact_type": None,
+        "qc_artifact_segments": [],
+        "qc_artifact_ch1": False,
+        "qc_artifact_type_ch1": None,
+        "qc_artifact_segments_ch1": [],
+        "qc_artifact_ch2": False,
+        "qc_artifact_type_ch2": None,
+        "qc_artifact_segments_ch2": [],
+        "qc_artifact_ch3": False,
+        "qc_artifact_type_ch3": None,
+        "qc_artifact_segments_ch3": [],
+        "qc_artifact_ch4": False,
+        "qc_artifact_type_ch4": None,
+        "qc_artifact_segments_ch4": [],
+    })
+    
+    # Extract metadata if available (needed even for error cases)
     if metadata:
+        # Parent class fields (StudyMetadata, BiomechanicsMetadata, AcousticsFile)
+        for field in ['study', 'study_id', 'recording_date', 'recording_time', 'knee', 'maneuver',
+                      'mic_1_position', 'mic_2_position', 'mic_3_position', 'mic_4_position',
+                      'file_size_mb', 'linked_biomechanics', 'biomechanics_file', 'biomechanics_type',
+                      'sync_method', 'biomechanics_sample_rate', 'biomechanics_notes']:
+            if field in metadata:
+                data[field] = metadata[field]
+        
         # Normalize sample rate from metadata
         meta_fs = metadata.get("fs")
         if isinstance(meta_fs, (int, float)):
@@ -764,14 +806,68 @@ def create_audio_record_from_data(
         fv = metadata.get("devFirmwareVersion")
         if isinstance(fv, (int, float)):
             data["firmware_version"] = int(fv)
+        # firmware_version can also be provided directly
+        if "firmware_version" in metadata:
+            data["firmware_version"] = int(metadata["firmware_version"])
         # Normalize device serial: handle list/tuple
         ds = metadata.get("deviceSerial")
         if isinstance(ds, (list, tuple)) and ds:
             data["device_serial"] = str(ds[0])
         elif ds is not None:
             data["device_serial"] = str(ds)
+        # Device serial can also be provided directly
+        if "device_serial" in metadata:
+            data["device_serial"] = str(metadata["device_serial"])
         # Recording time passthrough
         data["file_time"] = metadata.get("fileTime")
+        if "file_time" in metadata:
+            data["file_time"] = metadata["file_time"]
+
+    if error:
+        # Early return on error - validate and return
+        return AudioProcessing(**data)
+
+    data["processing_status"] = "success"
+
+    # Extract QC data if available
+    if qc_data:
+        # Overall fail segments
+        if "qc_fail_segments" in qc_data:
+            data["qc_fail_segments"] = qc_data["qc_fail_segments"]
+        if "qc_fail_segments_ch1" in qc_data:
+            data["qc_fail_segments_ch1"] = qc_data["qc_fail_segments_ch1"]
+        if "qc_fail_segments_ch2" in qc_data:
+            data["qc_fail_segments_ch2"] = qc_data["qc_fail_segments_ch2"]
+        if "qc_fail_segments_ch3" in qc_data:
+            data["qc_fail_segments_ch3"] = qc_data["qc_fail_segments_ch3"]
+        if "qc_fail_segments_ch4" in qc_data:
+            data["qc_fail_segments_ch4"] = qc_data["qc_fail_segments_ch4"]
+        
+        # Signal dropout QC
+        if "qc_signal_dropout" in qc_data:
+            data["qc_signal_dropout"] = qc_data["qc_signal_dropout"]
+        if "qc_signal_dropout_segments" in qc_data:
+            data["qc_signal_dropout_segments"] = qc_data["qc_signal_dropout_segments"]
+        for ch_num in range(1, 5):
+            if f"qc_signal_dropout_ch{ch_num}" in qc_data:
+                data[f"qc_signal_dropout_ch{ch_num}"] = qc_data[f"qc_signal_dropout_ch{ch_num}"]
+            if f"qc_signal_dropout_segments_ch{ch_num}" in qc_data:
+                data[f"qc_signal_dropout_segments_ch{ch_num}"] = qc_data[f"qc_signal_dropout_segments_ch{ch_num}"]
+        
+        # Artifact QC
+        if "qc_artifact" in qc_data:
+            data["qc_artifact"] = qc_data["qc_artifact"]
+        if "qc_artifact_type" in qc_data:
+            data["qc_artifact_type"] = qc_data["qc_artifact_type"]
+        if "qc_artifact_segments" in qc_data:
+            data["qc_artifact_segments"] = qc_data["qc_artifact_segments"]
+        for ch_num in range(1, 5):
+            if f"qc_artifact_ch{ch_num}" in qc_data:
+                data[f"qc_artifact_ch{ch_num}"] = qc_data[f"qc_artifact_ch{ch_num}"]
+            if f"qc_artifact_type_ch{ch_num}" in qc_data:
+                data[f"qc_artifact_type_ch{ch_num}"] = qc_data[f"qc_artifact_type_ch{ch_num}"]
+            if f"qc_artifact_segments_ch{ch_num}" in qc_data:
+                data[f"qc_artifact_segments_ch{ch_num}"] = qc_data[f"qc_artifact_segments_ch{ch_num}"]
 
     # Calculate statistics from DataFrame
     if audio_df is not None:

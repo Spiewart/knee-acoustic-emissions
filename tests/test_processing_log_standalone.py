@@ -49,10 +49,51 @@ def test_basic_functionality():
 
         # Test 2: Add audio record
         print("  ✓ Adding audio record...")
+        now = datetime.now()
         audio_record = AudioProcessing(
             audio_file_name="test_audio",
             processing_status="success",
+            processing_date=now,
             sample_rate=46875.0,
+            study='AOA',
+            study_id=1011,
+            recording_date=now,
+            recording_time=now,
+            knee='right',
+            maneuver='fe',
+            mic_1_position='IPM',
+            mic_2_position='IPL',
+            mic_3_position='SPM',
+            mic_4_position='SPL',
+            device_serial='12345',
+            firmware_version=2,
+            file_time=now,
+            file_size_mb=1.0,
+            qc_fail_segments=[],
+            qc_fail_segments_ch1=[],
+            qc_fail_segments_ch2=[],
+            qc_fail_segments_ch3=[],
+            qc_fail_segments_ch4=[],
+            qc_signal_dropout=False,
+            qc_signal_dropout_segments=[],
+            qc_signal_dropout_ch1=False,
+            qc_signal_dropout_segments_ch1=[],
+            qc_signal_dropout_ch2=False,
+            qc_signal_dropout_segments_ch2=[],
+            qc_signal_dropout_ch3=False,
+            qc_signal_dropout_segments_ch3=[],
+            qc_signal_dropout_ch4=False,
+            qc_signal_dropout_segments_ch4=[],
+            qc_artifact=False,
+            qc_artifact_segments=[],
+            qc_artifact_ch1=False,
+            qc_artifact_segments_ch1=[],
+            qc_artifact_ch2=False,
+            qc_artifact_segments_ch2=[],
+            qc_artifact_ch3=False,
+            qc_artifact_segments_ch3=[],
+            qc_artifact_ch4=False,
+            qc_artifact_segments_ch4=[],
         )
         log.update_audio_record(audio_record)
         assert log.audio_record is not None
@@ -132,9 +173,23 @@ def test_helper_functions():
             'f_ch1': np.random.randn(1000) * 50,
         })
 
+        now = datetime.now()
         metadata = {
             'fs': 46875.0,
             'devFirmwareVersion': 2,
+            'deviceSerial': [12345],
+            'fileTime': now,
+            'study': 'AOA',
+            'study_id': 1011,
+            'recording_date': now,
+            'recording_time': now,
+            'knee': 'right',
+            'maneuver': 'fe',
+            'mic_1_position': 'IPM',
+            'mic_2_position': 'IPL',
+            'mic_3_position': 'SPM',
+            'mic_4_position': 'SPL',
+            'file_size_mb': 1.0,
         }
 
         record = create_audio_record_from_data(
@@ -180,8 +235,26 @@ def test_error_handling():
         # Test 1: Create audio record with error
         print("  ✓ Testing error recording...")
         error = ValueError("Processing failed")
+        now = datetime.now()
+        metadata = {
+            'study': 'AOA',
+            'study_id': 1011,
+            'recording_date': now,
+            'recording_time': now,
+            'knee': 'right',
+            'maneuver': 'fe',
+            'mic_1_position': 'IPM',
+            'mic_2_position': 'IPL',
+            'mic_3_position': 'SPM',
+            'mic_4_position': 'SPL',
+            'device_serial': '12345',
+            'firmware_version': 2,
+            'file_size_mb': 1.0,
+            'file_time': now,
+        }
         record = create_audio_record_from_data(
             audio_file_name="test_audio",
+            metadata=metadata,
             error=error,
         )
 
