@@ -802,20 +802,20 @@ def create_audio_record_from_data(
         meta_fs = metadata.get("fs")
         if isinstance(meta_fs, (int, float)):
             data["sample_rate"] = float(meta_fs)
-        # Normalize firmware version
+        # Normalize firmware version from metadata
         fv = metadata.get("devFirmwareVersion")
         if isinstance(fv, (int, float)):
             data["firmware_version"] = int(fv)
-        # firmware_version can also be provided directly
+        # firmware_version can also be provided directly (takes precedence)
         if "firmware_version" in metadata:
             data["firmware_version"] = int(metadata["firmware_version"])
-        # Normalize device serial: handle list/tuple
+        # Normalize device serial: handle list/tuple from deviceSerial
         ds = metadata.get("deviceSerial")
         if isinstance(ds, (list, tuple)) and ds:
             data["device_serial"] = str(ds[0])
         elif ds is not None:
             data["device_serial"] = str(ds)
-        # Device serial can also be provided directly
+        # Device serial can also be provided directly (takes precedence)
         if "device_serial" in metadata:
             data["device_serial"] = str(metadata["device_serial"])
         # Recording time passthrough
