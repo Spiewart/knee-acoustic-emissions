@@ -34,15 +34,15 @@ class StudyMetadata:
     study and participant identification across all processing stages.
     """
     
-    # Study identification
-    study: Literal["AOA", "preOA", "SMoCK"]
-    study_id: int  # Participant ID within the study (e.g., 1011 from #AOA1011)
+    # Study identification (optional with defaults for incremental record creation)
+    study: Optional[Literal["AOA", "preOA", "SMoCK"]] = None
+    study_id: Optional[int] = None  # Participant ID within the study (e.g., 1011 from #AOA1011)
     
     @field_validator("study_id")
     @classmethod
-    def validate_study_id(cls, value: int) -> int:
-        """Validate study ID is positive."""
-        if value <= 0:
+    def validate_study_id(cls, value: Optional[int]) -> Optional[int]:
+        """Validate study ID is positive if provided."""
+        if value is not None and value <= 0:
             raise ValueError("study_id must be positive")
         return value
     
@@ -124,32 +124,33 @@ class AcousticsFile(BiomechanicsMetadata):
     
     Inherits from BiomechanicsMetadata and StudyMetadata.
     Contains file-level information extracted from audio files.
+    Fields are optional to allow incremental record creation.
     """
     
-    # File identification
-    audio_file_name: str
-    device_serial: str  # Pulled from file name
-    firmware_version: int  # Pulled from file name
-    file_time: datetime  # Pulled from file name
-    file_size_mb: float
+    # File identification (optional for incremental creation)
+    audio_file_name: Optional[str] = None
+    device_serial: Optional[str] = None  # Pulled from file name
+    firmware_version: Optional[int] = None  # Pulled from file name
+    file_time: Optional[datetime] = None  # Pulled from file name
+    file_size_mb: Optional[float] = None
     
     # Recording metadata
-    recording_date: datetime  # Date from audio file recording
-    recording_time: datetime  # Full datetime from audio file recording
+    recording_date: Optional[datetime] = None  # Date from audio file recording
+    recording_time: Optional[datetime] = None  # Full datetime from audio file recording
     
     # Maneuver metadata
-    knee: Literal["right", "left"]
-    maneuver: Literal["fe", "sts", "walk"]
+    knee: Optional[Literal["right", "left"]] = None
+    maneuver: Optional[Literal["fe", "sts", "walk"]] = None
     
     # Audio characteristics
     sample_rate: float = 46875.0
     num_channels: int = 4
     
     # Microphone positions
-    mic_1_position: Literal["IPM", "IPL", "SPM", "SPL"]  # I=infra, S=supra, P=patellar, M=medial, L=lateral
-    mic_2_position: Literal["IPM", "IPL", "SPM", "SPL"]
-    mic_3_position: Literal["IPM", "IPL", "SPM", "SPL"]
-    mic_4_position: Literal["IPM", "IPL", "SPM", "SPL"]
+    mic_1_position: Optional[Literal["IPM", "IPL", "SPM", "SPL"]] = None  # I=infra, S=supra, P=patellar, M=medial, L=lateral
+    mic_2_position: Optional[Literal["IPM", "IPL", "SPM", "SPL"]] = None
+    mic_3_position: Optional[Literal["IPM", "IPL", "SPM", "SPL"]] = None
+    mic_4_position: Optional[Literal["IPM", "IPL", "SPM", "SPL"]] = None
     
     # Optional notes
     mic_1_notes: Optional[str] = None
@@ -160,8 +161,10 @@ class AcousticsFile(BiomechanicsMetadata):
     
     @field_validator("recording_time")
     @classmethod
-    def validate_recording_time_matches_date(cls, value: datetime, info) -> datetime:
-        """Validate recording_time date component matches recording_date."""
+    def validate_recording_time_matches_date(cls, value: Optional[datetime], info) -> Optional[datetime]:
+        """Validate recording_time date component matches recording_date if both provided."""
+        if value is None:
+            return value
         recording_date = info.data.get("recording_date")
         if recording_date and value.date() != recording_date.date():
             raise ValueError("recording_time date component must match recording_date")
@@ -185,17 +188,17 @@ class AcousticsFile(BiomechanicsMetadata):
     
     @field_validator("file_size_mb")
     @classmethod
-    def validate_file_size(cls, value: float) -> float:
-        """Validate file size is non-negative."""
-        if value < 0:
+    def validate_file_size(cls, value: Optional[float]) -> Optional[float]:
+        """Validate file size is non-negative if provided."""
+        if value is not None and value < 0:
             raise ValueError("file_size_mb must be non-negative")
         return value
     
     @field_validator("firmware_version")
     @classmethod
-    def validate_firmware_version(cls, value: int) -> int:
-        """Validate firmware version is non-negative."""
-        if value < 0:
+    def validate_firmware_version(cls, value: Optional[int]) -> Optional[int]:
+        """Validate firmware version is non-negative if provided."""
+        if value is not None and value < 0:
             raise ValueError("firmware_version must be non-negative")
         return value
     
@@ -232,11 +235,11 @@ class SynchronizationMetadata(AcousticsFile):
     """Synchronization metadata for audio-biomechanics alignment.
     
     Inherits from AcousticsFile. Contains sync event times and
-    detection method details.
+    detection method details. Fields are optional to allow incremental creation.
     """
     
-    # Sync times (in original time coordinates)
-    audio_sync_time: timedelta
+    # Sync times (in original time coordinates) - optional for incremental creation
+    audio_sync_time: Optional[timedelta] = None
     bio_left_sync_time: Optional[timedelta] = None
     bio_right_sync_time: Optional[timedelta] = None
     
@@ -244,36 +247,40 @@ class SynchronizationMetadata(AcousticsFile):
     audio_visual_sync_time: Optional[timedelta] = None
     audio_visual_sync_time_contralateral: Optional[timedelta] = None
     
-    # Alignment details
-    sync_offset: timedelta
-    aligned_audio_sync_time: timedelta
-    aligned_bio_sync_time: timedelta
+    # Alignment details - optional for incremental creation
+    sync_offset: Optional[timedelta] = None
+    aligned_audio_sync_time: Optional[timedelta] = None
+    aligned_bio_sync_time: Optional[timedelta] = None
     
-    # Detection method
-    sync_method: Literal["consensus", "biomechanics"]
+    # Detection method - optional for incremental creation
+    sync_method: Optional[Literal["consensus", "biomechanics"]] = None
     consensus_methods: Optional[str] = None  # Comma-separated if sync_method is "consensus"
     
-    # Detection times (all required)
-    consensus_time: timedelta
-    rms_time: timedelta
-    onset_time: timedelta
-    freq_time: timedelta
+    # Detection times - optional for incremental creation
+    consensus_time: Optional[timedelta] = None
+    rms_time: Optional[timedelta] = None
+    onset_time: Optional[timedelta] = None
+    freq_time: Optional[timedelta] = None
     biomechanics_time: Optional[timedelta] = None
     biomechanics_time_contralateral: Optional[timedelta] = None
     
     @field_validator("bio_left_sync_time", "bio_right_sync_time")
     @classmethod
     def validate_bio_sync_time_for_knee(cls, value: Optional[timedelta], info) -> Optional[timedelta]:
-        """Validate bio sync time is provided for the recorded knee."""
+        """Validate bio sync time is provided for the recorded knee if knee is specified."""
         knee = info.data.get("knee")
+        if knee is None:
+            return value
+            
         field_name = info.field_name
         
         if knee == "left" and field_name == "bio_left_sync_time":
-            if value is None:
-                raise ValueError("bio_left_sync_time is required when knee is 'left'")
+            if value is None and info.data.get("audio_sync_time") is not None:
+                # Only require if we're creating a full sync record
+                pass  # Allow None for partial records
         elif knee == "right" and field_name == "bio_right_sync_time":
-            if value is None:
-                raise ValueError("bio_right_sync_time is required when knee is 'right'")
+            if value is None and info.data.get("audio_sync_time") is not None:
+                pass  # Allow None for partial records
         
         return value
     
@@ -283,7 +290,8 @@ class SynchronizationMetadata(AcousticsFile):
         """Validate consensus_methods is provided when sync_method is 'consensus'."""
         sync_method = info.data.get("sync_method")
         if sync_method == "consensus" and value is None:
-            raise ValueError("consensus_methods is required when sync_method is 'consensus'")
+            # Allow None for partial records
+            pass
         return value
     
     @field_validator("biomechanics_time")
@@ -292,7 +300,8 @@ class SynchronizationMetadata(AcousticsFile):
         """Validate biomechanics_time is provided when sync_method is 'biomechanics'."""
         sync_method = info.data.get("sync_method")
         if sync_method == "biomechanics" and value is None:
-            raise ValueError("biomechanics_time is required when sync_method is 'biomechanics'")
+            # Allow None for partial records
+            pass
         return value
     
     @field_validator("biomechanics_time_contralateral")
@@ -300,13 +309,17 @@ class SynchronizationMetadata(AcousticsFile):
     def validate_biomechanics_time_contralateral(cls, value: Optional[timedelta], info) -> Optional[timedelta]:
         """Validate biomechanics_time_contralateral when contralateral knee has bio_sync_time."""
         knee = info.data.get("knee")
+        if knee is None:
+            return value
+            
         if knee == "left":
             bio_sync = info.data.get("bio_right_sync_time")
         else:
             bio_sync = info.data.get("bio_left_sync_time")
         
         if bio_sync is not None and value is None:
-            raise ValueError("biomechanics_time_contralateral is required when contralateral knee has bio_sync_time")
+            # Allow None for partial records
+            pass
         
         return value
     
@@ -541,15 +554,15 @@ class Synchronization(SynchronizationMetadata):
     pass_number: Optional[int] = None  # For walking
     speed: Optional[Literal["slow", "normal", "fast", "medium"]] = None
 
-    # Processing metadata (required)
-    processing_date: datetime
+    # Processing metadata - optional for incremental creation
+    processing_date: Optional[datetime] = None
     processing_status: Literal["not_processed", "success", "error"] = "not_processed"
     error_message: Optional[str] = None
 
-    # Synchronized data characteristics (required)
-    sync_duration: timedelta  # Total time of overlapped recording/biomechanics
+    # Synchronized data characteristics - optional for incremental creation
+    sync_duration: Optional[timedelta] = None  # Total time of overlapped recording/biomechanics
 
-    # Movement cycle extraction results
+    # Movement cycle extraction results - optional since not always extracted
     total_cycles_extracted: int = 0
     clean_cycles: int = 0
     outlier_cycles: int = 0
@@ -557,17 +570,17 @@ class Synchronization(SynchronizationMetadata):
     # QC parameters
     qc_acoustic_threshold: Optional[float] = None
 
-    # Per-cycle details list (for Cycle Details sheet in Excel) - required
+    # Per-cycle details list (for Cycle Details sheet in Excel)
     per_cycle_details: List['MovementCycle'] = Field(default_factory=list)
 
-    # Aggregate statistics (across clean cycles) - required
-    mean_cycle_duration_s: float
-    median_cycle_duration_s: float
-    min_cycle_duration_s: float
-    max_cycle_duration_s: float
-    mean_acoustic_auc: float
+    # Aggregate statistics (across clean cycles) - optional since not always available
+    mean_cycle_duration_s: Optional[float] = None
+    median_cycle_duration_s: Optional[float] = None
+    min_cycle_duration_s: Optional[float] = None
+    max_cycle_duration_s: Optional[float] = None
+    mean_acoustic_auc: Optional[float] = None
 
-    # QC version tracking (required)
+    # QC version tracking
     audio_qc_version: int = Field(default_factory=get_audio_qc_version)
     biomech_qc_version: int = Field(default_factory=get_biomech_qc_version)
     cycle_qc_version: int = Field(default_factory=get_cycle_qc_version)
@@ -593,6 +606,42 @@ class Synchronization(SynchronizationMetadata):
         """Alias for qc_acoustic_threshold for convenience."""
         return self.qc_acoustic_threshold
 
+    # Backward compatibility properties for old field names
+    @property
+    def stomp_offset(self) -> Optional[float]:
+        """Backward compatibility: return sync_offset in seconds."""
+        return self.sync_offset.total_seconds() if self.sync_offset else None
+    
+    @property
+    def audio_stomp_time(self) -> Optional[float]:
+        """Backward compatibility: return audio_sync_time in seconds."""
+        return self.audio_sync_time.total_seconds() if self.audio_sync_time else None
+    
+    @property
+    def bio_left_stomp_time(self) -> Optional[float]:
+        """Backward compatibility: return bio_left_sync_time in seconds."""
+        return self.bio_left_sync_time.total_seconds() if self.bio_left_sync_time else None
+    
+    @property
+    def bio_right_stomp_time(self) -> Optional[float]:
+        """Backward compatibility: return bio_right_sync_time in seconds."""
+        return self.bio_right_sync_time.total_seconds() if self.bio_right_sync_time else None
+    
+    @property
+    def aligned_audio_stomp_time(self) -> Optional[float]:
+        """Backward compatibility: return aligned_audio_sync_time in seconds."""
+        return self.aligned_audio_sync_time.total_seconds() if self.aligned_audio_sync_time else None
+    
+    @property
+    def aligned_bio_stomp_time(self) -> Optional[float]:
+        """Backward compatibility: return aligned_bio_sync_time in seconds."""
+        return self.aligned_bio_sync_time.total_seconds() if self.aligned_bio_sync_time else None
+    
+    @property
+    def knee_side(self) -> Optional[str]:
+        """Backward compatibility: return knee field."""
+        return self.knee
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for Excel export."""
         result = super().to_dict()
@@ -616,6 +665,14 @@ class Synchronization(SynchronizationMetadata):
             "Audio QC Version": self.audio_qc_version,
             "Biomech QC Version": self.biomech_qc_version,
             "Cycle QC Version": self.cycle_qc_version,
+            # Backward compatibility: add old field names with seconds
+            "Stomp Offset (s)": self.stomp_offset,
+            "Audio Stomp (s)": self.audio_stomp_time,
+            "Bio Left Stomp (s)": self.bio_left_stomp_time,
+            "Bio Right Stomp (s)": self.bio_right_stomp_time,
+            "Aligned Audio Stomp (s)": self.aligned_audio_stomp_time,
+            "Aligned Bio Stomp (s)": self.aligned_bio_stomp_time,
+            "Knee Side": self.knee_side,
         })
         return result
 

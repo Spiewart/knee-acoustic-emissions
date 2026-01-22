@@ -858,19 +858,20 @@ def create_sync_record_from_data(
         # Bio stomp remains at its original position (synced timeline is in bio coords)
         aligned_bio_stomp = bio_stomp_s
 
-    # Build data dictionary
+    # Build data dictionary with correct field names for Synchronization class
     data = {
         "sync_file_name": sync_file_name,
         "pass_number": pass_number,
         "speed": speed,
         "processing_date": datetime.now(),
-        "audio_stomp_time": audio_stomp_s,
-        "bio_left_stomp_time": bio_left_s,
-        "bio_right_stomp_time": bio_right_s,
-        "knee_side": knee_side,
-        "stomp_offset": stomp_offset,
-        "aligned_audio_stomp_time": aligned_audio_stomp,
-        "aligned_bio_stomp_time": aligned_bio_stomp,
+        # Convert to timedelta for SynchronizationMetadata fields
+        "audio_sync_time": pd.Timedelta(seconds=audio_stomp_s) if audio_stomp_s is not None else None,
+        "bio_left_sync_time": pd.Timedelta(seconds=bio_left_s) if bio_left_s is not None else None,
+        "bio_right_sync_time": pd.Timedelta(seconds=bio_right_s) if bio_right_s is not None else None,
+        "knee": knee_side,
+        "sync_offset": pd.Timedelta(seconds=stomp_offset) if stomp_offset is not None else None,
+        "aligned_audio_sync_time": pd.Timedelta(seconds=aligned_audio_stomp) if aligned_audio_stomp is not None else None,
+        "aligned_bio_sync_time": pd.Timedelta(seconds=aligned_bio_stomp) if aligned_bio_stomp is not None else None,
     }
 
     # Populate detection method details if provided
@@ -881,15 +882,22 @@ def create_sync_record_from_data(
 
     if detection_results:
         try:
-            data["consensus_time"] = _to_seconds(detection_results.get("consensus_time"))
+            # Convert detection times to timedeltas for SynchronizationMetadata
+            consensus_t = _to_seconds(detection_results.get("consensus_time"))
+            data["consensus_time"] = pd.Timedelta(seconds=consensus_t) if consensus_t is not None else None
+            
             # Extract which methods contributed to consensus
             consensus_methods_list = detection_results.get("consensus_methods", [])
             if consensus_methods_list:
                 data["consensus_methods"] = ", ".join(consensus_methods_list)
 
-            data["rms_time"] = _to_seconds(detection_results.get("rms_time"))
-            data["onset_time"] = _to_seconds(detection_results.get("onset_time"))
-            data["freq_time"] = _to_seconds(detection_results.get("freq_time"))
+            rms_t = _to_seconds(detection_results.get("rms_time"))
+            onset_t = _to_seconds(detection_results.get("onset_time"))
+            freq_t = _to_seconds(detection_results.get("freq_time"))
+            
+            data["rms_time"] = pd.Timedelta(seconds=rms_t) if rms_t is not None else None
+            data["onset_time"] = pd.Timedelta(seconds=onset_t) if onset_t is not None else None
+            data["freq_time"] = pd.Timedelta(seconds=freq_t) if freq_t is not None else None
 
             # Energies/magnitudes are data-derived, not metadata
             rms_energy = (
@@ -910,11 +918,11 @@ def create_sync_record_from_data(
             method_times_used = []
             if consensus_methods_list:
                 if "rms" in consensus_methods_list and data.get("rms_time") is not None:
-                    method_times_used.append(data["rms_time"])
+                    method_times_used.append(rms_t)
                 if "onset" in consensus_methods_list and data.get("onset_time") is not None:
-                    method_times_used.append(data["onset_time"])
+                    method_times_used.append(onset_t)
                 if "freq" in consensus_methods_list and data.get("freq_time") is not None:
-                    method_times_used.append(data["freq_time"])
+                    method_times_used.append(freq_t)
 
             if method_times_used:
                 data["method_agreement_span"] = float(max(method_times_used) - min(method_times_used))
@@ -936,15 +944,14 @@ def create_sync_record_from_data(
         return Synchronization(**data)
 
     data["processing_status"] = "success"
-    # num_synced_samples is pure data-derived, duration_seconds is metadata
-    data["num_synced_samples"] = len(synced_df)
 
+    # Calculate sync_duration from synced dataframe
     if "tt" in synced_df.columns and len(synced_df) > 0:
         duration = synced_df["tt"].iloc[-1] - synced_df["tt"].iloc[0]
         if hasattr(duration, 'total_seconds'):
-            data["duration_seconds"] = duration.total_seconds()
+            data["sync_duration"] = duration
         else:
-            data["duration_seconds"] = float(duration)
+            data["sync_duration"] = pd.Timedelta(seconds=float(duration))
 
     # Include all data-derived fields in unified Synchronization class
     data["rms_energy"] = rms_energy
