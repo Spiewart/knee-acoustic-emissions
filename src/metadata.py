@@ -356,8 +356,8 @@ class AudioProcessing(AcousticsFile):
     Fields use snake_case for direct mapping to database columns and Excel headers.
     """
 
-    # Processing metadata (required)
-    processing_date: datetime
+    # Processing metadata - optional for incremental creation
+    processing_date: Optional[datetime] = None
     processing_status: Literal["not_processed", "success", "error"] = "not_processed"
     error_message: Optional[str] = None
 
@@ -367,41 +367,41 @@ class AudioProcessing(AcousticsFile):
     # QC version tracking
     audio_qc_version: int = Field(default_factory=get_audio_qc_version)
 
-    # Raw audio QC results - Overall fail segments (consolidated)
-    qc_fail_segments: List[tuple[float, float]]  # Consolidated contiguous bad intervals
-    qc_fail_segments_ch1: List[tuple[float, float]]
-    qc_fail_segments_ch2: List[tuple[float, float]]
-    qc_fail_segments_ch3: List[tuple[float, float]]
-    qc_fail_segments_ch4: List[tuple[float, float]]
+    # Raw audio QC results - Overall fail segments (consolidated) - optional with defaults
+    qc_fail_segments: List[tuple[float, float]] = Field(default_factory=list)
+    qc_fail_segments_ch1: List[tuple[float, float]] = Field(default_factory=list)
+    qc_fail_segments_ch2: List[tuple[float, float]] = Field(default_factory=list)
+    qc_fail_segments_ch3: List[tuple[float, float]] = Field(default_factory=list)
+    qc_fail_segments_ch4: List[tuple[float, float]] = Field(default_factory=list)
 
-    # Signal dropout QC
-    qc_signal_dropout: bool
-    qc_signal_dropout_segments: List[tuple[float, float]]
-    qc_signal_dropout_ch1: bool
-    qc_signal_dropout_segments_ch1: List[tuple[float, float]]
-    qc_signal_dropout_ch2: bool
-    qc_signal_dropout_segments_ch2: List[tuple[float, float]]
-    qc_signal_dropout_ch3: bool
-    qc_signal_dropout_segments_ch3: List[tuple[float, float]]
-    qc_signal_dropout_ch4: bool
-    qc_signal_dropout_segments_ch4: List[tuple[float, float]]
+    # Signal dropout QC - optional with defaults
+    qc_signal_dropout: bool = False
+    qc_signal_dropout_segments: List[tuple[float, float]] = Field(default_factory=list)
+    qc_signal_dropout_ch1: bool = False
+    qc_signal_dropout_segments_ch1: List[tuple[float, float]] = Field(default_factory=list)
+    qc_signal_dropout_ch2: bool = False
+    qc_signal_dropout_segments_ch2: List[tuple[float, float]] = Field(default_factory=list)
+    qc_signal_dropout_ch3: bool = False
+    qc_signal_dropout_segments_ch3: List[tuple[float, float]] = Field(default_factory=list)
+    qc_signal_dropout_ch4: bool = False
+    qc_signal_dropout_segments_ch4: List[tuple[float, float]] = Field(default_factory=list)
 
-    # Artifact QC
-    qc_artifact: bool
+    # Artifact QC - optional with defaults
+    qc_artifact: bool = False
     qc_artifact_type: Optional[Literal["intermittent", "continuous"]] = None
-    qc_artifact_segments: List[tuple[float, float]]
-    qc_artifact_ch1: bool
+    qc_artifact_segments: List[tuple[float, float]] = Field(default_factory=list)
+    qc_artifact_ch1: bool = False
     qc_artifact_type_ch1: Optional[Literal["intermittent", "continuous"]] = None
-    qc_artifact_segments_ch1: List[tuple[float, float]]
-    qc_artifact_ch2: bool
+    qc_artifact_segments_ch1: List[tuple[float, float]] = Field(default_factory=list)
+    qc_artifact_ch2: bool = False
     qc_artifact_type_ch2: Optional[Literal["intermittent", "continuous"]] = None
-    qc_artifact_segments_ch2: List[tuple[float, float]]
-    qc_artifact_ch3: bool
+    qc_artifact_segments_ch2: List[tuple[float, float]] = Field(default_factory=list)
+    qc_artifact_ch3: bool = False
     qc_artifact_type_ch3: Optional[Literal["intermittent", "continuous"]] = None
-    qc_artifact_segments_ch3: List[tuple[float, float]]
-    qc_artifact_ch4: bool
+    qc_artifact_segments_ch3: List[tuple[float, float]] = Field(default_factory=list)
+    qc_artifact_ch4: bool = False
     qc_artifact_type_ch4: Optional[Literal["intermittent", "continuous"]] = None
-    qc_artifact_segments_ch4: List[tuple[float, float]]
+    qc_artifact_segments_ch4: List[tuple[float, float]] = Field(default_factory=list)
 
     # Legacy QC fields (for backward compatibility, populated from new fields)
     qc_not_passed: Optional[str] = None  # String repr of qc_fail_segments
@@ -686,29 +686,29 @@ class MovementCycle(AudioProcessing):
     Fields use snake_case for direct mapping to database columns and Excel headers.
     """
 
-    # Cycle identification (required)
-    cycle_file: str  # Path to .pkl file
-    cycle_index: int
-    is_outlier: bool  # True if failed any QC (audio, biomech, or sync)
+    # Cycle identification - optional for incremental creation
+    cycle_file: Optional[str] = None  # Path to .pkl file
+    cycle_index: int = 0
+    is_outlier: bool = False  # True if failed any QC (audio, biomech, or sync)
 
-    # Cycle temporal characteristics (all required, based on synchronized data)
-    start_time_s: float  # Start time within synced recording
-    end_time_s: float    # End time within synced recording
-    duration_s: float
+    # Cycle temporal characteristics - optional for incremental creation
+    start_time_s: Optional[float] = None  # Start time within synced recording
+    end_time_s: Optional[float] = None    # End time within synced recording
+    duration_s: Optional[float] = None
 
-    # Audio timestamps (required)
-    audio_start_time: datetime
-    audio_end_time: datetime
+    # Audio timestamps - optional for incremental creation
+    audio_start_time: Optional[datetime] = None
+    audio_end_time: Optional[datetime] = None
 
-    # Biomechanics timestamps (required)
-    bio_start_time: datetime
-    bio_end_time: datetime
+    # Biomechanics timestamps - optional for incremental creation
+    bio_start_time: Optional[datetime] = None
+    bio_end_time: Optional[datetime] = None
 
     # Biomechanics context (conditionally required for walk maneuver)
     pass_number: Optional[int] = None
     speed: Optional[Literal["slow", "normal", "fast", "medium"]] = None
 
-    # QC tracking (all required)
+    # QC tracking
     biomechanics_qc_version: int = Field(default_factory=get_biomech_qc_version)
     biomechanics_qc_fail: bool = False
     sync_qc_version: int = Field(default_factory=get_cycle_qc_version)
@@ -724,9 +724,9 @@ class MovementCycle(AudioProcessing):
 
     @field_validator("duration_s", "start_time_s", "end_time_s")
     @classmethod
-    def validate_times(cls, value: float) -> float:
-        """Validate time values are non-negative."""
-        if value < 0:
+    def validate_times(cls, value: Optional[float]) -> Optional[float]:
+        """Validate time values are non-negative if provided."""
+        if value is not None and value < 0:
             raise ValueError("time values must be non-negative")
         return value
 

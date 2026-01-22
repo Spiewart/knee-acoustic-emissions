@@ -87,6 +87,14 @@ class ManeuverProcessingLog:
         # New record
         self.synchronization_records.append(record)
         self.log_updated = datetime.now()
+    
+    def add_movement_cycles_record(self, record: Synchronization) -> None:
+        """Add or update a movement cycles record.
+        
+        Backward compatibility method - now just calls add_synchronization_record
+        since MovementCycles was merged into Synchronization.
+        """
+        self.add_synchronization_record(record)
 
     def save_to_excel(self, filepath: Optional[Path] = None) -> Path:
         """Save processing log to Excel file.
