@@ -721,3 +721,8 @@ class MovementCycle(AudioProcessing):
             "Sync QC Fail": self.sync_qc_fail,
         })
         return result
+
+
+# Type alias for backward compatibility
+# MovementCycles was merged into Synchronization per Issue #69
+MovementCycles = Synchronization
