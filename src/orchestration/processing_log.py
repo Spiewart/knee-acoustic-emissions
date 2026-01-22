@@ -24,12 +24,9 @@ from src.metadata import (
     AudioProcessing,
     BiomechanicsImport,
     MovementCycle,
+    MovementCycles,
     Synchronization,
 )
-
-# Type alias for backward compatibility during refactoring
-# MovementCycles was merged into Synchronization per Issue #69
-MovementCycles = Synchronization
 from src.qc_versions import (
     get_audio_qc_version,
     get_biomech_qc_version,
@@ -56,16 +53,11 @@ class ManeuverProcessingLog:
     audio_record: Optional[AudioProcessing] = None
     biomechanics_record: Optional[BiomechanicsImport] = None
     synchronization_records: List[Synchronization] = field(default_factory=list)
-    # Note: movement_cycles info is now part of Synchronization records
+    movement_cycles_records: List[MovementCycles] = field(default_factory=list)
 
     # Overall metadata
     log_created: Optional[datetime] = None
     log_updated: Optional[datetime] = None
-    
-    @property
-    def movement_cycles_records(self) -> List[Synchronization]:
-        """Backward compatibility property - movement cycles are now part of synchronization records."""
-        return self.synchronization_records
 
     def update_audio_record(self, record: AudioProcessing) -> None:
         """Update audio processing record."""
@@ -78,10 +70,7 @@ class ManeuverProcessingLog:
         self.log_updated = datetime.now()
 
     def add_synchronization_record(self, record: Synchronization) -> None:
-        """Add or update a synchronization record.
-        
-        Note: Synchronization records now include movement cycle extraction info.
-        """
+        """Add or update a synchronization record."""
         # Check if we already have a record for this file
         for i, existing in enumerate(self.synchronization_records):
             if existing.sync_file_name == record.sync_file_name:
@@ -92,14 +81,30 @@ class ManeuverProcessingLog:
         # New record
         self.synchronization_records.append(record)
         self.log_updated = datetime.now()
-    
-    def add_movement_cycles_record(self, record: Synchronization) -> None:
-        """Add or update a movement cycles record.
-        
-        Backward compatibility method - now just calls add_synchronization_record
-        since MovementCycles was merged into Synchronization.
-        """
-        self.add_synchronization_record(record)
+
+    def add_movement_cycles_record(self, record: MovementCycles) -> None:
+        """Add or update a movement cycles record."""
+        # Normalize names so re-processing replaces existing rows even if
+        # extensions differ (e.g., "file.pkl" vs "file").
+        def _norm(name: str) -> str:
+            return Path(str(name).strip()).stem.lower()
+
+        incoming = _norm(record.sync_file_name)
+        for i, existing in enumerate(self.movement_cycles_records):
+            if _norm(existing.sync_file_name) == incoming:
+                record.sync_file_name = existing.sync_file_name  # preserve original label
+                self.movement_cycles_records[i] = record
+                self.log_updated = datetime.now()
+                return
+
+        # New record
+        self.movement_cycles_records.append(record)
+        # Dedupe by normalized sync file name, keep the latest
+        seen: dict[str, MovementCycles] = {}
+        for rec in self.movement_cycles_records:
+            seen[_norm(rec.sync_file_name)] = rec
+        self.movement_cycles_records = list(seen.values())
+        self.log_updated = datetime.now()
 
     def save_to_excel(self, filepath: Optional[Path] = None) -> Path:
         """Save processing log to Excel file.
@@ -130,7 +135,7 @@ class ManeuverProcessingLog:
             "Biomechanics Imported": [self.biomechanics_record is not None and self.biomechanics_record.processing_status == "success"],
             "Num Synced Files": [len(self.synchronization_records)],
             "Num Movement Cycles": [
-                sum(rec.total_cycles_extracted for rec in self.synchronization_records)
+                sum(rec.total_cycles_extracted for rec in self.movement_cycles_records)
             ],
         }
         sheets["Summary"] = pd.DataFrame(summary_data)
@@ -147,20 +152,108 @@ class ManeuverProcessingLog:
         else:
             sheets["Biomechanics"] = pd.DataFrame([{"Note": "No biomechanics import recorded"}])
 
-        # Synchronization and Movement Cycles sheet (merged)
+        # Synchronization sheet
         if self.synchronization_records:
             sync_data = [rec.to_dict() for rec in self.synchronization_records]
             sheets["Synchronization"] = pd.DataFrame(sync_data)
         else:
             sheets["Synchronization"] = pd.DataFrame([{"Note": "No synchronization recorded"}])
 
-        # Use per-cycle details from synchronization records
+        # Movement cycles sheet
+        if self.movement_cycles_records:
+            cycles_data = [rec.to_dict() for rec in self.movement_cycles_records]
+            sheets["Movement Cycles"] = pd.DataFrame(cycles_data)
+        else:
+            sheets["Movement Cycles"] = pd.DataFrame([{"Note": "No movement cycles recorded"}])
+
+        # Regenerate per-cycle details from disk for all movement cycle records
+        # This ensures all passes are included even if per_cycle_details were not
+        # persisted in memory across save/load cycles
         details_rows: list[Dict[str, Any]] = []
-        for rec in self.synchronization_records:
-            # Use the per_cycle_details embedded in the record
-            if rec.per_cycle_details:
-                for cycle in rec.per_cycle_details:
-                    details_rows.append(cycle.to_dict())
+        for rec in self.movement_cycles_records:
+            # Try to regenerate from disk if output_directory exists
+            if rec.output_directory and Path(rec.output_directory).exists():
+                try:
+                    output_dir = Path(rec.output_directory)
+                    all_pkls = sorted(output_dir.rglob("*.pkl"))
+                    cycle_pkls = [p for p in all_pkls if p.name.startswith(f"{rec.sync_file_name}_")]
+
+                    for pkl_path in cycle_pkls:
+                        try:
+                            cycle_df = pd.read_pickle(pkl_path)
+                            is_outlier = "outlier" in pkl_path.name.lower()
+
+                            # Extract cycle metrics
+                            tt_exists = "tt" in cycle_df.columns
+                            if tt_exists:
+                                tt_seconds = pd.to_numeric(cycle_df["tt"], errors="coerce").to_numpy()
+                                tt_seconds = tt_seconds[~np.isnan(tt_seconds)]
+                                if tt_seconds.size > 0:
+                                    start_s = float(tt_seconds[0])
+                                    end_s = float(tt_seconds[-1])
+                                    duration_s = float(end_s - start_s)
+                                else:
+                                    start_s = end_s = duration_s = 0.0
+                                    tt_exists = False
+                            else:
+                                start_s = end_s = duration_s = 0.0
+
+                            # Calculate AUC (only if we have valid time data)
+                            auc_total = 0.0
+                            if tt_exists:
+                                rel_tt = tt_seconds - start_s
+                                ch_names = [c for c in ["f_ch1", "f_ch2", "f_ch3", "f_ch4"] if c in cycle_df.columns]
+                                if not ch_names:
+                                    ch_names = [c for c in ["ch1", "ch2", "ch3", "ch4"] if c in cycle_df.columns]
+                                for c in ch_names:
+                                    y = np.abs(pd.to_numeric(cycle_df[c], errors="coerce").to_numpy())
+                                    try:
+                                        auc_total += np.trapezoid(y, rel_tt)
+                                    except AttributeError:
+                                        with np.errstate(all='ignore'):
+                                            auc_total += np.trapz(y, rel_tt)
+
+                            # Calculate channel RMS
+                            ch_rms = {}
+                            for n in [1, 2, 3, 4]:
+                                col = f"f_ch{n}" if f"f_ch{n}" in cycle_df.columns else (f"ch{n}" if f"ch{n}" in cycle_df.columns else None)
+                                if col:
+                                    arr = pd.to_numeric(cycle_df[col], errors="coerce").to_numpy()
+                                    ch_rms[n] = float(np.sqrt(np.nanmean(arr ** 2)))
+
+                            # Build row with context
+                            row = {
+                                "Study ID": self.study_id,
+                                "Knee Side": self.knee_side,
+                                "Maneuver": self.maneuver,
+                                "Sync File": rec.sync_file_name,
+                                "Pass Number": rec.pass_number,
+                                "Speed": rec.speed,
+                                "Cycle File": str(pkl_path),
+                                "Is Outlier": is_outlier,
+                                "Start (s)": start_s,
+                                "End (s)": end_s,
+                                "Duration (s)": duration_s,
+                                "Acoustic AUC": auc_total,
+                                "Ch1 RMS": ch_rms.get(1),
+                                "Ch2 RMS": ch_rms.get(2),
+                                "Ch3 RMS": ch_rms.get(3),
+                                "Ch4 RMS": ch_rms.get(4),
+                            }
+                            details_rows.append(row)
+                        except Exception as e:
+                            logger.warning(f"Failed to load cycle from {pkl_path}: {e}")
+                            continue
+                except Exception as e:
+                    logger.warning(f"Failed to regenerate cycles for {rec.sync_file_name}: {e}")
+            else:
+                # Fallback to in-memory per_cycle_details if available
+                for cycle_record in getattr(rec, "per_cycle_details", []) or []:
+                    row = cycle_record.to_dict()
+                    row["Study ID"] = self.study_id
+                    row["Knee Side"] = self.knee_side
+                    row["Maneuver"] = self.maneuver
+                    details_rows.append(row)
 
         if details_rows:
             sheets["Cycle Details"] = pd.DataFrame(details_rows)
@@ -307,8 +400,34 @@ class ManeuverProcessingLog:
             except Exception as e:
                 logger.warning(f"Could not load synchronization records: {e}")
 
-            # Note: Movement cycles are now part of Synchronization records (merged)
-            # Legacy "Movement Cycles" sheet is no longer used
+            # Load movement cycles records if present
+            try:
+                cycles_df = pd.read_excel(filepath, sheet_name="Movement Cycles")
+                if len(cycles_df) > 0 and "Source Sync File" in cycles_df.columns:
+                    for _, row in cycles_df.iterrows():
+                        record = MovementCycles(
+                            sync_file_name=row.get("Source Sync File", ""),
+                            pass_number=int(row["Pass Number"]) if pd.notna(row.get("Pass Number")) else None,
+                            speed=str(row.get("Speed")) if pd.notna(row.get("Speed")) else None,
+                            knee_side=str(row.get("Knee Side")) if pd.notna(row.get("Knee Side")) else None,
+                            processing_date=pd.to_datetime(row["Processing Date"]) if pd.notna(row.get("Processing Date")) else None,
+                            processing_status=row.get("Status", "not_processed"),
+                            error_message=str(row.get("Error")) if pd.notna(row.get("Error")) else None,
+                            total_cycles_extracted=int(row.get("Total Cycles", 0)),
+                            clean_cycles=int(row.get("Clean Cycles", 0)),
+                            outlier_cycles=int(row.get("Outlier Cycles", 0)),
+                            qc_acoustic_threshold=row.get("Acoustic Threshold") if pd.notna(row.get("Acoustic Threshold")) else None,
+                            output_directory=str(row.get("Output Directory")) if pd.notna(row.get("Output Directory")) else None,
+                            plots_created=bool(row.get("Plots Created", False)),
+                            mean_cycle_duration_s=float(row.get("Mean Duration (s)")) if pd.notna(row.get("Mean Duration (s)")) else None,
+                            median_cycle_duration_s=float(row.get("Median Duration (s)")) if pd.notna(row.get("Median Duration (s)")) else None,
+                            min_cycle_duration_s=float(row.get("Min Duration (s)")) if pd.notna(row.get("Min Duration (s)")) else None,
+                            max_cycle_duration_s=float(row.get("Max Duration (s)")) if pd.notna(row.get("Max Duration (s)")) else None,
+                            mean_acoustic_auc=float(row.get("Mean Acoustic AUC")) if pd.notna(row.get("Mean Acoustic AUC")) else None,
+                        )
+                        log.movement_cycles_records.append(record)
+            except Exception as e:
+                logger.warning(f"Could not load movement cycles records: {e}")
 
             # Note: Do NOT load Cycle Details from Excel. Cycle details are always regenerated
             # from cycle pickle files during the cycles stage to ensure proper metadata
@@ -402,7 +521,7 @@ class KneeProcessingLog:
             "Audio Processed": maneuver_log.audio_record is not None and maneuver_log.audio_record.processing_status == "success",
             "Biomechanics Imported": maneuver_log.biomechanics_record is not None and maneuver_log.biomechanics_record.processing_status == "success",
             "Num Synced Files": len(maneuver_log.synchronization_records),
-            "Num Movement Cycles": sum(rec.total_cycles_extracted for rec in maneuver_log.synchronization_records),
+            "Num Movement Cycles": sum(rec.total_cycles_extracted for rec in maneuver_log.movement_cycles_records),
         }
 
         # Add stomp time details from synchronization records
@@ -871,20 +990,19 @@ def create_sync_record_from_data(
         # Bio stomp remains at its original position (synced timeline is in bio coords)
         aligned_bio_stomp = bio_stomp_s
 
-    # Build data dictionary with correct field names for Synchronization class
+    # Build data dictionary
     data = {
         "sync_file_name": sync_file_name,
         "pass_number": pass_number,
         "speed": speed,
         "processing_date": datetime.now(),
-        # Convert to timedelta for SynchronizationMetadata fields
-        "audio_sync_time": pd.Timedelta(seconds=audio_stomp_s) if audio_stomp_s is not None else None,
-        "bio_left_sync_time": pd.Timedelta(seconds=bio_left_s) if bio_left_s is not None else None,
-        "bio_right_sync_time": pd.Timedelta(seconds=bio_right_s) if bio_right_s is not None else None,
-        "knee": knee_side,
-        "sync_offset": pd.Timedelta(seconds=stomp_offset) if stomp_offset is not None else None,
-        "aligned_audio_sync_time": pd.Timedelta(seconds=aligned_audio_stomp) if aligned_audio_stomp is not None else None,
-        "aligned_bio_sync_time": pd.Timedelta(seconds=aligned_bio_stomp) if aligned_bio_stomp is not None else None,
+        "audio_stomp_time": audio_stomp_s,
+        "bio_left_stomp_time": bio_left_s,
+        "bio_right_stomp_time": bio_right_s,
+        "knee_side": knee_side,
+        "stomp_offset": stomp_offset,
+        "aligned_audio_stomp_time": aligned_audio_stomp,
+        "aligned_bio_stomp_time": aligned_bio_stomp,
     }
 
     # Populate detection method details if provided
@@ -895,22 +1013,15 @@ def create_sync_record_from_data(
 
     if detection_results:
         try:
-            # Convert detection times to timedeltas for SynchronizationMetadata
-            consensus_t = _to_seconds(detection_results.get("consensus_time"))
-            data["consensus_time"] = pd.Timedelta(seconds=consensus_t) if consensus_t is not None else None
-            
+            data["consensus_time"] = _to_seconds(detection_results.get("consensus_time"))
             # Extract which methods contributed to consensus
             consensus_methods_list = detection_results.get("consensus_methods", [])
             if consensus_methods_list:
                 data["consensus_methods"] = ", ".join(consensus_methods_list)
 
-            rms_t = _to_seconds(detection_results.get("rms_time"))
-            onset_t = _to_seconds(detection_results.get("onset_time"))
-            freq_t = _to_seconds(detection_results.get("freq_time"))
-            
-            data["rms_time"] = pd.Timedelta(seconds=rms_t) if rms_t is not None else None
-            data["onset_time"] = pd.Timedelta(seconds=onset_t) if onset_t is not None else None
-            data["freq_time"] = pd.Timedelta(seconds=freq_t) if freq_t is not None else None
+            data["rms_time"] = _to_seconds(detection_results.get("rms_time"))
+            data["onset_time"] = _to_seconds(detection_results.get("onset_time"))
+            data["freq_time"] = _to_seconds(detection_results.get("freq_time"))
 
             # Energies/magnitudes are data-derived, not metadata
             rms_energy = (
@@ -931,11 +1042,11 @@ def create_sync_record_from_data(
             method_times_used = []
             if consensus_methods_list:
                 if "rms" in consensus_methods_list and data.get("rms_time") is not None:
-                    method_times_used.append(rms_t)
+                    method_times_used.append(data["rms_time"])
                 if "onset" in consensus_methods_list and data.get("onset_time") is not None:
-                    method_times_used.append(onset_t)
+                    method_times_used.append(data["onset_time"])
                 if "freq" in consensus_methods_list and data.get("freq_time") is not None:
-                    method_times_used.append(freq_t)
+                    method_times_used.append(data["freq_time"])
 
             if method_times_used:
                 data["method_agreement_span"] = float(max(method_times_used) - min(method_times_used))
@@ -957,14 +1068,15 @@ def create_sync_record_from_data(
         return Synchronization(**data)
 
     data["processing_status"] = "success"
+    # num_synced_samples is pure data-derived, duration_seconds is metadata
+    data["num_synced_samples"] = len(synced_df)
 
-    # Calculate sync_duration from synced dataframe
     if "tt" in synced_df.columns and len(synced_df) > 0:
         duration = synced_df["tt"].iloc[-1] - synced_df["tt"].iloc[0]
         if hasattr(duration, 'total_seconds'):
-            data["sync_duration"] = duration
+            data["duration_seconds"] = duration.total_seconds()
         else:
-            data["sync_duration"] = pd.Timedelta(seconds=float(duration))
+            data["duration_seconds"] = float(duration)
 
     # Include all data-derived fields in unified Synchronization class
     data["rms_energy"] = rms_energy
@@ -986,10 +1098,8 @@ def create_cycles_record_from_data(
     audio_record: Optional[AudioProcessing] = None,
     biomech_record: Optional[BiomechanicsImport] = None,
     sync_record: Optional[Synchronization] = None,
-) -> Synchronization:
-    """Create a Synchronization record with cycle extraction data.
-    
-    Note: Synchronization now includes movement cycle extraction fields (merged from MovementCycles).
+) -> MovementCycles:
+    """Create a MovementCyclesRecord from cycle extraction data.
 
     Args:
         sync_file_name: Name of the source sync file
@@ -1001,10 +1111,10 @@ def create_cycles_record_from_data(
         error: Exception if extraction failed
         audio_record: Optional audio processing record for context
         biomech_record: Optional biomechanics import record for context
-        sync_record: Optional synchronization record for context (will be updated with cycle info)
+        sync_record: Optional synchronization record for context
 
     Returns:
-        Synchronization instance with cycle extraction data
+        MovementCyclesRecord instance
     """
     def _infer_pass_number_from_name(name: str) -> Optional[int]:
         match = re.search(r"Pass(\d{2,4})", name, re.IGNORECASE)
