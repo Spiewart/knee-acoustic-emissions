@@ -143,6 +143,7 @@ class AcousticsFile(BiomechanicsMetadata):
     
     # Audio characteristics
     sample_rate: float = 46875.0
+    num_channels: int = 4
     
     # Microphone positions
     mic_1_position: Literal["IPM", "IPL", "SPM", "SPL"]  # I=infra, S=supra, P=patellar, M=medial, L=lateral
@@ -172,6 +173,14 @@ class AcousticsFile(BiomechanicsMetadata):
         """Validate sample rate is positive."""
         if value <= 0:
             raise ValueError("sample_rate must be positive")
+        return value
+    
+    @field_validator("num_channels")
+    @classmethod
+    def validate_num_channels(cls, value: int) -> int:
+        """Validate number of channels."""
+        if value not in [1, 2, 3, 4]:
+            raise ValueError(f"num_channels must be 1-4, got {value}")
         return value
     
     @field_validator("file_size_mb")
@@ -204,6 +213,7 @@ class AcousticsFile(BiomechanicsMetadata):
             "Knee": self.knee,
             "Maneuver": self.maneuver,
             "Sample Rate (Hz)": self.sample_rate,
+            "Channels": self.num_channels,
             "Mic 1 Position": self.mic_1_position,
             "Mic 2 Position": self.mic_2_position,
             "Mic 3 Position": self.mic_3_position,
@@ -339,7 +349,6 @@ class AudioProcessing(AcousticsFile):
     error_message: Optional[str] = None
 
     # Audio file characteristics
-    num_channels: int = 4
     duration_seconds: Optional[float] = None
 
     # QC version tracking
@@ -396,14 +405,6 @@ class AudioProcessing(AcousticsFile):
             raise ValueError("duration_seconds must be non-negative")
         return value
 
-    @field_validator("num_channels")
-    @classmethod
-    def validate_num_channels(cls, value: int) -> int:
-        """Validate number of channels."""
-        if value not in [1, 2, 3, 4]:
-            raise ValueError(f"num_channels must be 1-4, got {value}")
-        return value
-
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for Excel export."""
         result = super().to_dict()
@@ -411,7 +412,6 @@ class AudioProcessing(AcousticsFile):
             "Processing Date": self.processing_date,
             "Status": self.processing_status,
             "Error": self.error_message,
-            "Channels": self.num_channels,
             "Duration (s)": self.duration_seconds,
             "Audio QC Version": self.audio_qc_version,
             # QC fail segments
