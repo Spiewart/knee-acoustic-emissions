@@ -346,7 +346,7 @@ class ManeuverProcessingLog:
                         processing_date=pd.to_datetime(row["Processing Date"]) if pd.notna(row.get("Processing Date")) else None,
                         processing_status=row.get("Status", "not_processed"),
                         error_message=str(row.get("Error")) if pd.notna(row.get("Error")) else None,
-                        num_recordings=int(row.get("Num Recordings", 0)),
+                        num_sub_recordings=int(row.get("Num Sub-Recordings", row.get("Num Recordings", 0))),
                         num_passes=int(row.get("Num Passes", 0)),
                         duration_seconds=row.get("Duration (s)") if pd.notna(row.get("Duration (s)")) else None,
                         num_data_points=int(row["Num Data Points"]) if pd.notna(row.get("Num Data Points")) else None,
@@ -412,9 +412,9 @@ class ManeuverProcessingLog:
                             processing_date=pd.to_datetime(row["Processing Date"]) if pd.notna(row.get("Processing Date")) else None,
                             processing_status=row.get("Status", "not_processed"),
                             error_message=str(row.get("Error")) if pd.notna(row.get("Error")) else None,
-                            total_cycles_extracted=int(row.get("Total Cycles", 0)),
-                            clean_cycles=int(row.get("Clean Cycles", 0)),
-                            outlier_cycles=int(row.get("Outlier Cycles", 0)),
+                            total_cycles_extracted=int(row.get("Total Cycles")) if pd.notna(row.get("Total Cycles")) else 0,
+                            clean_cycles=int(row.get("Clean Cycles")) if pd.notna(row.get("Clean Cycles")) else 0,
+                            outlier_cycles=int(row.get("Outlier Cycles")) if pd.notna(row.get("Outlier Cycles")) else 0,
                             qc_acoustic_threshold=row.get("Acoustic Threshold") if pd.notna(row.get("Acoustic Threshold")) else None,
                             output_directory=str(row.get("Output Directory")) if pd.notna(row.get("Output Directory")) else None,
                             plots_created=bool(row.get("Plots Created", False)),
@@ -794,7 +794,7 @@ def create_audio_record_from_data(
         for field in ['study', 'study_id', 'recording_date', 'recording_time', 'knee', 'maneuver',
                       'mic_1_position', 'mic_2_position', 'mic_3_position', 'mic_4_position',
                       'file_size_mb', 'linked_biomechanics', 'biomechanics_file', 'biomechanics_type',
-                      'sync_method', 'biomechanics_sample_rate', 'biomechanics_notes']:
+                      'sync_method', 'biomechanics_sample_rate', 'biomechanics_notes', 'num_channels']:
             if field in metadata:
                 data[field] = metadata[field]
         
@@ -871,6 +871,20 @@ def create_audio_record_from_data(
 
     # Calculate statistics from DataFrame
     if audio_df is not None:
+        # Infer num_channels from audio data
+        # Check which channel columns are present in the data
+        channels_present = []
+        for ch_num in range(1, 5):
+            ch_name = f"ch{ch_num}"
+            if ch_name in audio_df.columns:
+                channels_present.append(ch_num)
+        
+        if channels_present:
+            data["num_channels"] = len(channels_present)
+        elif "num_channels" not in data:
+            # If no channel columns found and not in metadata, raise error
+            raise ValueError("Cannot determine num_channels: no channel data found in audio_df")
+        
         # Duration (metadata field - used for QC, represents recording metadata)
         if "tt" in audio_df.columns:
             dur = audio_df["tt"].iloc[-1] - audio_df["tt"].iloc[0]
@@ -952,7 +966,10 @@ def create_biomechanics_record_from_data(
         return BiomechanicsImport(**data)
 
     data["processing_status"] = "success"
-    data["num_recordings"] = len(recordings)
+    # Number of sub-recordings: usable biomechanics segments that meet quality criteria
+    # For walking: passes with sufficient clean heel strikes
+    # For sts/fe: typically 1 recording
+    data["num_sub_recordings"] = len(recordings)
 
     if recordings:
         # Count passes (for walking)

@@ -156,7 +156,7 @@ class AcousticsFile(BiomechanicsMetadata):
     
     # Audio characteristics
     sample_rate: float = 46875.0
-    num_channels: int = 4
+    num_channels: int  # Must be inferred from audio file metadata or data
     
     # Microphone positions
     mic_1_position: Literal["IPM", "IPL", "SPM", "SPL"]  # I=infra, S=supra, P=patellar, M=medial, L=lateral
@@ -489,15 +489,50 @@ class BiomechanicsImport(StudyMetadata):
     error_message: Optional[str] = None
 
     # Import statistics
-    num_recordings: int = 0
-    num_passes: int = 0  # For walking maneuvers
+    # Number of sub-recordings included in the biomechanics dataset.
+    # Sub-recordings are segments of the recording that meet quality criteria for inclusion.
+    # For sit-to-stand (sts) and flexion-extension (fe) maneuvers: Must equal 1
+    # For walking (walk) maneuvers: Must be >= 1 (represents passes with sufficient clean heel strikes)
+    # This field tracks how many biomechanics data segments are usable for analysis.
+    num_sub_recordings: int
+    
+    # Number of passes in the biomechanics data. Only relevant for walking maneuvers.
+    # For walking: Total number of passes attempted (some may not have sufficient heel strikes)
+    # For sit-to-stand and flexion-extension: Should be 0 (not applicable)
+    # When biomechanics data contains pass information, this must be populated from processing.
+    num_passes: int = 0
 
     # Data characteristics (required)
     duration_seconds: float  # Total duration of entire dataset (all passes)
     sample_rate: float
     num_data_points: int  # Total data points across entire dataset (all passes)
 
-    @field_validator("num_recordings", "num_passes", "num_data_points")
+    @field_validator("num_sub_recordings")
+    @classmethod
+    def validate_num_sub_recordings(cls, value: int, info) -> int:
+        """Validate num_sub_recordings based on maneuver type.
+        
+        For sit-to-stand and flexion-extension maneuvers, num_sub_recordings must equal 1.
+        For walking maneuvers, num_sub_recordings must be >= 1.
+        
+        The number of sub-recordings represents usable biomechanics data segments that
+        meet quality criteria (e.g., sufficient heel strikes for walking).
+        """
+        if value < 0:
+            raise ValueError("num_sub_recordings must be non-negative")
+        
+        # Get maneuver from parent class data if available
+        maneuver = info.data.get("maneuver")
+        if maneuver in ["sts", "fe"]:
+            if value != 1:
+                raise ValueError(f"num_sub_recordings must equal 1 for {maneuver} maneuvers, got {value}")
+        elif maneuver == "walk":
+            if value < 1:
+                raise ValueError(f"num_sub_recordings must be >= 1 for walking maneuvers, got {value}")
+        
+        return value
+    
+    @field_validator("num_passes", "num_data_points")
     @classmethod
     def validate_counts(cls, value: int) -> int:
         """Validate counts are non-negative."""
@@ -530,7 +565,7 @@ class BiomechanicsImport(StudyMetadata):
             "Processing Date": self.processing_date,
             "Status": self.processing_status,
             "Error": self.error_message,
-            "Num Recordings": self.num_recordings,
+            "Num Sub-Recordings": self.num_sub_recordings,
             "Num Passes": self.num_passes,
             "Duration (s)": self.duration_seconds,
             "Num Data Points": self.num_data_points,
@@ -547,7 +582,13 @@ class Synchronization(SynchronizationMetadata):
     Merges synchronization tracking with movement cycle extraction (previously MovementCycles).
     Tracks synchronization process, alignment details, and cycle extraction results.
     Fields use snake_case for direct mapping to database columns and Excel headers.
+    
+    Note: This class is used for audio-biomechanics synchronization, so linked_biomechanics
+    is required to be True (biomechanics data must be associated).
     """
+    
+    # Override linked_biomechanics from parent to make it required True for synchronization
+    linked_biomechanics: Literal[True] = True  # Must be True for synchronization
 
     # File identification
     sync_file_name: str
@@ -562,15 +603,23 @@ class Synchronization(SynchronizationMetadata):
     # Synchronized data characteristics (required)
     sync_duration: timedelta  # Total time of overlapped recording/biomechanics
 
-    # Movement cycle extraction results
-    total_cycles_extracted: int = 0
-    clean_cycles: int = 0
-    outlier_cycles: int = 0
+    # Movement cycle extraction results (required - must be populated from processing)
+    # These track the results of cycle extraction and QC on the synchronized data.
+    # total_cycles_extracted: All cycles detected in the synchronized data
+    # clean_cycles: Cycles that passed QC checks (not outliers)
+    # outlier_cycles: Cycles flagged as outliers by QC
+    total_cycles_extracted: int
+    clean_cycles: int
+    outlier_cycles: int
 
     # QC parameters
     qc_acoustic_threshold: Optional[float] = None
 
-    # Per-cycle details list (for Cycle Details sheet in Excel) - required
+    # Per-cycle details list (for Cycle Details sheet in Excel)
+    # Populated from cycle extraction processing. Contains detailed information
+    # about each individual movement cycle extracted from the synchronized data.
+    # This list should not be empty after successful cycle extraction and is not
+    # included in the main Excel export (used for separate Cycle Details sheet).
     per_cycle_details: List['MovementCycle'] = Field(default_factory=list)
 
     # Aggregate statistics (across clean cycles) - required
