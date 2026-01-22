@@ -260,6 +260,26 @@ def _save_or_update_processing_log(
 
         # Update synchronization records if data provided
         if synced_data is not None:
+            # Parse study name and numeric ID from study_id
+            study_id_str = str(study_id).lstrip("#")
+            study_name = "AOA"  # default
+            numeric_id = 1
+            if study_id_str.startswith("AOA"):
+                study_name = "AOA"
+                numeric_id = int(study_id_str[3:]) if len(study_id_str) > 3 else 1
+            elif study_id_str.startswith("preOA"):
+                study_name = "preOA"
+                numeric_id = int(study_id_str[5:]) if len(study_id_str) > 5 else 1
+            elif study_id_str.startswith("SMoCK"):
+                study_name = "SMoCK"
+                numeric_id = int(study_id_str[5:]) if len(study_id_str) > 5 else 1
+            else:
+                # Try to parse as just a number
+                try:
+                    numeric_id = int(study_id_str)
+                except ValueError:
+                    numeric_id = 1
+            
             for item in synced_data:
                 # Support both legacy 3-tuple and new 4-tuple with detection_results
                 output_path, synced_df, stomp_tuple = item
@@ -294,6 +314,12 @@ def _save_or_update_processing_log(
                     pass_number=pass_number,
                     speed=speed,
                     detection_results=detection_results,
+                    # Additional context for required fields
+                    audio_record=audio_record if audio_df is not None else None,
+                    biomech_record=bio_record if biomechanics_recordings is not None else None,
+                    metadata=audio_metadata,
+                    study=study_name,
+                    study_id=numeric_id,
                 )
                 log.add_synchronization_record(sync_record)
 
