@@ -1158,8 +1158,12 @@ def plot_stomp_detection(
 ) -> None:
     """Create a visualization of stomp detection with overview and per-channel plots.
 
-    Top row: Full recording RMS analysis, synchronized window, RMS zoom, and timing summary.
-    Bottom row: Per-channel voltage and RMS energy (dual y-axes).
+    Top row: 
+      - Left: Full recording RMS energy + knee angle with stomp markers
+      - Middle-Left: Synchronized window with knee angle
+      - Middle-Right: First 30 seconds of raw audio (ch1-4 voltage)
+      - Right: Timing summary
+    Bottom row: Per-channel voltage and RMS energy (dual y-axes) with knee angle overlay.
 
     Saved to the same directory as synchronized data.
 
@@ -1374,35 +1378,29 @@ def plot_stomp_detection(
         lines2, labels2 = ax_left_audio.get_legend_handles_labels()
         ax_left.legend(lines1 + lines2, labels1 + labels2, fontsize=8, loc="upper left")
 
-        # ===== TOP RIGHT PLOT: Zoomed RMS around detected stomp =====
-        # Zoom around selected stomp time
-        zoom_window = 1.5  # seconds around detected stomp
-        zoom_mask = (rms_times >= audio_stomp_s - zoom_window) & (rms_times <= audio_stomp_s + zoom_window)
-        if np.any(zoom_mask):
-            ax_zoom.plot(rms_times[zoom_mask], rms_energies[zoom_mask], 'b-', linewidth=1.5, alpha=0.9, label="RMS Energy (zoom)")
-            ax_zoom.fill_between(rms_times[zoom_mask], 0, rms_energies[zoom_mask], alpha=0.2, color='blue')
-        # Draw selected stomp time as red dashed line
-        ax_zoom.axvline(audio_stomp_s, color="red", linestyle="--", linewidth=2,
-                       label=f"Selected ({audio_stomp_method}) ({audio_stomp_s:.2f}s)")
-        # Add detection method lines if available
-        if detection_results:
-            ax_zoom.axvline(rms_time_s, color="darkred", linestyle="-", linewidth=1.5, alpha=0.6,
-                           label=f"RMS ({rms_time_s:.2f}s)")
-            ax_zoom.axvline(onset_time_s, color="maroon", linestyle=":", linewidth=1.5, alpha=0.6,
-                           label=f"Onset ({onset_time_s:.2f}s)")
-            ax_zoom.axvline(freq_time_s, color="brown", linestyle="-.", linewidth=1.5, alpha=0.6,
-                           label=f"Freq ({freq_time_s:.2f}s)")
-        # Add contralateral peak marker if biomechanics-guided
-        if contra_selected_time_s is not None:
-            ax_zoom.axvline(contra_selected_time_s, color="purple", linestyle="-.", linewidth=2,
-                           label=f"Contra ({contra_selected_time_s:.2f}s)")
-        ax_zoom.axvline(bio_left_s, color="green", linestyle=":", linewidth=2, label=f"Bio Left ({bio_left_s:.2f}s)")
-        ax_zoom.axvline(bio_right_s, color="orange", linestyle=":", linewidth=2, label=f"Bio Right ({bio_right_s:.2f}s)")
-        ax_zoom.set_title("RMS Zoom (±1.5s)", fontsize=12, fontweight="bold")
-        ax_zoom.set_xlabel("Time (seconds)")
-        ax_zoom.set_ylabel("RMS Energy")
+        # ===== TOP RIGHT PLOT: First 30 seconds of raw audio (ch1-4) =====
+        # Plot voltage for all channels over first 30 seconds
+        channel_colors_raw = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728"]  # Blue, orange, green, red
+        first_30s_mask = tt_audio <= min(30.0, tt_audio.max())
+        tt_audio_30s = tt_audio[first_30s_mask]
+        
+        # Downsample for plotting if needed
+        raw_downsample = max(1, len(tt_audio_30s) // max_plot_points)
+        tt_audio_30s_plot = tt_audio_30s[::raw_downsample]
+        
+        for idx, ch in enumerate(channel_names):
+            if ch in audio_channels.columns:
+                ch_voltage_30s = audio_channels[ch].values[first_30s_mask][::raw_downsample]
+                ax_zoom.plot(tt_audio_30s_plot, ch_voltage_30s, 
+                           color=channel_colors_raw[idx], linewidth=0.8, alpha=0.7,
+                           label=ch.upper())
+        
+        ax_zoom.set_title("First 30 Seconds - Raw Audio (Untruncated)", fontsize=12, fontweight="bold")
+        ax_zoom.set_xlabel("Time (seconds)", fontsize=11)
+        ax_zoom.set_ylabel("Voltage", fontsize=11)
         ax_zoom.grid(True, alpha=0.3)
-        ax_zoom.legend(fontsize=8, loc="upper left")
+        ax_zoom.legend(fontsize=8, loc="upper right")
+        ax_zoom.set_xlim(0, min(30.0, tt_audio.max()))
 
         # ===== RIGHT PLOT: Synchronized/clipped data =====
         # Use filtered channels if available, otherwise use raw
@@ -1663,7 +1661,7 @@ def plot_stomp_detection(
                     ax_ch_bio.spines['right'].set_position(('outward', 60))
                     ax_ch_bio.plot(tt_knee_zoom, knee_zoom, 'k-', linewidth=1.0, alpha=0.3, label="Knee Angle")
                     ax_ch_bio.set_ylabel("Knee Angle (°)", fontsize=8, color="black", alpha=0.5)
-                    ax_ch_bio.tick_params(axis="y", labelcolor="black", labelsize=7, alpha=0.5)
+                    ax_ch_bio.tick_params(axis="y", labelcolor="black", labelsize=7)
 
             # Formatting
             ax_ch.set_title(f"{ch.upper()}", fontsize=11, fontweight="bold")
