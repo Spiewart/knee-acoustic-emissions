@@ -184,7 +184,9 @@ class ManeuverProcessingLog:
         details_rows: list[Dict[str, Any]] = []
         for rec in self.movement_cycles_records:
             # Try to regenerate from disk if output_directory exists
-            if rec.output_directory and Path(rec.output_directory).exists():
+            # Note: output_directory was removed during metadata refactoring (#55)
+            # Keep this code for backward compatibility with old logs
+            if hasattr(rec, 'output_directory') and rec.output_directory and Path(rec.output_directory).exists():
                 try:
                     output_dir = Path(rec.output_directory)
                     all_pkls = sorted(output_dir.rglob("*.pkl"))
