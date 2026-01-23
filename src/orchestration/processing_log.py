@@ -1627,6 +1627,50 @@ def create_cycles_record_from_data(
         data["outlier_cycles"] = len(outlier_cycles)
         data["total_cycles_extracted"] = len(clean_cycles) + len(outlier_cycles)
 
+    # Helper to get all AudioProcessing QC fields with default values
+    def _get_audio_processing_qc_defaults() -> Dict[str, Any]:
+        """Return all AudioProcessing QC fields with default values.
+        
+        These fields are required by MovementCycle (which inherits from AudioProcessing)
+        but not present in Synchronization records.
+        """
+        return {
+            # QC type fields
+            'qc_artifact_type': None,
+            'qc_artifact_type_ch1': None,
+            'qc_artifact_type_ch2': None,
+            'qc_artifact_type_ch3': None,
+            'qc_artifact_type_ch4': None,
+            # QC fail segment fields
+            'qc_fail_segments': [],
+            'qc_fail_segments_ch1': [],
+            'qc_fail_segments_ch2': [],
+            'qc_fail_segments_ch3': [],
+            'qc_fail_segments_ch4': [],
+            # QC signal dropout fields
+            'qc_signal_dropout': False,
+            'qc_signal_dropout_segments': [],
+            'qc_signal_dropout_ch1': False,
+            'qc_signal_dropout_segments_ch1': [],
+            'qc_signal_dropout_ch2': False,
+            'qc_signal_dropout_segments_ch2': [],
+            'qc_signal_dropout_ch3': False,
+            'qc_signal_dropout_segments_ch3': [],
+            'qc_signal_dropout_ch4': False,
+            'qc_signal_dropout_segments_ch4': [],
+            # QC artifact fields
+            'qc_artifact': False,
+            'qc_artifact_segments': [],
+            'qc_artifact_ch1': False,
+            'qc_artifact_segments_ch1': [],
+            'qc_artifact_ch2': False,
+            'qc_artifact_segments_ch2': [],
+            'qc_artifact_ch3': False,
+            'qc_artifact_segments_ch3': [],
+            'qc_artifact_ch4': False,
+            'qc_artifact_segments_ch4': [],
+        }
+
     # Helper to compute duration (s) and acoustic AUC for one cycle
     def _cycle_metrics(cycle_df: pd.DataFrame) -> tuple[float, float, float, float]:
         """Compute start/end (absolute within synced file), duration, and AUC."""
@@ -1704,14 +1748,7 @@ def create_cycles_record_from_data(
                 
                 # Add missing AudioProcessing QC type fields if sync_record doesn't have them
                 # (Synchronization doesn't inherit from AudioProcessing, but MovementCycle does)
-                missing_qc_fields = {
-                    'qc_artifact_type': None,
-                    'qc_artifact_type_ch1': None,
-                    'qc_artifact_type_ch2': None,
-                    'qc_artifact_type_ch3': None,
-                    'qc_artifact_type_ch4': None,
-                }
-                for field_name, default_value in missing_qc_fields.items():
+                for field_name, default_value in _get_audio_processing_qc_defaults().items():
                     if field_name not in cycle_fields:
                         cycle_fields[field_name] = default_value
                 
@@ -1748,31 +1785,7 @@ def create_cycles_record_from_data(
                     'mic_3_position': 'SPM',
                     'mic_4_position': 'SPL',
                     'processing_date': now,
-                    'qc_fail_segments': [],
-                    'qc_fail_segments_ch1': [],
-                    'qc_fail_segments_ch2': [],
-                    'qc_fail_segments_ch3': [],
-                    'qc_fail_segments_ch4': [],
-                    'qc_signal_dropout': False,
-                    'qc_signal_dropout_segments': [],
-                    'qc_signal_dropout_ch1': False,
-                    'qc_signal_dropout_segments_ch1': [],
-                    'qc_signal_dropout_ch2': False,
-                    'qc_signal_dropout_segments_ch2': [],
-                    'qc_signal_dropout_ch3': False,
-                    'qc_signal_dropout_segments_ch3': [],
-                    'qc_signal_dropout_ch4': False,
-                    'qc_signal_dropout_segments_ch4': [],
-                    'qc_artifact': False,
-                    'qc_artifact_segments': [],
-                    'qc_artifact_ch1': False,
-                    'qc_artifact_segments_ch1': [],
-                    'qc_artifact_ch2': False,
-                    'qc_artifact_segments_ch2': [],
-                    'qc_artifact_ch3': False,
-                    'qc_artifact_segments_ch3': [],
-                    'qc_artifact_ch4': False,
-                    'qc_artifact_segments_ch4': [],
+                    **_get_audio_processing_qc_defaults(),
                 }
 
             # Create MovementCycle with all required fields
@@ -1833,14 +1846,7 @@ def create_cycles_record_from_data(
                 
                 # Add missing AudioProcessing QC type fields if sync_record doesn't have them
                 # (Synchronization doesn't inherit from AudioProcessing, but MovementCycle does)
-                missing_qc_fields = {
-                    'qc_artifact_type': None,
-                    'qc_artifact_type_ch1': None,
-                    'qc_artifact_type_ch2': None,
-                    'qc_artifact_type_ch3': None,
-                    'qc_artifact_type_ch4': None,
-                }
-                for field_name, default_value in missing_qc_fields.items():
+                for field_name, default_value in _get_audio_processing_qc_defaults().items():
                     if field_name not in cycle_fields:
                         cycle_fields[field_name] = default_value
                 
@@ -1877,31 +1883,7 @@ def create_cycles_record_from_data(
                     'mic_3_position': 'SPM',
                     'mic_4_position': 'SPL',
                     'processing_date': now,
-                    'qc_fail_segments': [],
-                    'qc_fail_segments_ch1': [],
-                    'qc_fail_segments_ch2': [],
-                    'qc_fail_segments_ch3': [],
-                    'qc_fail_segments_ch4': [],
-                    'qc_signal_dropout': False,
-                    'qc_signal_dropout_segments': [],
-                    'qc_signal_dropout_ch1': False,
-                    'qc_signal_dropout_segments_ch1': [],
-                    'qc_signal_dropout_ch2': False,
-                    'qc_signal_dropout_segments_ch2': [],
-                    'qc_signal_dropout_ch3': False,
-                    'qc_signal_dropout_segments_ch3': [],
-                    'qc_signal_dropout_ch4': False,
-                    'qc_signal_dropout_segments_ch4': [],
-                    'qc_artifact': False,
-                    'qc_artifact_segments': [],
-                    'qc_artifact_ch1': False,
-                    'qc_artifact_segments_ch1': [],
-                    'qc_artifact_ch2': False,
-                    'qc_artifact_segments_ch2': [],
-                    'qc_artifact_ch3': False,
-                    'qc_artifact_segments_ch3': [],
-                    'qc_artifact_ch4': False,
-                    'qc_artifact_segments_ch4': [],
+                    **_get_audio_processing_qc_defaults(),
                 }
 
             # Create MovementCycle with all required fields
