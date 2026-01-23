@@ -617,6 +617,14 @@ class Synchronization(SynchronizationMetadata):
     min_cycle_duration_s: float
     max_cycle_duration_s: float
     mean_acoustic_auc: float
+    
+    # Detection method agreement (for consensus detection)
+    method_agreement_span: Optional[float] = None  # Time span between methods in consensus
+    
+    # Biomechanics-guided detection fields
+    audio_stomp_method: Optional[str] = None  # Detection method used for audio sync
+    selected_time: Optional[float] = None  # Selected time for biomechanics-guided detection (seconds)
+    contra_selected_time: Optional[float] = None  # Contralateral selected time (seconds)
 
     # QC version tracking (required)
     audio_qc_version: int = Field(default_factory=get_audio_qc_version)
@@ -664,6 +672,10 @@ class Synchronization(SynchronizationMetadata):
             "Min Duration (s)": self.min_cycle_duration_s,
             "Max Duration (s)": self.max_cycle_duration_s,
             "Mean Acoustic AUC": self.mean_acoustic_auc,
+            "Method Agreement Span (s)": self.method_agreement_span,
+            "Detection Method": self.audio_stomp_method,
+            "Selected Time (s)": self.selected_time,
+            "Contra Selected Time (s)": self.contra_selected_time,
             "Audio QC Version": self.audio_qc_version,
             "Biomech QC Version": self.biomech_qc_version,
             "Cycle QC Version": self.cycle_qc_version,

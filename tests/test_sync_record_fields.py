@@ -1,6 +1,6 @@
 """Tests for Synchronization class new fields."""
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pandas as pd
 import pytest
@@ -9,11 +9,60 @@ from src.metadata import Synchronization
 from src.orchestration.processing_log import create_sync_record_from_data
 
 
+def _create_test_record(**kwargs):
+    """Helper to create a test Synchronization record with required fields."""
+    defaults = {
+        "study": "AOA",
+        "study_id": 1001,
+        "linked_biomechanics": True,
+        "biomechanics_file": "test.xlsx",
+        "biomechanics_type": "Gonio",
+        "biomechanics_sample_rate": 100.0,
+        "audio_file_name": "test_audio.wav",
+        "device_serial": "TEST001",
+        "firmware_version": 1,
+        "file_time": datetime.now(),
+        "file_size_mb": 10.0,
+        "recording_date": datetime.now(),
+        "recording_time": datetime.now(),
+        "knee": "left",
+        "maneuver": "walk",
+        "sample_rate": 46875.0,
+        "num_channels": 4,
+        "mic_1_position": "IPM",
+        "mic_2_position": "IPL",
+        "mic_3_position": "SPM",
+        "mic_4_position": "SPL",
+        "audio_sync_time": timedelta(seconds=0),
+        "bio_left_sync_time": timedelta(seconds=0),
+        "sync_offset": timedelta(seconds=0),
+        "aligned_audio_sync_time": timedelta(seconds=0),
+        "aligned_bio_sync_time": timedelta(seconds=0),
+        "sync_method": "consensus",
+        "consensus_time": timedelta(seconds=0),
+        "rms_time": timedelta(seconds=0),
+        "onset_time": timedelta(seconds=0),
+        "freq_time": timedelta(seconds=0),
+        "sync_file_name": "test_sync.pkl",
+        "processing_date": datetime.now(),
+        "processing_status": "success",
+        "sync_duration": timedelta(seconds=3),
+        "total_cycles_extracted": 0,
+        "clean_cycles": 0,
+        "outlier_cycles": 0,
+        "mean_cycle_duration_s": 0.0,
+        "median_cycle_duration_s": 0.0,
+        "min_cycle_duration_s": 0.0,
+        "max_cycle_duration_s": 0.0,
+        "mean_acoustic_auc": 0.0,
+    }
+    defaults.update(kwargs)
+    return Synchronization(**defaults)
+
+
 def test_synchronization_has_biomech_guided_fields():
     """Test that Synchronization has new fields for biomechanics-guided detection."""
-    record = Synchronization(
-        sync_file_name="test_sync.pkl",
-        processing_status="success",
+    record = _create_test_record(
         audio_stomp_method="biomechanics-guided",
         selected_time=2.5,
         contra_selected_time=3.8,
@@ -23,12 +72,9 @@ def test_synchronization_has_biomech_guided_fields():
     assert record.selected_time == 2.5
     assert record.contra_selected_time == 3.8
 
-
 def test_synchronization_to_dict_includes_new_fields():
     """Test that to_dict includes new fields."""
-    record = Synchronization(
-        sync_file_name="test_sync.pkl",
-        processing_status="success",
+    record = _create_test_record(
         audio_stomp_method="biomechanics-guided",
         selected_time=2.5,
         contra_selected_time=3.8,
@@ -82,17 +128,16 @@ def test_create_sync_record_populates_new_fields_from_detection_results():
     assert record.contra_selected_time == 3.8
 
 
+
 def test_synchronization_biomech_guided_can_be_none():
     """Test that biomechanics-guided fields can be None (for consensus detection)."""
-    record = Synchronization(
-        sync_file_name="test_sync.pkl",
-        processing_status="success",
-    )
+    record = _create_test_record()
 
     # These should default to None
     assert record.audio_stomp_method is None
     assert record.selected_time is None
     assert record.contra_selected_time is None
+
 
 
 def test_create_sync_record_consensus_without_biomech_guided():
@@ -108,6 +153,7 @@ def test_create_sync_record_consensus_without_biomech_guided():
     # Detection results without biomech-guided fields (pure consensus)
     detection_results = {
         'consensus_time': 2.0,
+        'consensus_methods': ['rms', 'onset'],
         'rms_time': 2.1,
         'onset_time': 1.9,
     }
@@ -125,8 +171,9 @@ def test_create_sync_record_consensus_without_biomech_guided():
     assert record.contra_selected_time is None
 
     # But consensus fields should be populated
-    assert record.consensus_time == 2.0
-    assert record.rms_time == 2.1
+    assert record.consensus_time == timedelta(seconds=2.0)
+    assert record.rms_time == timedelta(seconds=2.1)
+
 
 
 def test_synchronization_consensus_method_agreement_span_calculation():
@@ -161,6 +208,7 @@ def test_synchronization_consensus_method_agreement_span_calculation():
     assert record.consensus_methods == "rms, onset, freq"
 
 
+
 def test_synchronization_agreement_span_with_partial_consensus():
     """Test agreement span when only some methods agree (not all 3)."""
     synced_df = pd.DataFrame({
@@ -190,5 +238,6 @@ def test_synchronization_agreement_span_with_partial_consensus():
     # Agreement span should only consider methods in consensus
     assert record.method_agreement_span == pytest.approx(0.1, abs=0.01)
     # Freq time is still recorded but not in consensus_methods
-    assert record.freq_time == 5.0
+    assert record.freq_time == timedelta(seconds=5.0)
     assert record.consensus_methods == "rms, onset"
+
