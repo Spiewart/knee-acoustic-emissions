@@ -100,7 +100,15 @@ class BiomechanicsMetadata(StudyMetadata):
     @field_validator("sync_method")
     @classmethod
     def validate_sync_method_for_type(cls, value: Optional[str], info) -> Optional[str]:
-        """Validate sync_method matches biomechanics_type requirements."""
+        """Validate sync_method matches biomechanics_type requirements.
+        
+        Note: sync_method is redefined in SynchronizationMetadata with different values,
+        so we skip validation if it has non-biomechanics values (consensus/biomechanics).
+        """
+        # Skip validation for SynchronizationMetadata sync_method values
+        if value in ["consensus", "biomechanics"]:
+            return value
+        
         biomech_type = info.data.get("biomechanics_type")
         if biomech_type and value:
             if biomech_type in ["Motion Analysis", "IMU"] and value != "stomp":
@@ -783,3 +791,8 @@ class MovementCycle(AudioProcessing):
             "Sync QC Fail": self.sync_qc_fail,
         })
         return result
+
+
+# Type alias for backward compatibility with code that imports MovementCycles
+# MovementCycles was merged into Synchronization per Issue #69
+MovementCycles = Synchronization
