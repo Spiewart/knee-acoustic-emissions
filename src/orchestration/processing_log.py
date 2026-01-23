@@ -1676,7 +1676,7 @@ def create_cycles_record_from_data(
         for idx, cdf in enumerate(cycles):
             s, e, d, auc = _cycle_metrics(cdf)
 
-            # Calculate channel RMS values (data-derived)
+            # Calculate channel RMS values (data-derived) - Note: these are not stored in MovementCycle
             ch_rms = {}
             for n in [1, 2, 3, 4]:
                 col = f"f_ch{n}" if f"f_ch{n}" in cdf.columns else (f"ch{n}" if f"ch{n}" in cdf.columns else None)
@@ -1687,7 +1687,7 @@ def create_cycles_record_from_data(
             # Build cycle_record fields from sync_record if available
             cycle_fields = {}
             if sync_record:
-                # Copy all fields from sync_record
+                # Copy all fields from sync_record that exist in both models
                 for field_name in sync_record.__dataclass_fields__.keys():
                     # Skip fields that are specific to Synchronization (not MovementCycle)
                     if field_name not in ['sync_file_name', 'sync_duration', 'total_cycles_extracted', 
@@ -1701,6 +1701,19 @@ def create_cycles_record_from_data(
                                           'sync_method', 'consensus_methods', 'consensus_time', 'rms_time',
                                           'onset_time', 'freq_time', 'biomechanics_time', 'biomechanics_time_contralateral']:
                         cycle_fields[field_name] = getattr(sync_record, field_name)
+                
+                # Add missing AudioProcessing QC type fields if sync_record doesn't have them
+                # (Synchronization doesn't inherit from AudioProcessing, but MovementCycle does)
+                missing_qc_fields = {
+                    'qc_artifact_type': None,
+                    'qc_artifact_type_ch1': None,
+                    'qc_artifact_type_ch2': None,
+                    'qc_artifact_type_ch3': None,
+                    'qc_artifact_type_ch4': None,
+                }
+                for field_name, default_value in missing_qc_fields.items():
+                    if field_name not in cycle_fields:
+                        cycle_fields[field_name] = default_value
                 
                 # Derive timestamps
                 audio_start = sync_record.recording_time + timedelta(seconds=s)
@@ -1771,15 +1784,10 @@ def create_cycles_record_from_data(
                 start_time_s=s,
                 end_time_s=e,
                 duration_s=d,
-                acoustic_auc=auc,
                 audio_start_time=audio_start,
                 audio_end_time=audio_end,
                 bio_start_time=bio_start,
                 bio_end_time=bio_end,
-                ch1_rms=ch_rms.get(1),
-                ch2_rms=ch_rms.get(2),
-                ch3_rms=ch_rms.get(3),
-                ch4_rms=ch_rms.get(4),
             )
 
             details.append(cycle_record)
@@ -1797,7 +1805,7 @@ def create_cycles_record_from_data(
             s, e, d, auc = _cycle_metrics(cdf)
             is_outlier = "outlier" in p.name.lower()
 
-            # Calculate channel RMS values (data-derived)
+            # Calculate channel RMS values (data-derived) - Note: these are not stored in MovementCycle
             ch_rms = {}
             for n in [1, 2, 3, 4]:
                 col = f"f_ch{n}" if f"f_ch{n}" in cdf.columns else (f"ch{n}" if f"ch{n}" in cdf.columns else None)
@@ -1808,7 +1816,7 @@ def create_cycles_record_from_data(
             # Build cycle_record fields from sync_record if available
             cycle_fields = {}
             if sync_record:
-                # Copy all fields from sync_record
+                # Copy all fields from sync_record that exist in both models
                 for field_name in sync_record.__dataclass_fields__.keys():
                     # Skip fields that are specific to Synchronization (not MovementCycle)
                     if field_name not in ['sync_file_name', 'sync_duration', 'total_cycles_extracted', 
@@ -1822,6 +1830,19 @@ def create_cycles_record_from_data(
                                           'sync_method', 'consensus_methods', 'consensus_time', 'rms_time',
                                           'onset_time', 'freq_time', 'biomechanics_time', 'biomechanics_time_contralateral']:
                         cycle_fields[field_name] = getattr(sync_record, field_name)
+                
+                # Add missing AudioProcessing QC type fields if sync_record doesn't have them
+                # (Synchronization doesn't inherit from AudioProcessing, but MovementCycle does)
+                missing_qc_fields = {
+                    'qc_artifact_type': None,
+                    'qc_artifact_type_ch1': None,
+                    'qc_artifact_type_ch2': None,
+                    'qc_artifact_type_ch3': None,
+                    'qc_artifact_type_ch4': None,
+                }
+                for field_name, default_value in missing_qc_fields.items():
+                    if field_name not in cycle_fields:
+                        cycle_fields[field_name] = default_value
                 
                 # Derive timestamps
                 audio_start = sync_record.recording_time + timedelta(seconds=s)
@@ -1892,15 +1913,10 @@ def create_cycles_record_from_data(
                 start_time_s=s,
                 end_time_s=e,
                 duration_s=d,
-                acoustic_auc=auc,
                 audio_start_time=audio_start,
                 audio_end_time=audio_end,
                 bio_start_time=bio_start,
                 bio_end_time=bio_end,
-                ch1_rms=ch_rms.get(1),
-                ch2_rms=ch_rms.get(2),
-                ch3_rms=ch_rms.get(3),
-                ch4_rms=ch_rms.get(4),
             )
 
             details.append(cycle_record)
