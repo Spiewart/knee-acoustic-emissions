@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import numpy as np
@@ -8,6 +9,97 @@ from src.orchestration.processing_log import (
     ManeuverProcessingLog,
     create_cycles_record_from_data,
 )
+
+
+def _make_minimal_sync(
+    sync_file_name: str,
+    pass_number: int = 1,
+    speed: str = "normal",
+    **kwargs
+) -> Synchronization:
+    """Create a minimal Synchronization object for testing.
+    
+    Additional kwargs can override any default values.
+    """
+    defaults = dict(
+        # StudyMetadata fields
+        study="AOA",
+        study_id=1013,
+        # BiomechanicsMetadata fields
+        linked_biomechanics=True,  # Required for Synchronization
+        biomechanics_file="test_bio.xlsx",
+        biomechanics_type="Motion Analysis",
+        bio_sync_method="stomp",
+        biomechanics_sample_rate=120.0,
+        # AcousticsFile fields
+        audio_file_name="test_audio.bin",
+        device_serial="TEST123",
+        firmware_version=1,
+        file_time=datetime(2024, 1, 1, 12, 0, 0),
+        file_size_mb=100.0,
+        recording_date=datetime(2024, 1, 1),
+        recording_time=datetime(2024, 1, 1, 12, 0, 0),
+        knee="left",
+        maneuver="walk",
+        num_channels=4,
+        mic_1_position="IPL",  # Infrapatellar Lateral
+        mic_2_position="IPM",  # Infrapatellar Medial
+        mic_3_position="SPM",  # Suprapatellar Medial
+        mic_4_position="SPL",  # Suprapatellar Lateral
+        # SynchronizationMetadata fields
+        audio_sync_time=timedelta(seconds=1.0),
+        sync_offset=timedelta(seconds=0.5),
+        aligned_audio_sync_time=timedelta(seconds=1.5),
+        aligned_bio_sync_time=timedelta(seconds=1.5),
+        sync_method="consensus",
+        consensus_methods="rms,onset",
+        consensus_time=timedelta(seconds=1.0),
+        rms_time=timedelta(seconds=1.0),
+        onset_time=timedelta(seconds=1.0),
+        freq_time=timedelta(seconds=1.0),
+        # AudioProcessing fields
+        processing_date=datetime.now(),
+        qc_fail_segments=[],
+        qc_fail_segments_ch1=[],
+        qc_fail_segments_ch2=[],
+        qc_fail_segments_ch3=[],
+        qc_fail_segments_ch4=[],
+        qc_signal_dropout=False,
+        qc_signal_dropout_segments=[],
+        qc_signal_dropout_ch1=False,
+        qc_signal_dropout_segments_ch1=[],
+        qc_signal_dropout_ch2=False,
+        qc_signal_dropout_segments_ch2=[],
+        qc_signal_dropout_ch3=False,
+        qc_signal_dropout_segments_ch3=[],
+        qc_signal_dropout_ch4=False,
+        qc_signal_dropout_segments_ch4=[],
+        qc_artifact=False,
+        qc_artifact_segments=[],
+        qc_artifact_ch1=False,
+        qc_artifact_segments_ch1=[],
+        qc_artifact_ch2=False,
+        qc_artifact_segments_ch2=[],
+        qc_artifact_ch3=False,
+        qc_artifact_segments_ch3=[],
+        qc_artifact_ch4=False,
+        qc_artifact_segments_ch4=[],
+        # Synchronization-specific fields
+        sync_file_name=sync_file_name,
+        pass_number=pass_number,
+        speed=speed,
+        sync_duration=timedelta(seconds=10.0),
+        total_cycles_extracted=0,
+        clean_cycles=0,
+        outlier_cycles=0,
+        mean_cycle_duration_s=0.0,
+        median_cycle_duration_s=0.0,
+        min_cycle_duration_s=0.0,
+        max_cycle_duration_s=0.0,
+        mean_acoustic_auc=0.0,
+    )
+    defaults.update(kwargs)
+    return Synchronization(**defaults)
 
 
 def _make_cycle_df(n=100, with_tt=True, use_filtered=False):
@@ -53,7 +145,7 @@ def test_cycle_details_regenerates_across_passes_flat_dir(tmp_path):
         maneuver_directory=tmp_path,
     )
 
-    rec1 = MovementCycles(
+    rec1 = _make_minimal_sync(
         sync_file_name=stem1,
         pass_number=1,
         speed="normal",
@@ -63,7 +155,7 @@ def test_cycle_details_regenerates_across_passes_flat_dir(tmp_path):
         outlier_cycles=1,
         processing_status="success",
     )
-    rec2 = MovementCycles(
+    rec2 = _make_minimal_sync(
         sync_file_name=stem2,
         pass_number=12,
         speed="fast",
@@ -104,7 +196,7 @@ def test_cycle_details_fallback_without_output_dir(tmp_path):
     clean_cycles = [_make_cycle_df(n=50, with_tt=True), _make_cycle_df(n=60, with_tt=True)]
     outliers = [_make_cycle_df(n=40, with_tt=True)]
 
-    sync = Synchronization(sync_file_name="left_walk_Pass002_normal", pass_number=2, speed="normal")
+    sync = _make_minimal_sync(sync_file_name="left_walk_Pass002_normal", pass_number=2, speed="normal")
     rec = create_cycles_record_from_data(
         sync_file_name="left_walk_Pass002_normal",
         clean_cycles=clean_cycles,
@@ -144,7 +236,7 @@ def test_cycle_details_handles_missing_tt(tmp_path):
         maneuver="walk",
         maneuver_directory=tmp_path,
     )
-    rec = MovementCycles(
+    rec = _make_minimal_sync(
         sync_file_name=stem,
         pass_number=3,
         speed="normal",
@@ -180,8 +272,8 @@ def test_cycle_details_roundtrip_then_regenerate(tmp_path):
         maneuver="walk",
         maneuver_directory=tmp_path,
     )
-    log.add_movement_cycles_record(MovementCycles(sync_file_name=stem1, pass_number=4, speed="normal", output_directory=str(out_dir), processing_status="success"))
-    log.add_movement_cycles_record(MovementCycles(sync_file_name=stem2, pass_number=5, speed="fast", output_directory=str(out_dir), processing_status="success"))
+    log.add_movement_cycles_record(_make_minimal_sync(sync_file_name=stem1, pass_number=4, speed="normal", output_directory=str(out_dir), processing_status="success"))
+    log.add_movement_cycles_record(_make_minimal_sync(sync_file_name=stem2, pass_number=5, speed="fast", output_directory=str(out_dir), processing_status="success"))
 
     excel1 = tmp_path / "processing_log_roundtrip.xlsx"
     log.save_to_excel(excel1)

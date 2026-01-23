@@ -1672,14 +1672,6 @@ def create_cycles_record_from_data(
     durations: list[float] = []
     aucs: list[float] = []
 
-    # Extract context information from upstream records
-    audio_metadata = audio_record if audio_record else None
-    biomech_metadata = biomech_record if biomech_record else None
-    sync_metadata = sync_record if sync_record else None
-
-    # We'll create cycles_metadata after calculating aggregates
-    # For now, keep it as None for individual cycles
-
     def _append_cycles(cycles: List[pd.DataFrame], is_outlier: bool) -> None:
         for idx, cdf in enumerate(cycles):
             s, e, d, auc = _cycle_metrics(cdf)
@@ -1692,23 +1684,102 @@ def create_cycles_record_from_data(
                     arr = pd.to_numeric(cdf[col], errors="coerce").to_numpy()
                     ch_rms[n] = float(np.sqrt(np.nanmean(arr ** 2)))
 
-            # Create MovementCycle directly with embedded upstream metadata
+            # Build cycle_record fields from sync_record if available
+            cycle_fields = {}
+            if sync_record:
+                # Copy all fields from sync_record
+                for field_name in sync_record.__dataclass_fields__.keys():
+                    # Skip fields that are specific to Synchronization (not MovementCycle)
+                    if field_name not in ['sync_file_name', 'sync_duration', 'total_cycles_extracted', 
+                                          'clean_cycles', 'outlier_cycles', 'mean_cycle_duration_s', 
+                                          'median_cycle_duration_s', 'min_cycle_duration_s', 
+                                          'max_cycle_duration_s', 'mean_acoustic_auc', 'per_cycle_details',
+                                          'output_directory', 'plots_created', 'qc_acoustic_threshold',
+                                          'audio_sync_time', 'bio_left_sync_time', 'bio_right_sync_time',
+                                          'audio_visual_sync_time', 'audio_visual_sync_time_contralateral',
+                                          'sync_offset', 'aligned_audio_sync_time', 'aligned_bio_sync_time',
+                                          'sync_method', 'consensus_methods', 'consensus_time', 'rms_time',
+                                          'onset_time', 'freq_time', 'biomechanics_time', 'biomechanics_time_contralateral']:
+                        cycle_fields[field_name] = getattr(sync_record, field_name)
+                
+                # Derive timestamps
+                audio_start = sync_record.recording_time + timedelta(seconds=s)
+                audio_end = sync_record.recording_time + timedelta(seconds=e)
+                bio_start = sync_record.recording_time + timedelta(seconds=s)
+                bio_end = sync_record.recording_time + timedelta(seconds=e)
+            else:
+                # Minimal fallback if no sync_record
+                now = datetime.now()
+                audio_start = now
+                audio_end = now + timedelta(seconds=d)
+                bio_start = now
+                bio_end = now + timedelta(seconds=d)
+                
+                # Provide minimal required fields
+                cycle_fields = {
+                    'study': study,
+                    'study_id': study_id,
+                    'linked_biomechanics': False,
+                    'audio_file_name': 'unknown.bin',
+                    'device_serial': 'UNKNOWN',
+                    'firmware_version': 0,
+                    'file_time': now,
+                    'file_size_mb': 0.0,
+                    'recording_date': now,
+                    'recording_time': now,
+                    'knee': 'left',
+                    'maneuver': 'walk',
+                    'num_channels': 4,
+                    'mic_1_position': 'IPL',
+                    'mic_2_position': 'IPM',
+                    'mic_3_position': 'SPM',
+                    'mic_4_position': 'SPL',
+                    'processing_date': now,
+                    'qc_fail_segments': [],
+                    'qc_fail_segments_ch1': [],
+                    'qc_fail_segments_ch2': [],
+                    'qc_fail_segments_ch3': [],
+                    'qc_fail_segments_ch4': [],
+                    'qc_signal_dropout': False,
+                    'qc_signal_dropout_segments': [],
+                    'qc_signal_dropout_ch1': False,
+                    'qc_signal_dropout_segments_ch1': [],
+                    'qc_signal_dropout_ch2': False,
+                    'qc_signal_dropout_segments_ch2': [],
+                    'qc_signal_dropout_ch3': False,
+                    'qc_signal_dropout_segments_ch3': [],
+                    'qc_signal_dropout_ch4': False,
+                    'qc_signal_dropout_segments_ch4': [],
+                    'qc_artifact': False,
+                    'qc_artifact_segments': [],
+                    'qc_artifact_ch1': False,
+                    'qc_artifact_segments_ch1': [],
+                    'qc_artifact_ch2': False,
+                    'qc_artifact_segments_ch2': [],
+                    'qc_artifact_ch3': False,
+                    'qc_artifact_segments_ch3': [],
+                    'qc_artifact_ch4': False,
+                    'qc_artifact_segments_ch4': [],
+                }
+
+            # Create MovementCycle with all required fields
             cycle_record = MovementCycle(
+                **cycle_fields,
                 cycle_index=idx,
                 is_outlier=is_outlier,
+                cycle_file=f"cycle_{idx}.pkl",
                 start_time_s=s,
                 end_time_s=e,
                 duration_s=d,
                 acoustic_auc=auc,
+                audio_start_time=audio_start,
+                audio_end_time=audio_end,
+                bio_start_time=bio_start,
+                bio_end_time=bio_end,
                 ch1_rms=ch_rms.get(1),
                 ch2_rms=ch_rms.get(2),
                 ch3_rms=ch_rms.get(3),
                 ch4_rms=ch_rms.get(4),
-                # Embed upstream metadata models
-                audio_metadata=audio_metadata,
-                biomech_metadata=biomech_metadata,
-                sync_metadata=sync_metadata,
-                cycles_metadata=None,  # Will be set after aggregate calculation
             )
 
             details.append(cycle_record)
@@ -1734,8 +1805,87 @@ def create_cycles_record_from_data(
                     arr = pd.to_numeric(cdf[col], errors="coerce").to_numpy()
                     ch_rms[n] = float(np.sqrt(np.nanmean(arr ** 2)))
 
-            # Create MovementCycle directly with embedded upstream metadata
+            # Build cycle_record fields from sync_record if available
+            cycle_fields = {}
+            if sync_record:
+                # Copy all fields from sync_record
+                for field_name in sync_record.__dataclass_fields__.keys():
+                    # Skip fields that are specific to Synchronization (not MovementCycle)
+                    if field_name not in ['sync_file_name', 'sync_duration', 'total_cycles_extracted', 
+                                          'clean_cycles', 'outlier_cycles', 'mean_cycle_duration_s', 
+                                          'median_cycle_duration_s', 'min_cycle_duration_s', 
+                                          'max_cycle_duration_s', 'mean_acoustic_auc', 'per_cycle_details',
+                                          'output_directory', 'plots_created', 'qc_acoustic_threshold',
+                                          'audio_sync_time', 'bio_left_sync_time', 'bio_right_sync_time',
+                                          'audio_visual_sync_time', 'audio_visual_sync_time_contralateral',
+                                          'sync_offset', 'aligned_audio_sync_time', 'aligned_bio_sync_time',
+                                          'sync_method', 'consensus_methods', 'consensus_time', 'rms_time',
+                                          'onset_time', 'freq_time', 'biomechanics_time', 'biomechanics_time_contralateral']:
+                        cycle_fields[field_name] = getattr(sync_record, field_name)
+                
+                # Derive timestamps
+                audio_start = sync_record.recording_time + timedelta(seconds=s)
+                audio_end = sync_record.recording_time + timedelta(seconds=e)
+                bio_start = sync_record.recording_time + timedelta(seconds=s)
+                bio_end = sync_record.recording_time + timedelta(seconds=e)
+            else:
+                # Minimal fallback if no sync_record
+                now = datetime.now()
+                audio_start = now
+                audio_end = now + timedelta(seconds=d)
+                bio_start = now
+                bio_end = now + timedelta(seconds=d)
+                
+                # Provide minimal required fields
+                cycle_fields = {
+                    'study': study,
+                    'study_id': study_id,
+                    'linked_biomechanics': False,
+                    'audio_file_name': 'unknown.bin',
+                    'device_serial': 'UNKNOWN',
+                    'firmware_version': 0,
+                    'file_time': now,
+                    'file_size_mb': 0.0,
+                    'recording_date': now,
+                    'recording_time': now,
+                    'knee': 'left',
+                    'maneuver': 'walk',
+                    'num_channels': 4,
+                    'mic_1_position': 'IPL',
+                    'mic_2_position': 'IPM',
+                    'mic_3_position': 'SPM',
+                    'mic_4_position': 'SPL',
+                    'processing_date': now,
+                    'qc_fail_segments': [],
+                    'qc_fail_segments_ch1': [],
+                    'qc_fail_segments_ch2': [],
+                    'qc_fail_segments_ch3': [],
+                    'qc_fail_segments_ch4': [],
+                    'qc_signal_dropout': False,
+                    'qc_signal_dropout_segments': [],
+                    'qc_signal_dropout_ch1': False,
+                    'qc_signal_dropout_segments_ch1': [],
+                    'qc_signal_dropout_ch2': False,
+                    'qc_signal_dropout_segments_ch2': [],
+                    'qc_signal_dropout_ch3': False,
+                    'qc_signal_dropout_segments_ch3': [],
+                    'qc_signal_dropout_ch4': False,
+                    'qc_signal_dropout_segments_ch4': [],
+                    'qc_artifact': False,
+                    'qc_artifact_segments': [],
+                    'qc_artifact_ch1': False,
+                    'qc_artifact_segments_ch1': [],
+                    'qc_artifact_ch2': False,
+                    'qc_artifact_segments_ch2': [],
+                    'qc_artifact_ch3': False,
+                    'qc_artifact_segments_ch3': [],
+                    'qc_artifact_ch4': False,
+                    'qc_artifact_segments_ch4': [],
+                }
+
+            # Create MovementCycle with all required fields
             cycle_record = MovementCycle(
+                **cycle_fields,
                 cycle_index=pidx,
                 is_outlier=is_outlier,
                 cycle_file=str(p),
@@ -1743,15 +1893,14 @@ def create_cycles_record_from_data(
                 end_time_s=e,
                 duration_s=d,
                 acoustic_auc=auc,
+                audio_start_time=audio_start,
+                audio_end_time=audio_end,
+                bio_start_time=bio_start,
+                bio_end_time=bio_end,
                 ch1_rms=ch_rms.get(1),
                 ch2_rms=ch_rms.get(2),
                 ch3_rms=ch_rms.get(3),
                 ch4_rms=ch_rms.get(4),
-                # Embed upstream metadata models
-                audio_metadata=audio_metadata,
-                biomech_metadata=biomech_metadata,
-                sync_metadata=sync_metadata,
-                cycles_metadata=None,  # Will be set after aggregate calculation
             )
 
             details.append(cycle_record)
@@ -1786,9 +1935,5 @@ def create_cycles_record_from_data(
 
     # Create unified Synchronization object
     cycles = Synchronization(**data)
-
-    # Now update all cycle records with the complete cycles_metadata
-    for detail in details:
-        detail.cycles_metadata = cycles
 
     return cycles
