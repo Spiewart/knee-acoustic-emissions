@@ -51,13 +51,6 @@ def _infer_num_channels_from_df(df: pd.DataFrame) -> int:
     return 4  # Default to 4 channels if not found
 
 
-def _excel_row_to_timedelta(value: Any) -> Optional[pd.Timedelta]:
-    """Convert an Excel cell value (in seconds) to a timedelta."""
-    if pd.isna(value):
-        return None
-    return pd.Timedelta(seconds=float(value))
-
-
 def _get_sync_method_defaults(row: Any) -> tuple[str, str]:
     """Extract sync method and consensus methods with proper defaults.
     
