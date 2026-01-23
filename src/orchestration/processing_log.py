@@ -837,6 +837,46 @@ def create_audio_record_from_data(
         data["file_time"] = metadata.get("fileTime")
         if "file_time" in metadata:
             data["file_time"] = metadata["file_time"]
+    
+    # Provide defaults for required fields if not present
+    # These defaults ensure the function can be called with minimal metadata
+    if "study" not in data:
+        data["study"] = "AOA"  # Default study
+    if "study_id" not in data:
+        data["study_id"] = 1  # Default ID
+    if "linked_biomechanics" not in data:
+        data["linked_biomechanics"] = False
+    if "recording_date" not in data:
+        data["recording_date"] = datetime.now()
+    if "recording_time" not in data:
+        data["recording_time"] = datetime.now()
+    if "file_time" not in data or data["file_time"] is None:
+        data["file_time"] = datetime.now()
+    if "knee" not in data:
+        data["knee"] = "left"  # Default knee
+    if "maneuver" not in data:
+        data["maneuver"] = "walk"  # Default maneuver
+    if "mic_1_position" not in data:
+        data["mic_1_position"] = "IPM"
+    if "mic_2_position" not in data:
+        data["mic_2_position"] = "IPL"
+    if "mic_3_position" not in data:
+        data["mic_3_position"] = "SPM"
+    if "mic_4_position" not in data:
+        data["mic_4_position"] = "SPL"
+    if "device_serial" not in data:
+        data["device_serial"] = "unknown"
+    if "firmware_version" not in data:
+        data["firmware_version"] = 0
+    if "file_size_mb" not in data:
+        data["file_size_mb"] = 0.0
+    if "num_channels" not in data:
+        # Try to infer from audio_df, otherwise default to 4
+        if audio_df is not None:
+            data["num_channels"] = _infer_num_channels_from_df(audio_df)
+        else:
+            data["num_channels"] = 4
+
 
     if error:
         # Early return on error - validate and return
@@ -973,11 +1013,19 @@ def create_biomechanics_record_from_data(
         "biomechanics_file": str(biomechanics_file),
         "sheet_name": sheet_name,
         "processing_date": datetime.now(),
+        # Provide defaults for required StudyMetadata fields
+        "study": "AOA",
+        "study_id": 1,
     }
 
     if error:
         data["processing_status"] = "error"
         data["error_message"] = str(error)
+        # For error case, need to provide default values for remaining required fields
+        data["num_sub_recordings"] = 0
+        data["duration_seconds"] = 0.0
+        data["sample_rate"] = 100.0
+        data["num_data_points"] = 0
         return BiomechanicsImport(**data)
 
     data["processing_status"] = "success"

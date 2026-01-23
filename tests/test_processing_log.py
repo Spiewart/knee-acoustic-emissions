@@ -648,7 +648,9 @@ class TestHelperFunctions:
         assert record.knee == "left"
         assert record.pass_number == 1
         assert record.speed == "medium"
-        assert record.duration_seconds is not None
+        # Synchronization has sync_duration (timedelta), not duration_seconds
+        assert record.sync_duration is not None
+        assert record.sync_duration.total_seconds() > 0
 
     def test_create_cycles_record_from_data(self, tmp_path):
         """Test creating cycles record from cycle extraction results."""
