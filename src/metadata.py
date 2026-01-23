@@ -68,53 +68,34 @@ class BiomechanicsMetadata(StudyMetadata):
     # Conditionally required fields (required if linked_biomechanics is True)
     biomechanics_file: Optional[str] = None
     biomechanics_type: Optional[Literal["Gonio", "IMU", "Motion Analysis"]] = None
-    sync_method: Optional[Literal["flick", "stomp"]] = None
+    bio_sync_method: Optional[Literal["flick", "stomp"]] = None
     biomechanics_sample_rate: Optional[float] = None
     biomechanics_notes: Optional[str] = None
     
-    @field_validator("biomechanics_file", "biomechanics_type", "sync_method", "biomechanics_sample_rate")
+    @field_validator("biomechanics_file", "biomechanics_type", "bio_sync_method", "biomechanics_sample_rate")
     @classmethod
     def validate_biomechanics_fields(cls, value: Optional[Any], info) -> Optional[Any]:
-        """Validate biomechanics fields are provided when linked_biomechanics is True.
-        
-        Note: sync_method is redefined in SynchronizationMetadata with different semantics,
-        so we skip validation if it has non-biomechanics values.
-        """
+        """Validate biomechanics fields are provided when linked_biomechanics is True."""
         field_name = info.field_name
-        
-        # Special handling for sync_method which is redefined in subclasses
-        if field_name == "sync_method":
-            # If value is not a biomechanics sync method, skip validation (subclass validator will handle it)
-            if value not in [None, "flick", "stomp"]:
-                return value
         
         if info.data.get("linked_biomechanics") is True:
             if value is None and field_name != "biomechanics_notes":
                 raise ValueError(f"{field_name} is required when linked_biomechanics is True")
         else:
-            if value is not None and field_name != "sync_method":
-                # Don't check sync_method here since it's redefined in subclasses
+            if value is not None:
                 raise ValueError(f"{field_name} must be None when linked_biomechanics is False")
         return value
     
-    @field_validator("sync_method")
+    @field_validator("bio_sync_method")
     @classmethod
-    def validate_sync_method_for_type(cls, value: Optional[str], info) -> Optional[str]:
-        """Validate sync_method matches biomechanics_type requirements.
-        
-        Note: sync_method is redefined in SynchronizationMetadata with different values,
-        so we skip validation if it has non-biomechanics values (consensus/biomechanics).
-        """
-        # Skip validation for SynchronizationMetadata sync_method values
-        if value in ["consensus", "biomechanics"]:
-            return value
-        
+    def validate_bio_sync_method_for_type(cls, value: Optional[str], info) -> Optional[str]:
+        """Validate bio_sync_method matches biomechanics_type requirements."""
         biomech_type = info.data.get("biomechanics_type")
         if biomech_type and value:
             if biomech_type in ["Motion Analysis", "IMU"] and value != "stomp":
-                raise ValueError(f"sync_method must be 'stomp' for biomechanics_type '{biomech_type}'")
+                raise ValueError(f"bio_sync_method must be 'stomp' for biomechanics_type '{biomech_type}'")
             elif biomech_type == "Gonio" and value != "flick":
-                raise ValueError("sync_method must be 'flick' for biomechanics_type 'Gonio'")
+                raise ValueError("bio_sync_method must be 'flick' for biomechanics_type 'Gonio'")
         return value
     
     @field_validator("biomechanics_sample_rate")
@@ -132,7 +113,7 @@ class BiomechanicsMetadata(StudyMetadata):
             "Linked Biomechanics": self.linked_biomechanics,
             "Biomechanics File": self.biomechanics_file,
             "Biomechanics Type": self.biomechanics_type,
-            "Sync Method": self.sync_method,
+            "Bio Sync Method": self.bio_sync_method,
             "Biomechanics Sample Rate (Hz)": self.biomechanics_sample_rate,
             "Biomechanics Notes": self.biomechanics_notes,
         })

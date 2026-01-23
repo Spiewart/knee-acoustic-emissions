@@ -809,9 +809,13 @@ def create_audio_record_from_data(
         for field in ['study', 'study_id', 'recording_date', 'recording_time', 'knee', 'maneuver',
                       'mic_1_position', 'mic_2_position', 'mic_3_position', 'mic_4_position',
                       'file_size_mb', 'linked_biomechanics', 'biomechanics_file', 'biomechanics_type',
-                      'sync_method', 'biomechanics_sample_rate', 'biomechanics_notes', 'num_channels']:
+                      'bio_sync_method', 'biomechanics_sample_rate', 'biomechanics_notes', 'num_channels']:
             if field in metadata:
                 data[field] = metadata[field]
+        
+        # Backward compatibility: handle old 'sync_method' field name
+        if 'sync_method' in metadata and 'bio_sync_method' not in data:
+            data['bio_sync_method'] = metadata['sync_method']
         
         # Normalize sample rate from metadata
         meta_fs = metadata.get("fs")
