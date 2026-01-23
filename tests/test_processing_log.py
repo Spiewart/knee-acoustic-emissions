@@ -55,6 +55,7 @@ def create_minimal_audio_record(**overrides):
         "mic_4_position": "SPL",
         # AudioProcessing
         "processing_date": datetime(2024, 1, 1, 12, 0, 0),
+        "sample_rate": 46875.0,
         "qc_fail_segments": [],
         "qc_fail_segments_ch1": [],
         "qc_fail_segments_ch2": [],
@@ -205,12 +206,12 @@ class TestAudioProcessing:
         """Test that default values are set correctly."""
         record = create_minimal_audio_record(
             audio_file_name="test",
-            sample_rate=None,
+            sample_rate=46875.0,
         )
 
         assert record.processing_status == "not_processed"
         assert record.num_channels == 4
-        assert record.sample_rate is None
+        assert record.sample_rate == 46875.0
         assert record.audio_qc_version == 1
 
 

@@ -51,6 +51,29 @@ def _infer_num_channels_from_df(df: pd.DataFrame) -> int:
     return 4  # Default to 4 channels if not found
 
 
+def _excel_row_to_timedelta(value: Any) -> Optional[pd.Timedelta]:
+    """Convert an Excel cell value (in seconds) to a timedelta."""
+    if pd.isna(value):
+        return None
+    return pd.Timedelta(seconds=float(value))
+
+
+def _get_sync_method_defaults(row: Any) -> tuple[str, str]:
+    """Extract sync method and consensus methods with proper defaults.
+    
+    Returns:
+        Tuple of (sync_method, consensus_methods)
+    """
+    sync_method = str(row.get("Sync Method", "consensus")).lower()
+    consensus_methods = str(row.get("Consensus Methods")) if pd.notna(row.get("Consensus Methods")) else None
+    
+    # Set default consensus_methods if sync_method is consensus but consensus_methods is None
+    if sync_method == "consensus" and consensus_methods is None:
+        consensus_methods = "consensus"
+    
+    return sync_method, consensus_methods
+
+
 @dataclass
 class ManeuverProcessingLog:
     """Complete processing log for a knee/maneuver combination."""
@@ -319,33 +342,68 @@ class ManeuverProcessingLog:
                 if len(audio_df) > 0 and "Audio File" in audio_df.columns:
                     row = audio_df.iloc[0]
                     log.audio_record = AudioProcessing(
+                        # StudyMetadata
+                        study=row.get("Study", "AOA"),
+                        study_id=int(row.get("Study ID", 1)),
+                        # BiomechanicsMetadata
+                        linked_biomechanics=bool(row.get("Linked Biomechanics", False)),
+                        biomechanics_file=str(row.get("Biomechanics File")) if pd.notna(row.get("Biomechanics File")) else None,
+                        biomechanics_type=str(row.get("Biomechanics Type")) if pd.notna(row.get("Biomechanics Type")) else None,
+                        bio_sync_method=str(row.get("Bio Sync Method")) if pd.notna(row.get("Bio Sync Method")) else None,
+                        biomechanics_sample_rate=float(row.get("Biomechanics Sample Rate (Hz)")) if pd.notna(row.get("Biomechanics Sample Rate (Hz)")) else None,
+                        biomechanics_notes=str(row.get("Biomechanics Notes")) if pd.notna(row.get("Biomechanics Notes")) else None,
+                        # AcousticsFile
                         audio_file_name=row.get("Audio File", ""),
-                        audio_bin_file=str(row.get("Bin File")) if pd.notna(row.get("Bin File")) else None,
-                        audio_pkl_file=str(row.get("Pickle File")) if pd.notna(row.get("Pickle File")) else None,
-                        processing_date=pd.to_datetime(row["Processing Date"]) if pd.notna(row.get("Processing Date")) else None,
+                        device_serial=str(row.get("Device Serial", "")),
+                        firmware_version=int(row.get("Firmware Version", 1)),
+                        file_time=pd.to_datetime(row.get("File Time")) if pd.notna(row.get("File Time")) else datetime.now(),
+                        file_size_mb=float(row.get("File Size (MB)", 0.0)),
+                        recording_date=pd.to_datetime(row.get("Recording Date")) if pd.notna(row.get("Recording Date")) else datetime.now(),
+                        recording_time=pd.to_datetime(row.get("Recording Time")) if pd.notna(row.get("Recording Time")) else datetime.now(),
+                        knee=str(row.get("Knee", "left")).lower(),
+                        maneuver=str(row.get("Maneuver", "walk")).lower(),
+                        sample_rate=float(row.get("Sample Rate (Hz)", 46875.0)),
+                        num_channels=int(row.get("Channels", 4)),
+                        mic_1_position=str(row.get("Mic 1 Position", "IPM")),
+                        mic_2_position=str(row.get("Mic 2 Position", "IPL")),
+                        mic_3_position=str(row.get("Mic 3 Position", "SPM")),
+                        mic_4_position=str(row.get("Mic 4 Position", "SPL")),
+                        mic_1_notes=str(row.get("Mic 1 Notes")) if pd.notna(row.get("Mic 1 Notes")) else None,
+                        mic_2_notes=str(row.get("Mic 2 Notes")) if pd.notna(row.get("Mic 2 Notes")) else None,
+                        mic_3_notes=str(row.get("Mic 3 Notes")) if pd.notna(row.get("Mic 3 Notes")) else None,
+                        mic_4_notes=str(row.get("Mic 4 Notes")) if pd.notna(row.get("Mic 4 Notes")) else None,
+                        notes=str(row.get("Notes")) if pd.notna(row.get("Notes")) else None,
+                        # AudioProcessing
+                        processing_date=pd.to_datetime(row.get("Processing Date")) if pd.notna(row.get("Processing Date")) else datetime.now(),
                         processing_status=row.get("Status", "not_processed"),
                         error_message=str(row.get("Error")) if pd.notna(row.get("Error")) else None,
-                        sample_rate=row.get("Sample Rate (Hz)") if pd.notna(row.get("Sample Rate (Hz)")) else None,
-                        num_channels=int(row.get("Channels", 4)),
-                        duration_seconds=row.get("Duration (s)") if pd.notna(row.get("Duration (s)")) else None,
-                        file_size_mb=row.get("File Size (MB)") if pd.notna(row.get("File Size (MB)")) else None,
-                        device_serial=str(row.get("Device Serial")) if pd.notna(row.get("Device Serial")) else None,
-                        firmware_version=int(row["Firmware Version"]) if pd.notna(row.get("Firmware Version")) else None,
-                        file_time=pd.to_datetime(row["Recording Time"]) if pd.notna(row.get("Recording Time")) else None,
-                        has_instantaneous_freq=bool(row.get("Has Inst. Freq", False)),
-                        qc_not_passed=str(row.get("QC_not_passed")) if pd.notna(row.get("QC_not_passed")) else None,
-                        qc_not_passed_mic_1=str(row.get("QC_not_passed_mic_1")) if pd.notna(row.get("QC_not_passed_mic_1")) else None,
-                        qc_not_passed_mic_2=str(row.get("QC_not_passed_mic_2")) if pd.notna(row.get("QC_not_passed_mic_2")) else None,
-                        qc_not_passed_mic_3=str(row.get("QC_not_passed_mic_3")) if pd.notna(row.get("QC_not_passed_mic_3")) else None,
-                        qc_not_passed_mic_4=str(row.get("QC_not_passed_mic_4")) if pd.notna(row.get("QC_not_passed_mic_4")) else None,
-                        channel_1_rms=row.get("Ch1 RMS") if pd.notna(row.get("Ch1 RMS")) else None,
-                        channel_2_rms=row.get("Ch2 RMS") if pd.notna(row.get("Ch2 RMS")) else None,
-                        channel_3_rms=row.get("Ch3 RMS") if pd.notna(row.get("Ch3 RMS")) else None,
-                        channel_4_rms=row.get("Ch4 RMS") if pd.notna(row.get("Ch4 RMS")) else None,
-                        channel_1_peak=row.get("Ch1 Peak") if pd.notna(row.get("Ch1 Peak")) else None,
-                        channel_2_peak=row.get("Ch2 Peak") if pd.notna(row.get("Ch2 Peak")) else None,
-                        channel_3_peak=row.get("Ch3 Peak") if pd.notna(row.get("Ch3 Peak")) else None,
-                        channel_4_peak=row.get("Ch4 Peak") if pd.notna(row.get("Ch4 Peak")) else None,
+                        duration_seconds=float(row.get("Duration (s)")) if pd.notna(row.get("Duration (s)")) else None,
+                        # QC fields
+                        qc_fail_segments=[],
+                        qc_fail_segments_ch1=[],
+                        qc_fail_segments_ch2=[],
+                        qc_fail_segments_ch3=[],
+                        qc_fail_segments_ch4=[],
+                        qc_signal_dropout=False,
+                        qc_signal_dropout_segments=[],
+                        qc_signal_dropout_ch1=False,
+                        qc_signal_dropout_segments_ch1=[],
+                        qc_signal_dropout_ch2=False,
+                        qc_signal_dropout_segments_ch2=[],
+                        qc_signal_dropout_ch3=False,
+                        qc_signal_dropout_segments_ch3=[],
+                        qc_signal_dropout_ch4=False,
+                        qc_signal_dropout_segments_ch4=[],
+                        qc_artifact=False,
+                        qc_artifact_segments=[],
+                        qc_artifact_ch1=False,
+                        qc_artifact_segments_ch1=[],
+                        qc_artifact_ch2=False,
+                        qc_artifact_segments_ch2=[],
+                        qc_artifact_ch3=False,
+                        qc_artifact_segments_ch3=[],
+                        qc_artifact_ch4=False,
+                        qc_artifact_segments_ch4=[],
                     )
             except Exception as e:
                 logger.warning(f"Could not load audio record: {e}")
@@ -356,18 +414,20 @@ class ManeuverProcessingLog:
                 if len(bio_df) > 0 and "Biomechanics File" in bio_df.columns:
                     row = bio_df.iloc[0]
                     log.biomechanics_record = BiomechanicsImport(
+                        # StudyMetadata
+                        study=row.get("Study", "AOA"),
+                        study_id=int(row.get("Study ID", 1)),
+                        # BiomechanicsImport
                         biomechanics_file=row.get("Biomechanics File", ""),
                         sheet_name=str(row.get("Sheet Name")) if pd.notna(row.get("Sheet Name")) else None,
-                        processing_date=pd.to_datetime(row["Processing Date"]) if pd.notna(row.get("Processing Date")) else None,
+                        processing_date=pd.to_datetime(row.get("Processing Date")) if pd.notna(row.get("Processing Date")) else datetime.now(),
                         processing_status=row.get("Status", "not_processed"),
                         error_message=str(row.get("Error")) if pd.notna(row.get("Error")) else None,
-                        num_sub_recordings=int(row.get("Num Sub-Recordings", row.get("Num Recordings", 0))),
-                        num_passes=int(row.get("Num Passes", 0)),
-                        duration_seconds=row.get("Duration (s)") if pd.notna(row.get("Duration (s)")) else None,
-                        num_data_points=int(row["Num Data Points"]) if pd.notna(row.get("Num Data Points")) else None,
-                        sample_rate=row.get("Sample Rate (Hz)") if pd.notna(row.get("Sample Rate (Hz)")) else None,
-                        start_time=row.get("Start Time (s)") if pd.notna(row.get("Start Time (s)")) else None,
-                        end_time=row.get("End Time (s)") if pd.notna(row.get("End Time (s)")) else None,
+                        num_sub_recordings=int(row.get("Num Sub-Recordings", row.get("Num Recordings", 1))),
+                        num_passes=int(row.get("Num Passes", 1)),
+                        duration_seconds=float(row.get("Duration (s)")) if pd.notna(row.get("Duration (s)")) else None,
+                        sample_rate=float(row.get("Sample Rate (Hz)")) if pd.notna(row.get("Sample Rate (Hz)")) else None,
+                        num_data_points=int(row.get("Num Data Points", 0)) if pd.notna(row.get("Num Data Points")) else None,
                     )
             except Exception as e:
                 logger.warning(f"Could not load biomechanics record: {e}")
@@ -377,69 +437,202 @@ class ManeuverProcessingLog:
                 sync_df = pd.read_excel(filepath, sheet_name="Synchronization")
                 if len(sync_df) > 0 and "Sync File" in sync_df.columns:
                     for _, row in sync_df.iterrows():
-                        record = Synchronization(
-                            sync_file_name=row.get("Sync File", ""),
-                            pass_number=int(row["Pass Number"]) if pd.notna(row.get("Pass Number")) else None,
-                            speed=str(row.get("Speed")) if pd.notna(row.get("Speed")) else None,
-                            processing_date=pd.to_datetime(row["Processing Date"]) if pd.notna(row.get("Processing Date")) else None,
-                            processing_status=row.get("Status", "not_processed"),
-                            error_message=str(row.get("Error")) if pd.notna(row.get("Error")) else None,
-                            audio_stomp_time=row.get("Audio Stomp (s)") if pd.notna(row.get("Audio Stomp (s)")) else None,
-                            bio_left_stomp_time=row.get("Bio Left Stomp (s)") if pd.notna(row.get("Bio Left Stomp (s)")) else None,
-                            bio_right_stomp_time=row.get("Bio Right Stomp (s)") if pd.notna(row.get("Bio Right Stomp (s)")) else None,
-                            knee_side=str(row.get("Knee Side")) if pd.notna(row.get("Knee Side")) else None,
-                            stomp_offset=row.get("Stomp Offset (s)") if pd.notna(row.get("Stomp Offset (s)")) else None,
-                            aligned_audio_stomp_time=row.get("Aligned Audio Stomp (s)") if pd.notna(row.get("Aligned Audio Stomp (s)")) else None,
-                            aligned_bio_stomp_time=row.get("Aligned Bio Stomp (s)") if pd.notna(row.get("Aligned Bio Stomp (s)")) else None,
-                            num_synced_samples=int(row["Num Samples"]) if pd.notna(row.get("Num Samples")) else None,
-                            duration_seconds=row.get("Duration (s)") if pd.notna(row.get("Duration (s)")) else None,
-                            sync_qc_performed=bool(row.get("Sync QC Done", False)),
-                            sync_qc_passed=bool(row["Sync QC Passed"]) if pd.notna(row.get("Sync QC Passed")) else None,
-                            audio_qc_version=int(row["Audio QC Version"]) if pd.notna(row.get("Audio QC Version")) else get_audio_qc_version(),
-                            biomech_qc_version=int(row["Biomech QC Version"]) if pd.notna(row.get("Biomech QC Version")) else get_biomech_qc_version(),
-                            consensus_time=row.get("Consensus (s)") if pd.notna(row.get("Consensus (s)")) else None,
-                            consensus_methods=str(row.get("Consensus Methods")) if pd.notna(row.get("Consensus Methods")) else None,
-                            rms_time=row.get("RMS Detect (s)") if pd.notna(row.get("RMS Detect (s)")) else None,
-                            onset_time=row.get("Onset Detect (s)") if pd.notna(row.get("Onset Detect (s)")) else None,
-                            freq_time=row.get("Freq Detect (s)") if pd.notna(row.get("Freq Detect (s)")) else None,
-                            rms_energy=row.get("RMS Energy") if pd.notna(row.get("RMS Energy")) else None,
-                            onset_magnitude=row.get("Onset Magnitude") if pd.notna(row.get("Onset Magnitude")) else None,
-                            freq_energy=row.get("Freq Energy") if pd.notna(row.get("Freq Energy")) else None,
-                            method_agreement_span=row.get("Method Agreement Span (s)") if pd.notna(row.get("Method Agreement Span (s)")) else None,
-                            audio_stomp_method=str(row.get("Detection Method")) if pd.notna(row.get("Detection Method")) else None,
-                            selected_time=row.get("Selected Time (s)") if pd.notna(row.get("Selected Time (s)")) else None,
-                            contra_selected_time=row.get("Contra Selected Time (s)") if pd.notna(row.get("Contra Selected Time (s)")) else None,
-                        )
-                        log.synchronization_records.append(record)
+                        # Helper function to convert seconds to timedelta
+                        def to_timedelta(value):
+                            if pd.isna(value):
+                                return None
+                            return pd.Timedelta(seconds=float(value))
+                        
+                        try:
+                            # Get biomechanics metadata, with defaults if not provided
+                            biomechanics_file = str(row.get("Biomechanics File")) if pd.notna(row.get("Biomechanics File")) else "unknown.xlsx"
+                            biomechanics_type = str(row.get("Biomechanics Type")) if pd.notna(row.get("Biomechanics Type")) else "Gonio"
+                            bio_sync_method = str(row.get("Bio Sync Method")) if pd.notna(row.get("Bio Sync Method")) else "flick"
+                            biomechanics_sample_rate = float(row.get("Biomechanics Sample Rate (Hz)")) if pd.notna(row.get("Biomechanics Sample Rate (Hz)")) else 100.0
+                            sync_method = str(row.get("Sync Method", "consensus")).lower()
+                            consensus_methods = str(row.get("Consensus Methods")) if pd.notna(row.get("Consensus Methods")) else ("consensus" if sync_method == "consensus" else None)
+                            
+                            record = Synchronization(
+                                # StudyMetadata
+                                study=row.get("Study", "AOA"),
+                                study_id=int(row.get("Study ID", 1)),
+                                # BiomechanicsMetadata
+                                linked_biomechanics=True,
+                                biomechanics_file=biomechanics_file,
+                                biomechanics_type=biomechanics_type,
+                                bio_sync_method=bio_sync_method,
+                                biomechanics_sample_rate=biomechanics_sample_rate,
+                                biomechanics_notes=str(row.get("Biomechanics Notes")) if pd.notna(row.get("Biomechanics Notes")) else None,
+                                # AcousticsFile
+                                audio_file_name=str(row.get("Audio File", "")),
+                                device_serial=str(row.get("Device Serial", "")),
+                                firmware_version=int(row.get("Firmware Version", 1)),
+                                file_time=pd.to_datetime(row.get("File Time")) if pd.notna(row.get("File Time")) else datetime.now(),
+                                file_size_mb=float(row.get("File Size (MB)", 0.0)),
+                                recording_date=pd.to_datetime(row.get("Recording Date")) if pd.notna(row.get("Recording Date")) else datetime.now(),
+                                recording_time=pd.to_datetime(row.get("Recording Time")) if pd.notna(row.get("Recording Time")) else datetime.now(),
+                                knee=str(row.get("Knee", "left")).lower(),
+                                maneuver=str(row.get("Maneuver", "walk")).lower(),
+                                sample_rate=float(row.get("Sample Rate (Hz)", 46875.0)),
+                                num_channels=int(row.get("Channels", 4)),
+                                mic_1_position=str(row.get("Mic 1 Position", "IPM")),
+                                mic_2_position=str(row.get("Mic 2 Position", "IPL")),
+                                mic_3_position=str(row.get("Mic 3 Position", "SPM")),
+                                mic_4_position=str(row.get("Mic 4 Position", "SPL")),
+                                mic_1_notes=str(row.get("Mic 1 Notes")) if pd.notna(row.get("Mic 1 Notes")) else None,
+                                mic_2_notes=str(row.get("Mic 2 Notes")) if pd.notna(row.get("Mic 2 Notes")) else None,
+                                mic_3_notes=str(row.get("Mic 3 Notes")) if pd.notna(row.get("Mic 3 Notes")) else None,
+                                mic_4_notes=str(row.get("Mic 4 Notes")) if pd.notna(row.get("Mic 4 Notes")) else None,
+                                notes=str(row.get("Notes")) if pd.notna(row.get("Notes")) else None,
+                                # SynchronizationMetadata
+                                audio_sync_time=to_timedelta(row.get("Audio Sync Time")) or pd.Timedelta(0),
+                                bio_left_sync_time=to_timedelta(row.get("Bio Left Sync Time")),
+                                bio_right_sync_time=to_timedelta(row.get("Bio Right Sync Time")),
+                                audio_visual_sync_time=to_timedelta(row.get("Audio Visual Sync Time")),
+                                audio_visual_sync_time_contralateral=to_timedelta(row.get("Audio Visual Sync Time Contralateral")),
+                                sync_offset=to_timedelta(row.get("Sync Offset")) or pd.Timedelta(0),
+                                aligned_audio_sync_time=to_timedelta(row.get("Aligned Audio Sync Time")) or pd.Timedelta(0),
+                                aligned_bio_sync_time=to_timedelta(row.get("Aligned Bio Sync Time")) or pd.Timedelta(0),
+                                sync_method=sync_method,
+                                consensus_methods=consensus_methods,
+                                consensus_time=to_timedelta(row.get("Consensus Time")) or pd.Timedelta(0),
+                                rms_time=to_timedelta(row.get("RMS Time")) or pd.Timedelta(0),
+                                onset_time=to_timedelta(row.get("Onset Time")) or pd.Timedelta(0),
+                                freq_time=to_timedelta(row.get("Freq Time")) or pd.Timedelta(0),
+                                biomechanics_time=to_timedelta(row.get("Biomechanics Time")),
+                                biomechanics_time_contralateral=to_timedelta(row.get("Biomechanics Time Contralateral")),
+                                # Synchronization
+                                sync_file_name=row.get("Sync File", ""),
+                                pass_number=int(row.get("Pass Number")) if pd.notna(row.get("Pass Number")) else None,
+                                speed=str(row.get("Speed")) if pd.notna(row.get("Speed")) else None,
+                                processing_date=pd.to_datetime(row.get("Processing Date")) if pd.notna(row.get("Processing Date")) else datetime.now(),
+                                processing_status=row.get("Status", "not_processed"),
+                                error_message=str(row.get("Error")) if pd.notna(row.get("Error")) else None,
+                                sync_duration=to_timedelta(row.get("Sync Duration")) or pd.Timedelta(0),
+                                total_cycles_extracted=int(row.get("Total Cycles", 0)),
+                                clean_cycles=int(row.get("Clean Cycles", 0)),
+                                outlier_cycles=int(row.get("Outlier Cycles", 0)),
+                                qc_acoustic_threshold=float(row.get("Acoustic Threshold")) if pd.notna(row.get("Acoustic Threshold")) else None,
+                                mean_cycle_duration_s=float(row.get("Mean Duration (s)")) if pd.notna(row.get("Mean Duration (s)")) else None,
+                                median_cycle_duration_s=float(row.get("Median Duration (s)")) if pd.notna(row.get("Median Duration (s)")) else None,
+                                min_cycle_duration_s=float(row.get("Min Duration (s)")) if pd.notna(row.get("Min Duration (s)")) else None,
+                                max_cycle_duration_s=float(row.get("Max Duration (s)")) if pd.notna(row.get("Max Duration (s)")) else None,
+                                mean_acoustic_auc=float(row.get("Mean Acoustic AUC")) if pd.notna(row.get("Mean Acoustic AUC")) else None,
+                                method_agreement_span=float(row.get("Method Agreement Span (s)")) if pd.notna(row.get("Method Agreement Span (s)")) else None,
+                                audio_stomp_method=str(row.get("Detection Method")) if pd.notna(row.get("Detection Method")) else None,
+                                selected_time=float(row.get("Selected Time (s)")) if pd.notna(row.get("Selected Time (s)")) else None,
+                                contra_selected_time=float(row.get("Contra Selected Time (s)")) if pd.notna(row.get("Contra Selected Time (s)")) else None,
+                                audio_qc_version=int(row.get("Audio QC Version", 1)),
+                                biomech_qc_version=int(row.get("Biomech QC Version", 1)),
+                                cycle_qc_version=int(row.get("Cycle QC Version", 1)),
+                            )
+                            log.synchronization_records.append(record)
+                        except Exception as e:
+                            logger.debug(f"Could not load synchronization record from row: {e}")
             except Exception as e:
                 logger.warning(f"Could not load synchronization records: {e}")
 
             # Load movement cycles records if present
             try:
                 cycles_df = pd.read_excel(filepath, sheet_name="Movement Cycles")
-                if len(cycles_df) > 0 and "Source Sync File" in cycles_df.columns:
-                    for _, row in cycles_df.iterrows():
-                        record = Synchronization(
-                            sync_file_name=row.get("Source Sync File", ""),
-                            pass_number=int(row["Pass Number"]) if pd.notna(row.get("Pass Number")) else None,
-                            speed=str(row.get("Speed")) if pd.notna(row.get("Speed")) else None,
-                            knee_side=str(row.get("Knee Side")) if pd.notna(row.get("Knee Side")) else None,
-                            processing_date=pd.to_datetime(row["Processing Date"]) if pd.notna(row.get("Processing Date")) else None,
-                            processing_status=row.get("Status", "not_processed"),
-                            error_message=str(row.get("Error")) if pd.notna(row.get("Error")) else None,
-                            total_cycles_extracted=int(row.get("Total Cycles")) if pd.notna(row.get("Total Cycles")) else 0,
-                            clean_cycles=int(row.get("Clean Cycles")) if pd.notna(row.get("Clean Cycles")) else 0,
-                            outlier_cycles=int(row.get("Outlier Cycles")) if pd.notna(row.get("Outlier Cycles")) else 0,
-                            qc_acoustic_threshold=row.get("Acoustic Threshold") if pd.notna(row.get("Acoustic Threshold")) else None,
-                            output_directory=str(row.get("Output Directory")) if pd.notna(row.get("Output Directory")) else None,
-                            plots_created=bool(row.get("Plots Created", False)),
-                            mean_cycle_duration_s=float(row.get("Mean Duration (s)")) if pd.notna(row.get("Mean Duration (s)")) else None,
-                            median_cycle_duration_s=float(row.get("Median Duration (s)")) if pd.notna(row.get("Median Duration (s)")) else None,
-                            min_cycle_duration_s=float(row.get("Min Duration (s)")) if pd.notna(row.get("Min Duration (s)")) else None,
-                            max_cycle_duration_s=float(row.get("Max Duration (s)")) if pd.notna(row.get("Max Duration (s)")) else None,
-                            mean_acoustic_auc=float(row.get("Mean Acoustic AUC")) if pd.notna(row.get("Mean Acoustic AUC")) else None,
-                        )
-                        log.movement_cycles_records.append(record)
+                if len(cycles_df) > 0:
+                    # Try both old and new column name conventions
+                    sync_file_col = "Source Sync File" if "Source Sync File" in cycles_df.columns else ("Sync File" if "Sync File" in cycles_df.columns else None)
+                    
+                    if sync_file_col:
+                        for _, row in cycles_df.iterrows():
+                            # Helper function to convert seconds to timedelta
+                            def to_timedelta(value):
+                                if pd.isna(value):
+                                    return None
+                                return pd.Timedelta(seconds=float(value))
+                            
+                            try:
+                                # Get biomechanics metadata, with defaults if not provided
+                                biomechanics_file = str(row.get("Biomechanics File")) if pd.notna(row.get("Biomechanics File")) else "unknown.xlsx"
+                                biomechanics_type = str(row.get("Biomechanics Type")) if pd.notna(row.get("Biomechanics Type")) else "Gonio"
+                                bio_sync_method = str(row.get("Bio Sync Method")) if pd.notna(row.get("Bio Sync Method")) else "flick"
+                                biomechanics_sample_rate = float(row.get("Biomechanics Sample Rate (Hz)")) if pd.notna(row.get("Biomechanics Sample Rate (Hz)")) else 100.0
+                                sync_method = str(row.get("Sync Method", "consensus")).lower()
+                                consensus_methods = str(row.get("Consensus Methods")) if pd.notna(row.get("Consensus Methods")) else ("consensus" if sync_method == "consensus" else None)
+                                
+                                record = Synchronization(
+                                    # StudyMetadata
+                                    study=row.get("Study", "AOA"),
+                                    study_id=int(row.get("Study ID", 1)),
+                                    # BiomechanicsMetadata
+                                    linked_biomechanics=True,
+                                    biomechanics_file=biomechanics_file,
+                                    biomechanics_type=biomechanics_type,
+                                    bio_sync_method=bio_sync_method,
+                                    biomechanics_sample_rate=biomechanics_sample_rate,
+                                    biomechanics_notes=str(row.get("Biomechanics Notes")) if pd.notna(row.get("Biomechanics Notes")) else None,
+                                    # AcousticsFile
+                                    audio_file_name=str(row.get("Audio File", "")),
+                                    device_serial=str(row.get("Device Serial", "")),
+                                    firmware_version=int(row.get("Firmware Version", 1)),
+                                    file_time=pd.to_datetime(row.get("File Time")) if pd.notna(row.get("File Time")) else datetime.now(),
+                                    file_size_mb=float(row.get("File Size (MB)", 0.0)),
+                                    recording_date=pd.to_datetime(row.get("Recording Date")) if pd.notna(row.get("Recording Date")) else datetime.now(),
+                                    recording_time=pd.to_datetime(row.get("Recording Time")) if pd.notna(row.get("Recording Time")) else datetime.now(),
+                                    knee=str(row.get("Knee", "left")).lower(),
+                                    maneuver=str(row.get("Maneuver", "walk")).lower(),
+                                    sample_rate=float(row.get("Sample Rate (Hz)", 46875.0)),
+                                    num_channels=int(row.get("Channels", 4)),
+                                    mic_1_position=str(row.get("Mic 1 Position", "IPM")),
+                                    mic_2_position=str(row.get("Mic 2 Position", "IPL")),
+                                    mic_3_position=str(row.get("Mic 3 Position", "SPM")),
+                                    mic_4_position=str(row.get("Mic 4 Position", "SPL")),
+                                    mic_1_notes=str(row.get("Mic 1 Notes")) if pd.notna(row.get("Mic 1 Notes")) else None,
+                                    mic_2_notes=str(row.get("Mic 2 Notes")) if pd.notna(row.get("Mic 2 Notes")) else None,
+                                    mic_3_notes=str(row.get("Mic 3 Notes")) if pd.notna(row.get("Mic 3 Notes")) else None,
+                                    mic_4_notes=str(row.get("Mic 4 Notes")) if pd.notna(row.get("Mic 4 Notes")) else None,
+                                    notes=str(row.get("Notes")) if pd.notna(row.get("Notes")) else None,
+                                    # SynchronizationMetadata
+                                    audio_sync_time=to_timedelta(row.get("Audio Sync Time")) or pd.Timedelta(0),
+                                    bio_left_sync_time=to_timedelta(row.get("Bio Left Sync Time")),
+                                    bio_right_sync_time=to_timedelta(row.get("Bio Right Sync Time")),
+                                    audio_visual_sync_time=to_timedelta(row.get("Audio Visual Sync Time")),
+                                    audio_visual_sync_time_contralateral=to_timedelta(row.get("Audio Visual Sync Time Contralateral")),
+                                    sync_offset=to_timedelta(row.get("Sync Offset")) or pd.Timedelta(0),
+                                    aligned_audio_sync_time=to_timedelta(row.get("Aligned Audio Sync Time")) or pd.Timedelta(0),
+                                    aligned_bio_sync_time=to_timedelta(row.get("Aligned Bio Sync Time")) or pd.Timedelta(0),
+                                    sync_method=sync_method,
+                                    consensus_methods=consensus_methods,
+                                    consensus_time=to_timedelta(row.get("Consensus Time")) or pd.Timedelta(0),
+                                    rms_time=to_timedelta(row.get("RMS Time")) or pd.Timedelta(0),
+                                    onset_time=to_timedelta(row.get("Onset Time")) or pd.Timedelta(0),
+                                    freq_time=to_timedelta(row.get("Freq Time")) or pd.Timedelta(0),
+                                    biomechanics_time=to_timedelta(row.get("Biomechanics Time")),
+                                    biomechanics_time_contralateral=to_timedelta(row.get("Biomechanics Time Contralateral")),
+                                    # Synchronization
+                                    sync_file_name=row.get(sync_file_col, ""),
+                                    pass_number=int(row.get("Pass Number")) if pd.notna(row.get("Pass Number")) else None,
+                                    speed=str(row.get("Speed")) if pd.notna(row.get("Speed")) else None,
+                                    processing_date=pd.to_datetime(row.get("Processing Date")) if pd.notna(row.get("Processing Date")) else datetime.now(),
+                                    processing_status=row.get("Status", "not_processed"),
+                                    error_message=str(row.get("Error")) if pd.notna(row.get("Error")) else None,
+                                    sync_duration=to_timedelta(row.get("Sync Duration")) or pd.Timedelta(0),
+                                    total_cycles_extracted=int(row.get("Total Cycles", 0)),
+                                    clean_cycles=int(row.get("Clean Cycles", 0)),
+                                    outlier_cycles=int(row.get("Outlier Cycles", 0)),
+                                    qc_acoustic_threshold=float(row.get("Acoustic Threshold")) if pd.notna(row.get("Acoustic Threshold")) else None,
+                                    mean_cycle_duration_s=float(row.get("Mean Duration (s)")) if pd.notna(row.get("Mean Duration (s)")) else None,
+                                    median_cycle_duration_s=float(row.get("Median Duration (s)")) if pd.notna(row.get("Median Duration (s)")) else None,
+                                    min_cycle_duration_s=float(row.get("Min Duration (s)")) if pd.notna(row.get("Min Duration (s)")) else None,
+                                    max_cycle_duration_s=float(row.get("Max Duration (s)")) if pd.notna(row.get("Max Duration (s)")) else None,
+                                    mean_acoustic_auc=float(row.get("Mean Acoustic AUC")) if pd.notna(row.get("Mean Acoustic AUC")) else None,
+                                    method_agreement_span=float(row.get("Method Agreement Span (s)")) if pd.notna(row.get("Method Agreement Span (s)")) else None,
+                                    audio_stomp_method=str(row.get("Detection Method")) if pd.notna(row.get("Detection Method")) else None,
+                                    selected_time=float(row.get("Selected Time (s)")) if pd.notna(row.get("Selected Time (s)")) else None,
+                                    contra_selected_time=float(row.get("Contra Selected Time (s)")) if pd.notna(row.get("Contra Selected Time (s)")) else None,
+                                    audio_qc_version=int(row.get("Audio QC Version", 1)),
+                                    biomech_qc_version=int(row.get("Biomech QC Version", 1)),
+                                    cycle_qc_version=int(row.get("Cycle QC Version", 1)),
+                                )
+                                log.movement_cycles_records.append(record)
+                            except Exception as e:
+                                logger.debug(f"Could not load movement cycles record from row: {e}")
             except Exception as e:
                 logger.warning(f"Could not load movement cycles records: {e}")
 
@@ -1576,10 +1769,12 @@ def create_cycles_record_from_data(
             data = {
                 "study": metadata.get("study", study) if metadata else study,
                 "study_id": metadata.get("study_id", study_id) if metadata else study_id,
-                "linked_biomechanics": False,
-                "biomechanics_file": None,
-                "biomechanics_type": None,
-                "biomechanics_sample_rate": None,
+                "linked_biomechanics": True,  # Synchronization requires this to be True
+                "biomechanics_file": "unknown_biomechanics.xlsx",
+                "biomechanics_type": "Gonio",
+                "bio_sync_method": "flick",
+                "biomechanics_sample_rate": 100.0,
+                "biomechanics_notes": None,
                 "audio_file_name": sync_file_name,
                 "device_serial": "unknown",
                 "firmware_version": 0,
@@ -1590,6 +1785,7 @@ def create_cycles_record_from_data(
                 "knee": "left",
                 "maneuver": "walk",
                 "sample_rate": 46875.0,
+                "num_channels": 4,
                 "mic_1_position": "IPM",
                 "mic_2_position": "IPL",
                 "mic_3_position": "SPM",
