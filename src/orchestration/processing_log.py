@@ -541,26 +541,63 @@ class KneeProcessingLog:
         # Add stomp time details from synchronization records
         if maneuver_log.synchronization_records:
             # Collect all stomp times across sync records
-            audio_stomps = [r.audio_stomp_time for r in maneuver_log.synchronization_records if r.audio_stomp_time is not None]
+            # Convert timedeltas to seconds
+            audio_stomps = [
+                r.audio_sync_time.total_seconds()
+                for r in maneuver_log.synchronization_records
+                if r.audio_sync_time is not None
+            ]
             bio_stomps = []
             for r in maneuver_log.synchronization_records:
-                if r.knee_side and r.knee_side.lower() == "left":
-                    if r.bio_left_stomp_time is not None:
-                        bio_stomps.append(r.bio_left_stomp_time)
-                elif r.knee_side and r.knee_side.lower() == "right":
-                    if r.bio_right_stomp_time is not None:
-                        bio_stomps.append(r.bio_right_stomp_time)
+                if r.knee and r.knee.lower() == "left":
+                    if r.bio_left_sync_time is not None:
+                        bio_stomps.append(r.bio_left_sync_time.total_seconds())
+                elif r.knee and r.knee.lower() == "right":
+                    if r.bio_right_sync_time is not None:
+                        bio_stomps.append(r.bio_right_sync_time.total_seconds())
 
-            offsets = [r.stomp_offset for r in maneuver_log.synchronization_records if r.stomp_offset is not None]
-            aligned_audio = [r.aligned_audio_stomp_time for r in maneuver_log.synchronization_records if r.aligned_audio_stomp_time is not None]
-            aligned_bio = [r.aligned_bio_stomp_time for r in maneuver_log.synchronization_records if r.aligned_bio_stomp_time is not None]
+            offsets = [
+                r.sync_offset.total_seconds()
+                for r in maneuver_log.synchronization_records
+                if r.sync_offset is not None
+            ]
+            aligned_audio = [
+                r.aligned_audio_sync_time.total_seconds()
+                for r in maneuver_log.synchronization_records
+                if r.aligned_audio_sync_time is not None
+            ]
+            aligned_bio = [
+                r.aligned_bio_sync_time.total_seconds()
+                for r in maneuver_log.synchronization_records
+                if r.aligned_bio_sync_time is not None
+            ]
 
             # Detection method aggregates
-            consensus_times = [r.consensus_time for r in maneuver_log.synchronization_records if r.consensus_time is not None]
-            rms_times = [r.rms_time for r in maneuver_log.synchronization_records if r.rms_time is not None]
-            onset_times = [r.onset_time for r in maneuver_log.synchronization_records if r.onset_time is not None]
-            freq_times = [r.freq_time for r in maneuver_log.synchronization_records if r.freq_time is not None]
-            agreement_spans = [r.method_agreement_span for r in maneuver_log.synchronization_records if r.method_agreement_span is not None]
+            consensus_times = [
+                r.consensus_time.total_seconds()
+                for r in maneuver_log.synchronization_records
+                if r.consensus_time is not None
+            ]
+            rms_times = [
+                r.rms_time.total_seconds()
+                for r in maneuver_log.synchronization_records
+                if r.rms_time is not None
+            ]
+            onset_times = [
+                r.onset_time.total_seconds()
+                for r in maneuver_log.synchronization_records
+                if r.onset_time is not None
+            ]
+            freq_times = [
+                r.freq_time.total_seconds()
+                for r in maneuver_log.synchronization_records
+                if r.freq_time is not None
+            ]
+            agreement_spans = [
+                r.method_agreement_span
+                for r in maneuver_log.synchronization_records
+                if r.method_agreement_span is not None
+            ]
 
             summary.update({
                 # Representative stomp metrics (aggregated across sync records)

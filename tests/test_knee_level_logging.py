@@ -3,7 +3,7 @@
 import pandas as pd
 import pytest
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta
 from src.metadata import (
     AudioProcessing,
     BiomechanicsImport,
@@ -14,6 +14,118 @@ from src.orchestration.processing_log import (
     KneeProcessingLog,
     ManeuverProcessingLog,
 )
+
+
+def _create_test_audio_processing(**kwargs):
+    """Helper to create a test AudioProcessing record with required fields."""
+    defaults = {
+        "study": "AOA",
+        "study_id": 1020,
+        "linked_biomechanics": False,
+        "biomechanics_file": None,
+        "biomechanics_type": None,
+        "bio_sync_method": None,
+        "biomechanics_sample_rate": None,
+        "audio_file_name": "test_audio.bin",
+        "device_serial": "TEST001",
+        "firmware_version": 1,
+        "file_time": datetime.now(),
+        "file_size_mb": 10.0,
+        "recording_date": datetime.now(),
+        "recording_time": datetime.now(),
+        "knee": "left",
+        "maneuver": "walk",
+        "sample_rate": 50000.0,
+        "num_channels": 4,
+        "mic_1_position": "IPM",
+        "mic_2_position": "IPL",
+        "mic_3_position": "SPM",
+        "mic_4_position": "SPL",
+        "processing_date": datetime.now(),
+        "processing_status": "success",
+        "duration_seconds": 120.0,
+        "qc_fail_segments": [],
+        "qc_fail_segments_ch1": [],
+        "qc_fail_segments_ch2": [],
+        "qc_fail_segments_ch3": [],
+        "qc_fail_segments_ch4": [],
+        "qc_signal_dropout": False,
+        "qc_signal_dropout_segments": [],
+        "qc_signal_dropout_ch1": False,
+        "qc_signal_dropout_segments_ch1": [],
+        "qc_signal_dropout_ch2": False,
+        "qc_signal_dropout_segments_ch2": [],
+        "qc_signal_dropout_ch3": False,
+        "qc_signal_dropout_segments_ch3": [],
+        "qc_signal_dropout_ch4": False,
+        "qc_signal_dropout_segments_ch4": [],
+        "qc_artifact": False,
+        "qc_artifact_segments": [],
+        "qc_artifact_ch1": False,
+        "qc_artifact_segments_ch1": [],
+        "qc_artifact_ch2": False,
+        "qc_artifact_segments_ch2": [],
+        "qc_artifact_ch3": False,
+        "qc_artifact_segments_ch3": [],
+        "qc_artifact_ch4": False,
+        "qc_artifact_segments_ch4": [],
+    }
+    defaults.update(kwargs)
+    return AudioProcessing(**defaults)
+
+
+def _create_test_synchronization(**kwargs):
+    """Helper to create a test Synchronization record with required fields."""
+    defaults = {
+        "study": "AOA",
+        "study_id": 1020,
+        "linked_biomechanics": True,
+        "biomechanics_file": "test_bio.xlsx",
+        "biomechanics_type": "Gonio",
+        "bio_sync_method": "flick",
+        "biomechanics_sample_rate": 100.0,
+        "audio_file_name": "test_audio.bin",
+        "device_serial": "TEST001",
+        "firmware_version": 1,
+        "file_time": datetime.now(),
+        "file_size_mb": 10.0,
+        "recording_date": datetime.now(),
+        "recording_time": datetime.now(),
+        "knee": "left",
+        "maneuver": "walk",
+        "sample_rate": 50000.0,
+        "num_channels": 4,
+        "mic_1_position": "IPM",
+        "mic_2_position": "IPL",
+        "mic_3_position": "SPM",
+        "mic_4_position": "SPL",
+        "audio_sync_time": timedelta(seconds=5.0),
+        "bio_left_sync_time": timedelta(seconds=10.0),
+        "bio_right_sync_time": timedelta(seconds=12.0),
+        "sync_offset": timedelta(seconds=5.0),
+        "aligned_audio_sync_time": timedelta(seconds=10.0),
+        "aligned_bio_sync_time": timedelta(seconds=10.0),
+        "sync_method": "consensus",
+        "consensus_methods": "consensus",
+        "consensus_time": timedelta(seconds=5.0),
+        "rms_time": timedelta(seconds=5.0),
+        "onset_time": timedelta(seconds=5.0),
+        "freq_time": timedelta(seconds=5.0),
+        "sync_file_name": "test_sync.pkl",
+        "processing_date": datetime.now(),
+        "processing_status": "success",
+        "sync_duration": timedelta(seconds=120.0),
+        "total_cycles_extracted": 10,
+        "clean_cycles": 8,
+        "outlier_cycles": 2,
+        "mean_cycle_duration_s": 1.2,
+        "median_cycle_duration_s": 1.2,
+        "min_cycle_duration_s": 1.0,
+        "max_cycle_duration_s": 1.5,
+        "mean_acoustic_auc": 0.8,
+    }
+    defaults.update(kwargs)
+    return Synchronization(**defaults)
 
 
 @pytest.fixture
@@ -40,7 +152,7 @@ def sample_maneuver_log(tmp_path):
     )
 
     # Add audio record
-    audio = AudioProcessing(
+    audio = _create_test_audio_processing(
         audio_file_name="test_audio.bin",
         processing_status="success",
         sample_rate=50000.0,
@@ -50,35 +162,46 @@ def sample_maneuver_log(tmp_path):
 
     # Add biomechanics record
     bio = BiomechanicsImport(
+        study="AOA",
+        study_id=1020,
         biomechanics_file="test_bio.xlsx",
+        sheet_name="test_sheet",
+        processing_date=datetime.now(),
         processing_status="success",
-        num_recordings=3,
+        num_sub_recordings=3,
         duration_seconds=100.0,
+        sample_rate=100.0,
+        num_data_points=10000,
     )
     log.biomechanics_record = bio
 
     # Add synchronization records with stomp times
     for i in range(3):
-        sync = Synchronization(
+        sync = _create_test_synchronization(
+            audio_file_name="test_audio.bin",
             sync_file_name=f"sync_pass_{i}",
             pass_number=i,
             speed="slow" if i == 0 else "medium" if i == 1 else "fast",
             processing_status="success",
-            audio_stomp_time=5.0 + i,
-            bio_left_stomp_time=10.0 + i,
-            bio_right_stomp_time=12.0 + i,
-            knee_side="left",
-            stomp_offset=5.0,
-            aligned_audio_stomp_time=10.0 + i,
-            aligned_bio_stomp_time=10.0 + i,
+            audio_sync_time=timedelta(seconds=5.0 + i),
+            bio_left_sync_time=timedelta(seconds=10.0 + i),
+            bio_right_sync_time=timedelta(seconds=12.0 + i),
+            sync_offset=timedelta(seconds=5.0),
+            aligned_audio_sync_time=timedelta(seconds=10.0 + i),
+            aligned_bio_sync_time=timedelta(seconds=10.0 + i),
+            sync_duration=timedelta(seconds=120.0),
         )
         log.synchronization_records.append(sync)
 
-    # Add movement cycles records
+    # Add movement cycles records (reusing Synchronization since MovementCycles is an alias)
     for i in range(3):
-        cycles = MovementCycles(
+        cycles = _create_test_synchronization(
+            audio_file_name="test_audio.bin",
             sync_file_name=f"sync_pass_{i}",
+            pass_number=i,
+            speed="slow" if i == 0 else "medium" if i == 1 else "fast",
             processing_status="success",
+            sync_duration=timedelta(seconds=120.0),
             total_cycles_extracted=10 + i,
             clean_cycles=8 + i,
             outlier_cycles=2,
@@ -171,9 +294,10 @@ def test_knee_log_multiple_maneuvers(temp_knee_dir, sample_maneuver_log, tmp_pat
         log_updated=datetime.now(),
     )
     # Use unified metadata classes
-    sts_audio = AudioProcessing(
+    sts_audio = _create_test_audio_processing(
         audio_file_name="sts_audio.bin",
         processing_status="success",
+        maneuver="sts",
     )
     sts_log.audio_record = sts_audio
     knee_log.update_maneuver_summary("sit_to_stand", sts_log)
@@ -197,7 +321,7 @@ def test_knee_log_replaces_existing_maneuver(temp_knee_dir, sample_maneuver_log)
     first_update = knee_log.maneuver_summaries[0]["Last Updated"]
 
     # Modify the log
-    extra_cycles = MovementCycles(
+    extra_cycles = _create_test_synchronization(
         sync_file_name="extra",
         processing_status="success",
         total_cycles_extracted=5,
@@ -297,16 +421,16 @@ def test_knee_log_right_knee_stomp_selection(temp_knee_dir, tmp_path):
     )
 
     # Add sync record with right knee
-    sync = Synchronization(
+    sync = _create_test_synchronization(
         sync_file_name="sync_pass_1",
         processing_status="success",
-        audio_stomp_time=5.0,
-        bio_left_stomp_time=10.0,
-        bio_right_stomp_time=8.0,  # Different from left
-        knee_side="right",
-        stomp_offset=3.0,  # 8 - 5
-        aligned_audio_stomp_time=8.0,
-        aligned_bio_stomp_time=8.0,
+        audio_sync_time=timedelta(seconds=5.0),
+        bio_left_sync_time=timedelta(seconds=10.0),
+        bio_right_sync_time=timedelta(seconds=8.0),  # Different from left
+        knee="right",
+        sync_offset=timedelta(seconds=3.0),  # 8 - 5
+        aligned_audio_sync_time=timedelta(seconds=8.0),
+        aligned_bio_sync_time=timedelta(seconds=8.0),
     )
     log.synchronization_records.append(sync)
 
