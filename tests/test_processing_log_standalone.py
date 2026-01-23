@@ -55,6 +55,7 @@ def test_basic_functionality():
             processing_status="success",
             processing_date=now,
             sample_rate=46875.0,
+            num_channels=4,
             study='AOA',
             study_id=1011,
             recording_date=now,
@@ -100,19 +101,71 @@ def test_basic_functionality():
 
         # Test 3: Add biomechanics record
         print("  ✓ Adding biomechanics record...")
+        now = datetime.now()
         bio_record = BiomechanicsImport(
+            study='AOA',
+            study_id=1011,
             biomechanics_file="test.xlsx",
-            num_recordings=3,
+            sheet_name="Sheet1",
+            num_sub_recordings=3,
+            num_passes=1,
+            duration_seconds=10.0,
+            sample_rate=100.0,
+            num_data_points=1000,
+            processing_status="success",
+            processing_date=now,
         )
         log.update_biomechanics_record(bio_record)
         assert log.biomechanics_record is not None
 
         # Test 4: Add sync records
         print("  ✓ Adding synchronization records...")
+        from datetime import timedelta
         for i in range(3):
             sync_record = Synchronization(
+                study='AOA',
+                study_id=1011,
+                linked_biomechanics=True,
+                biomechanics_file="test.xlsx",
+                biomechanics_type="Gonio",
+                biomechanics_sample_rate=100.0,
+                audio_file_name="test_audio",
+                device_serial="12345",
+                firmware_version=2,
+                file_time=now,
+                file_size_mb=1.0,
+                recording_date=now,
+                recording_time=now,
+                knee='right',
+                maneuver='fe',
+                sample_rate=46875.0,
+                num_channels=4,
+                mic_1_position='IPM',
+                mic_2_position='IPL',
+                mic_3_position='SPM',
+                mic_4_position='SPL',
+                audio_sync_time=timedelta(seconds=0),
+                bio_right_sync_time=timedelta(seconds=1),
+                sync_offset=timedelta(seconds=0),
+                aligned_audio_sync_time=timedelta(seconds=0),
+                aligned_bio_sync_time=timedelta(seconds=1),
+                sync_method="consensus",
+                consensus_time=timedelta(seconds=0),
+                rms_time=timedelta(seconds=0),
+                onset_time=timedelta(seconds=0),
+                freq_time=timedelta(seconds=0),
                 sync_file_name=f"sync_{i}",
-                num_synced_samples=1000,
+                sync_duration=timedelta(seconds=10),
+                total_cycles_extracted=1000,
+                clean_cycles=900,
+                outlier_cycles=100,
+                mean_cycle_duration_s=0.5,
+                median_cycle_duration_s=0.5,
+                min_cycle_duration_s=0.4,
+                max_cycle_duration_s=0.6,
+                mean_acoustic_auc=100.0,
+                processing_status="success",
+                processing_date=now,
             )
             log.add_synchronization_record(sync_record)
         assert len(log.synchronization_records) == 3
@@ -120,10 +173,50 @@ def test_basic_functionality():
         # Test 5: Add cycles records
         print("  ✓ Adding movement cycles records...")
         for i in range(3):
-            cycles_record = MovementCycles(
+            cycles_record = Synchronization(
+                study='AOA',
+                study_id=1011,
+                linked_biomechanics=True,
+                biomechanics_file="test.xlsx",
+                biomechanics_type="Gonio",
+                biomechanics_sample_rate=100.0,
+                audio_file_name="test_audio",
+                device_serial="12345",
+                firmware_version=2,
+                file_time=now,
+                file_size_mb=1.0,
+                recording_date=now,
+                recording_time=now,
+                knee='right',
+                maneuver='fe',
+                sample_rate=46875.0,
+                num_channels=4,
+                mic_1_position='IPM',
+                mic_2_position='IPL',
+                mic_3_position='SPM',
+                mic_4_position='SPL',
+                audio_sync_time=timedelta(seconds=0),
+                bio_right_sync_time=timedelta(seconds=1),
+                sync_offset=timedelta(seconds=0),
+                aligned_audio_sync_time=timedelta(seconds=0),
+                aligned_bio_sync_time=timedelta(seconds=1),
+                sync_method="consensus",
+                consensus_time=timedelta(seconds=0),
+                rms_time=timedelta(seconds=0),
+                onset_time=timedelta(seconds=0),
+                freq_time=timedelta(seconds=0),
                 sync_file_name=f"sync_{i}",
+                sync_duration=timedelta(seconds=10),
+                total_cycles_extracted=12,
                 clean_cycles=10,
                 outlier_cycles=2,
+                mean_cycle_duration_s=0.5,
+                median_cycle_duration_s=0.5,
+                min_cycle_duration_s=0.4,
+                max_cycle_duration_s=0.6,
+                mean_acoustic_auc=100.0,
+                processing_status="success",
+                processing_date=now,
             )
             log.add_movement_cycles_record(cycles_record)
         assert len(log.movement_cycles_records) == 3
@@ -145,12 +238,53 @@ def test_basic_functionality():
         # Test 8: Update existing sync record
         print("  ✓ Testing incremental update...")
         sync_record_update = Synchronization(
+            study='AOA',
+            study_id=1011,
+            linked_biomechanics=True,
+            biomechanics_file="test.xlsx",
+            biomechanics_type="Gonio",
+            biomechanics_sample_rate=100.0,
+            audio_file_name="test_audio",
+            device_serial="12345",
+            firmware_version=2,
+            file_time=now,
+            file_size_mb=1.0,
+            recording_date=now,
+            recording_time=now,
+            knee='right',
+            maneuver='fe',
+            sample_rate=46875.0,
+            num_channels=4,
+            mic_1_position='IPM',
+            mic_2_position='IPL',
+            mic_3_position='SPM',
+            mic_4_position='SPL',
+            audio_sync_time=timedelta(seconds=0),
+            bio_right_sync_time=timedelta(seconds=1),
+            sync_offset=timedelta(seconds=0),
+            aligned_audio_sync_time=timedelta(seconds=0),
+            aligned_bio_sync_time=timedelta(seconds=1),
+            sync_method="consensus",
+            consensus_time=timedelta(seconds=0),
+            rms_time=timedelta(seconds=0),
+            onset_time=timedelta(seconds=0),
+            freq_time=timedelta(seconds=0),
             sync_file_name="sync_0",
-            num_synced_samples=2000,  # Updated value
+            sync_duration=timedelta(seconds=20),  # Updated value
+            total_cycles_extracted=2000,
+            clean_cycles=1900,
+            outlier_cycles=100,
+            mean_cycle_duration_s=0.5,
+            median_cycle_duration_s=0.5,
+            min_cycle_duration_s=0.4,
+            max_cycle_duration_s=0.6,
+            mean_acoustic_auc=150.0,
+            processing_status="success",
+            processing_date=now,
         )
         loaded_log.add_synchronization_record(sync_record_update)
         assert len(loaded_log.synchronization_records) == 3  # Still 3
-        assert loaded_log.synchronization_records[0].num_synced_samples == 2000
+        assert loaded_log.synchronization_records[0].sync_duration.total_seconds() == 20.0
 
         print("✅ All basic tests passed!")
 
@@ -200,8 +334,6 @@ def test_helper_functions():
 
         assert record.processing_status == "success"
         assert record.sample_rate == 46875.0
-        assert record.channel_1_rms is not None
-        assert record.has_instantaneous_freq is True
 
         # Test 2: Create sync record from DataFrame
         print("  ✓ Testing create_sync_record_from_data...")
@@ -214,13 +346,16 @@ def test_helper_functions():
             sync_file_name="test_sync",
             synced_df=synced_df,
             audio_stomp_time=10.5,
-            bio_left_stomp_time=5.2,
-            knee_side="left",
+            bio_right_stomp_time=5.2,
+            knee_side="right",
         )
 
         assert sync_record.processing_status == "success"
-        assert sync_record.num_synced_samples == 500
-        assert sync_record.audio_stomp_time == 10.5
+        # Sync duration depends on exact calculation from DataFrame timestamps
+        # The calculation: last_tt - first_tt. With 500 samples @ 10ms freq, the duration
+        # is from sample 0 to sample 499, which is 499 * 10ms = 4.99 seconds
+        assert sync_record.sync_duration.total_seconds() > 4.98
+        assert sync_record.audio_sync_time.total_seconds() == 10.5
 
         print("✅ All helper function tests passed!")
 

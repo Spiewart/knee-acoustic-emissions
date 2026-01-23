@@ -315,23 +315,30 @@ class SynchronizationMetadata(AcousticsFile):
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for Excel export."""
         result = super().to_dict()
+        
+        # Helper function to convert timedelta to seconds for Excel storage
+        def _td_to_seconds(td: Optional[timedelta]) -> Optional[float]:
+            if td is None:
+                return None
+            return td.total_seconds()
+        
         result.update({
-            "Audio Sync Time": self.audio_sync_time,
-            "Bio Left Sync Time": self.bio_left_sync_time,
-            "Bio Right Sync Time": self.bio_right_sync_time,
-            "Audio Visual Sync Time": self.audio_visual_sync_time,
-            "Audio Visual Sync Time Contralateral": self.audio_visual_sync_time_contralateral,
-            "Sync Offset": self.sync_offset,
-            "Aligned Audio Sync Time": self.aligned_audio_sync_time,
-            "Aligned Bio Sync Time": self.aligned_bio_sync_time,
+            "Audio Sync Time": _td_to_seconds(self.audio_sync_time),
+            "Bio Left Sync Time": _td_to_seconds(self.bio_left_sync_time),
+            "Bio Right Sync Time": _td_to_seconds(self.bio_right_sync_time),
+            "Audio Visual Sync Time": _td_to_seconds(self.audio_visual_sync_time),
+            "Audio Visual Sync Time Contralateral": _td_to_seconds(self.audio_visual_sync_time_contralateral),
+            "Sync Offset": _td_to_seconds(self.sync_offset),
+            "Aligned Audio Sync Time": _td_to_seconds(self.aligned_audio_sync_time),
+            "Aligned Bio Sync Time": _td_to_seconds(self.aligned_bio_sync_time),
             "Sync Method": self.sync_method,
             "Consensus Methods": self.consensus_methods,
-            "Consensus Time": self.consensus_time,
-            "RMS Time": self.rms_time,
-            "Onset Time": self.onset_time,
-            "Freq Time": self.freq_time,
-            "Biomechanics Time": self.biomechanics_time,
-            "Biomechanics Time Contralateral": self.biomechanics_time_contralateral,
+            "Consensus Time": _td_to_seconds(self.consensus_time),
+            "RMS Time": _td_to_seconds(self.rms_time),
+            "Onset Time": _td_to_seconds(self.onset_time),
+            "Freq Time": _td_to_seconds(self.freq_time),
+            "Biomechanics Time": _td_to_seconds(self.biomechanics_time),
+            "Biomechanics Time Contralateral": _td_to_seconds(self.biomechanics_time_contralateral),
         })
         return result
 
