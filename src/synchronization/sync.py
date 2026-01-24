@@ -157,6 +157,9 @@ def _detect_stomp_by_rms_energy(
 
     Identifies the highest energy event in the first N seconds of recording.
 
+    # TODO: update this method to pick the FIRST peak exceeding a threshold,
+    # TODO: rather than the absolute maximum, to better capture initial foot contact.
+
     Args:
         audio_channels: Audio data as numpy array (samples × channels).
         tt_seconds: Time values in seconds (1D array).
