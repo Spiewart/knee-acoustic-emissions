@@ -1036,12 +1036,7 @@ def create_audio_record_from_data(
             if field in metadata:
                 data[field] = metadata[field]
         
-        # Backward compatibility: handle old 'sync_method' or 'bio_sync_method' field names
-        if 'sync_method' in metadata and 'biomechanics_sync_method' not in data:
-            data['biomechanics_sync_method'] = metadata['sync_method']
-        if 'bio_sync_method' in metadata and 'biomechanics_sync_method' not in data:
-            data['biomechanics_sync_method'] = metadata['bio_sync_method']
-        
+
         # Normalize sample rate from metadata
         meta_fs = metadata.get("fs")
         if isinstance(meta_fs, (int, float)):
