@@ -68,11 +68,11 @@ class BiomechanicsMetadata(StudyMetadata):
     # Conditionally required fields (required if linked_biomechanics is True)
     biomechanics_file: Optional[str] = None
     biomechanics_type: Optional[Literal["Gonio", "IMU", "Motion Analysis"]] = None
-    bio_sync_method: Optional[Literal["flick", "stomp"]] = None
+    biomechanics_sync_method: Optional[Literal["flick", "stomp"]] = None
     biomechanics_sample_rate: Optional[float] = None
     biomechanics_notes: Optional[str] = None
     
-    @field_validator("biomechanics_file", "biomechanics_type", "bio_sync_method", "biomechanics_sample_rate")
+    @field_validator("biomechanics_file", "biomechanics_type", "biomechanics_sync_method", "biomechanics_sample_rate")
     @classmethod
     def validate_biomechanics_fields(cls, value: Optional[Any], info) -> Optional[Any]:
         """Validate biomechanics fields are provided when linked_biomechanics is True."""
@@ -86,16 +86,16 @@ class BiomechanicsMetadata(StudyMetadata):
                 raise ValueError(f"{field_name} must be None when linked_biomechanics is False")
         return value
     
-    @field_validator("bio_sync_method")
+    @field_validator("biomechanics_sync_method")
     @classmethod
-    def validate_bio_sync_method_for_type(cls, value: Optional[str], info) -> Optional[str]:
-        """Validate bio_sync_method matches biomechanics_type requirements."""
+    def validate_biomechanics_sync_method_for_type(cls, value: Optional[str], info) -> Optional[str]:
+        """Validate biomechanics_sync_method matches biomechanics_type requirements."""
         biomech_type = info.data.get("biomechanics_type")
         if biomech_type and value:
             if biomech_type in ["Motion Analysis", "IMU"] and value != "stomp":
-                raise ValueError(f"bio_sync_method must be 'stomp' for biomechanics_type '{biomech_type}'")
+                raise ValueError(f"biomechanics_sync_method must be 'stomp' for biomechanics_type '{biomech_type}'")
             elif biomech_type == "Gonio" and value != "flick":
-                raise ValueError("bio_sync_method must be 'flick' for biomechanics_type 'Gonio'")
+                raise ValueError("biomechanics_sync_method must be 'flick' for biomechanics_type 'Gonio'")
         return value
     
     @field_validator("biomechanics_sample_rate")
@@ -113,7 +113,7 @@ class BiomechanicsMetadata(StudyMetadata):
             "Linked Biomechanics": self.linked_biomechanics,
             "Biomechanics File": self.biomechanics_file,
             "Biomechanics Type": self.biomechanics_type,
-            "Bio Sync Method": self.bio_sync_method,
+            "Biomechanics Sync Method": self.biomechanics_sync_method,
             "Biomechanics Sample Rate (Hz)": self.biomechanics_sample_rate,
             "Biomechanics Notes": self.biomechanics_notes,
         })

@@ -342,7 +342,7 @@ class ManeuverProcessingLog:
                         linked_biomechanics=bool(row.get("Linked Biomechanics", False)),
                         biomechanics_file=str(row.get("Biomechanics File")) if pd.notna(row.get("Biomechanics File")) else None,
                         biomechanics_type=str(row.get("Biomechanics Type")) if pd.notna(row.get("Biomechanics Type")) else None,
-                        bio_sync_method=str(row.get("Bio Sync Method")) if pd.notna(row.get("Bio Sync Method")) else None,
+                        biomechanics_sync_method=str(row.get("Biomechanics Sync Method")) if pd.notna(row.get("Biomechanics Sync Method")) else None,
                         biomechanics_sample_rate=float(row.get("Biomechanics Sample Rate (Hz)")) if pd.notna(row.get("Biomechanics Sample Rate (Hz)")) else None,
                         biomechanics_notes=str(row.get("Biomechanics Notes")) if pd.notna(row.get("Biomechanics Notes")) else None,
                         # AcousticsFile
@@ -440,7 +440,7 @@ class ManeuverProcessingLog:
                             # Get biomechanics metadata, with defaults if not provided
                             biomechanics_file = str(row.get("Biomechanics File")) if pd.notna(row.get("Biomechanics File")) else "unknown.xlsx"
                             biomechanics_type = str(row.get("Biomechanics Type")) if pd.notna(row.get("Biomechanics Type")) else "Gonio"
-                            bio_sync_method = str(row.get("Bio Sync Method")) if pd.notna(row.get("Bio Sync Method")) else "flick"
+                            biomechanics_sync_method = str(row.get("Biomechanics Sync Method")) if pd.notna(row.get("Biomechanics Sync Method")) else "flick"
                             biomechanics_sample_rate = float(row.get("Biomechanics Sample Rate (Hz)")) if pd.notna(row.get("Biomechanics Sample Rate (Hz)")) else 100.0
                             sync_method = str(row.get("Sync Method", "consensus")).lower()
                             consensus_methods = str(row.get("Consensus Methods")) if pd.notna(row.get("Consensus Methods")) else ("consensus" if sync_method == "consensus" else None)
@@ -453,7 +453,7 @@ class ManeuverProcessingLog:
                                 linked_biomechanics=True,
                                 biomechanics_file=biomechanics_file,
                                 biomechanics_type=biomechanics_type,
-                                bio_sync_method=bio_sync_method,
+                                biomechanics_sync_method=biomechanics_sync_method,
                                 biomechanics_sample_rate=biomechanics_sample_rate,
                                 biomechanics_notes=str(row.get("Biomechanics Notes")) if pd.notna(row.get("Biomechanics Notes")) else None,
                                 # AcousticsFile
@@ -544,7 +544,7 @@ class ManeuverProcessingLog:
                                 # Get biomechanics metadata, with defaults if not provided
                                 biomechanics_file = str(row.get("Biomechanics File")) if pd.notna(row.get("Biomechanics File")) else "unknown.xlsx"
                                 biomechanics_type = str(row.get("Biomechanics Type")) if pd.notna(row.get("Biomechanics Type")) else "Gonio"
-                                bio_sync_method = str(row.get("Bio Sync Method")) if pd.notna(row.get("Bio Sync Method")) else "flick"
+                                biomechanics_sync_method = str(row.get("Biomechanics Sync Method")) if pd.notna(row.get("Biomechanics Sync Method")) else "flick"
                                 biomechanics_sample_rate = float(row.get("Biomechanics Sample Rate (Hz)")) if pd.notna(row.get("Biomechanics Sample Rate (Hz)")) else 100.0
                                 sync_method = str(row.get("Sync Method", "consensus")).lower()
                                 consensus_methods = str(row.get("Consensus Methods")) if pd.notna(row.get("Consensus Methods")) else ("consensus" if sync_method == "consensus" else None)
@@ -557,7 +557,7 @@ class ManeuverProcessingLog:
                                     linked_biomechanics=True,
                                     biomechanics_file=biomechanics_file,
                                     biomechanics_type=biomechanics_type,
-                                    bio_sync_method=bio_sync_method,
+                                    biomechanics_sync_method=biomechanics_sync_method,
                                     biomechanics_sample_rate=biomechanics_sample_rate,
                                     biomechanics_notes=str(row.get("Biomechanics Notes")) if pd.notna(row.get("Biomechanics Notes")) else None,
                                     # AcousticsFile
@@ -1032,13 +1032,15 @@ def create_audio_record_from_data(
         for field in ['study', 'study_id', 'recording_date', 'recording_time', 'knee', 'maneuver',
                       'mic_1_position', 'mic_2_position', 'mic_3_position', 'mic_4_position',
                       'file_size_mb', 'linked_biomechanics', 'biomechanics_file', 'biomechanics_type',
-                      'bio_sync_method', 'biomechanics_sample_rate', 'biomechanics_notes', 'num_channels']:
+                      'biomechanics_sync_method', 'biomechanics_sample_rate', 'biomechanics_notes', 'num_channels']:
             if field in metadata:
                 data[field] = metadata[field]
         
-        # Backward compatibility: handle old 'sync_method' field name
-        if 'sync_method' in metadata and 'bio_sync_method' not in data:
-            data['bio_sync_method'] = metadata['sync_method']
+        # Backward compatibility: handle old 'sync_method' or 'bio_sync_method' field names
+        if 'sync_method' in metadata and 'biomechanics_sync_method' not in data:
+            data['biomechanics_sync_method'] = metadata['sync_method']
+        if 'bio_sync_method' in metadata and 'biomechanics_sync_method' not in data:
+            data['biomechanics_sync_method'] = metadata['bio_sync_method']
         
         # Normalize sample rate from metadata
         meta_fs = metadata.get("fs")
@@ -1765,7 +1767,7 @@ def create_cycles_record_from_data(
                 "linked_biomechanics": True,  # Synchronization requires this to be True
                 "biomechanics_file": "unknown_biomechanics.xlsx",
                 "biomechanics_type": "Gonio",
-                "bio_sync_method": "flick",
+                "biomechanics_sync_method": "flick",
                 "biomechanics_sample_rate": 100.0,
                 "biomechanics_notes": None,
                 "audio_file_name": sync_file_name,

@@ -29,7 +29,7 @@ def _make_minimal_sync(
         linked_biomechanics=True,  # Required for Synchronization
         biomechanics_file="test_bio.xlsx",
         biomechanics_type="Motion Analysis",
-        bio_sync_method="stomp",
+        biomechanics_sync_method="stomp",
         biomechanics_sample_rate=120.0,
         # AcousticsFile fields
         audio_file_name="test_audio.bin",

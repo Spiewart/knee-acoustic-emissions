@@ -82,7 +82,7 @@ class TestGetSyncMethodDefaults:
         # Should have biomechanics-related fields
         assert "biomechanics_file" in defaults
         assert "biomechanics_type" in defaults
-        assert "bio_sync_method" in defaults
+        assert "biomechanics_sync_method" in defaults
 
     def test_default_values(self):
         """Test that defaults have expected placeholder values."""
@@ -91,7 +91,7 @@ class TestGetSyncMethodDefaults:
         # Should have reasonable defaults
         assert defaults["biomechanics_file"] == "unknown"
         assert defaults["biomechanics_type"] == "IMU"
-        assert defaults["bio_sync_method"] == "stomp"
+        assert defaults["biomechanics_sync_method"] == "stomp"
 
 
 class TestCreateAudioRecordHelpers:
@@ -165,7 +165,7 @@ class TestCreateSyncRecordContext:
             linked_biomechanics=True,
             biomechanics_file="test.csv",
             biomechanics_type="IMU",
-            bio_sync_method="stomp",
+            biomechanics_sync_method="stomp",
             biomechanics_sample_rate=200.0,
             audio_file_name="test.bin",
             device_serial="AE01",
@@ -263,7 +263,7 @@ class TestLoadFromExcelReconstruction:
             "Linked Biomechanics": True,
             "Biomechanics File": "test.csv",
             "Biomechanics Type": "IMU",
-            "Bio Sync Method": "stomp",
+            "Biomechanics Sync Method": "stomp",
             "Biomechanics Sample Rate": 200.0,
             "Audio File Name": "test.bin",
             "Device Serial": "AE01",
@@ -318,7 +318,7 @@ class TestMovementCycleCreation:
             linked_biomechanics=True,
             biomechanics_file="test.csv",
             biomechanics_type="IMU",
-            bio_sync_method="stomp",
+            biomechanics_sync_method="stomp",
             biomechanics_sample_rate=200.0,
             # AcousticsFile
             audio_file_name="test.bin",
@@ -377,7 +377,7 @@ class TestFieldNameTransitions:
             linked_biomechanics=True,
             biomechanics_file="test.csv",
             biomechanics_type="IMU",
-            bio_sync_method="stomp",
+            biomechanics_sync_method="stomp",
             biomechanics_sample_rate=200.0,
             audio_file_name="test.bin",
             device_serial="AE01",
@@ -440,7 +440,7 @@ class TestFieldNameTransitions:
             linked_biomechanics=True,
             biomechanics_file="test.csv",
             biomechanics_type="IMU",
-            bio_sync_method="stomp",
+            biomechanics_sync_method="stomp",
             biomechanics_sample_rate=200.0,
             audio_file_name="test.bin",
             device_serial="AE01",

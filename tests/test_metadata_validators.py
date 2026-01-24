@@ -58,7 +58,7 @@ class TestBiomechanicsMetadataValidators:
             linked_biomechanics=False,
             biomechanics_file=None,
             biomechanics_type=None,
-            bio_sync_method=None,
+            biomechanics_sync_method=None,
             biomechanics_sample_rate=None,
         )
         assert metadata.linked_biomechanics is False
@@ -73,13 +73,13 @@ class TestBiomechanicsMetadataValidators:
                 linked_biomechanics=True,
                 biomechanics_file=None,  # Should not be None
                 biomechanics_type="IMU",
-                bio_sync_method="stomp",
+                biomechanics_sync_method="stomp",
                 biomechanics_sample_rate=200.0,
             )
         assert "biomechanics_file" in str(exc_info.value)
 
-    def test_bio_sync_method_validation_gonio(self):
-        """Test bio_sync_method validation for Gonio type."""
+    def test_biomechanics_sync_method_validation_gonio(self):
+        """Test biomechanics_sync_method validation for Gonio type."""
         # Gonio must use flick
         metadata = BiomechanicsMetadata(
             study="AOA",
@@ -87,10 +87,10 @@ class TestBiomechanicsMetadataValidators:
             linked_biomechanics=True,
             biomechanics_file="test.csv",
             biomechanics_type="Gonio",
-            bio_sync_method="flick",
+            biomechanics_sync_method="flick",
             biomechanics_sample_rate=2000.0,
         )
-        assert metadata.bio_sync_method == "flick"
+        assert metadata.biomechanics_sync_method == "flick"
 
         # Gonio with stomp should fail
         with pytest.raises(ValidationError) as exc_info:
@@ -100,14 +100,14 @@ class TestBiomechanicsMetadataValidators:
                 linked_biomechanics=True,
                 biomechanics_file="test.csv",
                 biomechanics_type="Gonio",
-                bio_sync_method="stomp",  # Invalid for Gonio
+                biomechanics_sync_method="stomp",  # Invalid for Gonio
                 biomechanics_sample_rate=2000.0,
             )
         assert "Gonio" in str(exc_info.value)
         assert "flick" in str(exc_info.value)
 
-    def test_bio_sync_method_validation_imu(self):
-        """Test bio_sync_method validation for IMU and Motion Analysis types."""
+    def test_biomechanics_sync_method_validation_imu(self):
+        """Test biomechanics_sync_method validation for IMU and Motion Analysis types."""
         for biomech_type in ["IMU", "Motion Analysis"]:
             # Must use stomp
             metadata = BiomechanicsMetadata(
@@ -116,10 +116,10 @@ class TestBiomechanicsMetadataValidators:
                 linked_biomechanics=True,
                 biomechanics_file="test.csv",
                 biomechanics_type=biomech_type,
-                bio_sync_method="stomp",
+                biomechanics_sync_method="stomp",
                 biomechanics_sample_rate=200.0,
             )
-            assert metadata.bio_sync_method == "stomp"
+            assert metadata.biomechanics_sync_method == "stomp"
 
             # IMU/Motion Analysis with flick should fail
             with pytest.raises(ValidationError) as exc_info:
@@ -129,7 +129,7 @@ class TestBiomechanicsMetadataValidators:
                     linked_biomechanics=True,
                     biomechanics_file="test.csv",
                     biomechanics_type=biomech_type,
-                    bio_sync_method="flick",  # Invalid
+                    biomechanics_sync_method="flick",  # Invalid
                     biomechanics_sample_rate=200.0,
                 )
             assert biomech_type in str(exc_info.value)
@@ -144,7 +144,7 @@ class TestBiomechanicsMetadataValidators:
             linked_biomechanics=True,
             biomechanics_file="test.csv",
             biomechanics_type="IMU",
-            bio_sync_method="stomp",
+            biomechanics_sync_method="stomp",
             biomechanics_sample_rate=200.0,
         )
         assert metadata.biomechanics_sample_rate == 200.0
@@ -157,7 +157,7 @@ class TestBiomechanicsMetadataValidators:
                 linked_biomechanics=True,
                 biomechanics_file="test.csv",
                 biomechanics_type="IMU",
-                bio_sync_method="stomp",
+                biomechanics_sync_method="stomp",
                 biomechanics_sample_rate=0.0,  # Invalid
             )
 
@@ -175,7 +175,7 @@ class TestAcousticsFileValidators:
                 linked_biomechanics=False,
                 biomechanics_file=None,
                 biomechanics_type=None,
-                bio_sync_method=None,
+                biomechanics_sync_method=None,
                 biomechanics_sample_rate=None,
                 audio_file_name="test.bin",
                 device_serial="AE01",
@@ -200,7 +200,7 @@ class TestAcousticsFileValidators:
                 linked_biomechanics=False,
                 biomechanics_file=None,
                 biomechanics_type=None,
-                bio_sync_method=None,
+                biomechanics_sync_method=None,
                 biomechanics_sample_rate=None,
                 audio_file_name="test.bin",
                 device_serial="AE01",
@@ -225,7 +225,7 @@ class TestAcousticsFileValidators:
             linked_biomechanics=False,
             biomechanics_file=None,
             biomechanics_type=None,
-            bio_sync_method=None,
+            biomechanics_sync_method=None,
             biomechanics_sample_rate=None,
             audio_file_name="test.bin",
             device_serial="AE01",
@@ -250,7 +250,7 @@ class TestAcousticsFileValidators:
                 linked_biomechanics=False,
                 biomechanics_file=None,
                 biomechanics_type=None,
-                bio_sync_method=None,
+                biomechanics_sync_method=None,
                 biomechanics_sample_rate=None,
                 audio_file_name="test.bin",
                 device_serial="AE01",
@@ -278,7 +278,7 @@ class TestSynchronizationMetadataValidators:
             linked_biomechanics=True,
             biomechanics_file="test.csv",
             biomechanics_type="IMU",
-            bio_sync_method="stomp",
+            biomechanics_sync_method="stomp",
             biomechanics_sample_rate=200.0,
             audio_file_name="test.bin",
             device_serial="AE01",
@@ -319,7 +319,7 @@ class TestSynchronizationMetadataValidators:
             linked_biomechanics=True,
             biomechanics_file="test.csv",
             biomechanics_type="IMU",
-            bio_sync_method="stomp",
+            biomechanics_sync_method="stomp",
             biomechanics_sample_rate=200.0,
             audio_file_name="test.bin",
             device_serial="AE01",
@@ -357,7 +357,7 @@ class TestSynchronizationMetadataValidators:
             linked_biomechanics=True,
             biomechanics_file="test.csv",
             biomechanics_type="IMU",
-            bio_sync_method="stomp",
+            biomechanics_sync_method="stomp",
             biomechanics_sample_rate=200.0,
             audio_file_name="test.bin",
             device_serial="AE01",
@@ -510,7 +510,7 @@ class TestSynchronizationValidators:
             linked_biomechanics=True,
             biomechanics_file="test.csv",
             biomechanics_type="IMU",
-            bio_sync_method="stomp",
+            biomechanics_sync_method="stomp",
             biomechanics_sample_rate=200.0,
             audio_file_name="test.bin",
             device_serial="AE01",
@@ -551,7 +551,7 @@ class TestSynchronizationValidators:
                 linked_biomechanics=True,
                 biomechanics_file="test.csv",
                 biomechanics_type="IMU",
-                bio_sync_method="stomp",
+                biomechanics_sync_method="stomp",
                 biomechanics_sample_rate=200.0,
                 audio_file_name="test.bin",
                 device_serial="AE01",
@@ -594,7 +594,7 @@ class TestMovementCycleValidators:
             linked_biomechanics=True,
             biomechanics_file="test.csv",
             biomechanics_type="IMU",
-            bio_sync_method="stomp",
+            biomechanics_sync_method="stomp",
             biomechanics_sample_rate=200.0,
             audio_file_name="test.bin",
             device_serial="AE01",
@@ -651,7 +651,7 @@ class TestInheritanceChain:
             linked_biomechanics=False,
             biomechanics_file=None,
             biomechanics_type=None,
-            bio_sync_method=None,
+            biomechanics_sync_method=None,
             biomechanics_sample_rate=None,
         )
         assert hasattr(biomech, "study")
@@ -682,7 +682,7 @@ class TestInheritanceChain:
             linked_biomechanics=True,
             biomechanics_file="test.csv",
             biomechanics_type="Gonio",
-            bio_sync_method="flick",
+            biomechanics_sync_method="flick",
             biomechanics_sample_rate=2000.0,
             audio_file_name="test.bin",
             device_serial="AE01",
@@ -703,7 +703,7 @@ class TestInheritanceChain:
         # Should have BiomechanicsMetadata fields
         assert hasattr(acoustics, "linked_biomechanics")
         assert hasattr(acoustics, "biomechanics_file")
-        assert hasattr(acoustics, "bio_sync_method")
+        assert hasattr(acoustics, "biomechanics_sync_method")
 
     def test_full_inheritance_chain(self):
         """Test full inheritance chain: StudyMetadata → BiomechanicsMetadata → AcousticsFile → SynchronizationMetadata → Synchronization."""
@@ -715,7 +715,7 @@ class TestInheritanceChain:
             linked_biomechanics=True,
             biomechanics_file="test.csv",
             biomechanics_type="IMU",
-            bio_sync_method="stomp",
+            biomechanics_sync_method="stomp",
             biomechanics_sample_rate=200.0,
             # AcousticsFile fields
             audio_file_name="test.bin",
@@ -770,7 +770,7 @@ class TestExcelExport:
             linked_biomechanics=True,
             biomechanics_file="test.csv",
             biomechanics_type="IMU",
-            bio_sync_method="stomp",
+            biomechanics_sync_method="stomp",
             biomechanics_sample_rate=200.0,
             audio_file_name="test.bin",
             device_serial="AE01",
