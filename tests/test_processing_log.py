@@ -13,12 +13,7 @@ from datetime import datetime
 import numpy as np
 import pandas as pd
 
-from src.metadata import (
-    AudioProcessing,
-    BiomechanicsImport,
-    Synchronization,
-    MovementCycles,
-)
+from src.metadata import AudioProcessing, BiomechanicsImport, Synchronization
 from src.orchestration.processing_log import (
     ManeuverProcessingLog,
     create_audio_record_from_data,
@@ -26,7 +21,6 @@ from src.orchestration.processing_log import (
     create_cycles_record_from_data,
     create_sync_record_from_data,
 )
-
 
 # Helper functions for creating minimal test records with all required fields
 
@@ -110,7 +104,7 @@ def create_minimal_biomech_record(**overrides):
 def create_minimal_sync_record(**overrides):
     """Create a minimal Synchronization record for testing."""
     from datetime import timedelta
-    
+
     defaults = {
         # StudyMetadata
         "study": "AOA",
@@ -283,8 +277,8 @@ class TestSynchronization:
         assert data["Audio QC Version"] == 1
 
 
-class TestMovementCycles:
-    """Tests for MovementCycles metadata (alias for Synchronization)."""
+class TestSynchronizationCycles:
+    """Tests for Synchronization metadata when used for cycles."""
 
     def test_create_record(self):
         """Test creating a movement cycles record."""

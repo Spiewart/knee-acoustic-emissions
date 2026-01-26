@@ -1,11 +1,11 @@
 """Tests for aligned stomp times and offset calculations in synchronization logging."""
 
+from pathlib import Path
+
 import pandas as pd
 import pytest
-from pathlib import Path
-from src.orchestration.processing_log import (
-    create_sync_record_from_data,
-)
+
+from src.orchestration.processing_log import create_sync_record_from_data
 
 
 def test_stomp_offset_calculation():
@@ -132,10 +132,10 @@ def test_sync_record_to_dict_includes_new_fields():
     assert "Sync Offset" in data_dict
     assert "Aligned Audio Sync Time" in data_dict
     assert "Aligned Bio Sync Time" in data_dict
-    # Values are timedeltas in the dict
-    assert data_dict["Sync Offset"].total_seconds() == pytest.approx(5.0)
-    assert data_dict["Aligned Audio Sync Time"].total_seconds() == pytest.approx(10.0)
-    assert data_dict["Aligned Bio Sync Time"].total_seconds() == pytest.approx(10.0)
+    # Values are exported as seconds (floats)
+    assert data_dict["Sync Offset"] == pytest.approx(5.0)
+    assert data_dict["Aligned Audio Sync Time"] == pytest.approx(10.0)
+    assert data_dict["Aligned Bio Sync Time"] == pytest.approx(10.0)
 
 
 def test_stomp_offset_none_when_missing_data():

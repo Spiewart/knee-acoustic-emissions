@@ -16,12 +16,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 import numpy as np
 import pandas as pd
 
-from src.metadata import (
-    AudioProcessing,
-    BiomechanicsImport,
-    Synchronization,
-    MovementCycles,
-)
+from src.metadata import AudioProcessing, BiomechanicsImport, Synchronization
 from src.orchestration.processing_log import (
     ManeuverProcessingLog,
     create_audio_record_from_data,

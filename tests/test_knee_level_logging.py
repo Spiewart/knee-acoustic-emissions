@@ -1,19 +1,13 @@
 """Tests for knee-level master processing logs."""
 
+from datetime import datetime, timedelta
+from pathlib import Path
+
 import pandas as pd
 import pytest
-from pathlib import Path
-from datetime import datetime, timedelta
-from src.metadata import (
-    AudioProcessing,
-    BiomechanicsImport,
-    Synchronization,
-    MovementCycles,
-)
-from src.orchestration.processing_log import (
-    KneeProcessingLog,
-    ManeuverProcessingLog,
-)
+
+from src.metadata import AudioProcessing, BiomechanicsImport, Synchronization
+from src.orchestration.processing_log import KneeProcessingLog, ManeuverProcessingLog
 
 
 def _create_test_audio_processing(**kwargs):
@@ -193,7 +187,7 @@ def sample_maneuver_log(tmp_path):
         )
         log.synchronization_records.append(sync)
 
-    # Add movement cycles records (reusing Synchronization since MovementCycles is an alias)
+    # Add movement cycles records (reusing Synchronization for movement cycle metadata)
     for i in range(3):
         cycles = _create_test_synchronization(
             audio_file_name="test_audio.bin",

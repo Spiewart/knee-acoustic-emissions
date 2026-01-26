@@ -4,7 +4,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from src.metadata import MovementCycles, Synchronization
+from src.metadata import Synchronization
 from src.orchestration.processing_log import (
     ManeuverProcessingLog,
     create_cycles_record_from_data,
@@ -18,7 +18,7 @@ def _make_minimal_sync(
     **kwargs
 ) -> Synchronization:
     """Create a minimal Synchronization object for testing.
-    
+
     Additional kwargs can override any default values.
     """
     defaults = dict(
@@ -172,7 +172,7 @@ def test_cycle_details_regenerates_across_passes_flat_dir(tmp_path):
     excel_path = tmp_path / "processing_log.xlsx"
     log.save_to_excel(excel_path)
 
-    # Note: In the new architecture, Cycle Details sheet is only created if 
+    # Note: In the new architecture, Cycle Details sheet is only created if
     # per_cycle_details are available in-memory or output_directory is a stored field.
     # Since these tests don't populate per_cycle_details, the Cycle Details sheet
     # may not be present. Just verify the basic sheets exist.

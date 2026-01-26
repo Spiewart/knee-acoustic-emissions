@@ -42,29 +42,107 @@ def _infer_num_channels_from_df(df: pd.DataFrame) -> int:
     """Infer number of audio channels from a DataFrame by counting ch columns."""
     if df is None or df.empty:
         return 4  # Default to 4 channels
-    
+
     # Count columns that match channel pattern (ch1, ch2, ch3, ch4)
     channel_cols = [col for col in df.columns if isinstance(col, str) and col.lower().startswith('ch') and col[2:].isdigit()]
     if channel_cols:
         return len(channel_cols)
-    
+
     return 4  # Default to 4 channels if not found
 
 
 def _get_sync_method_defaults(row: Any) -> tuple[str, str]:
     """Extract sync method and consensus methods with proper defaults.
-    
+
     Returns:
         Tuple of (sync_method, consensus_methods)
     """
     sync_method = str(row.get("Sync Method", "consensus")).lower()
     consensus_methods = str(row.get("Consensus Methods")) if pd.notna(row.get("Consensus Methods")) else None
-    
+
     # Set default consensus_methods if sync_method is consensus but consensus_methods is None
     if sync_method == "consensus" and consensus_methods is None:
         consensus_methods = "consensus"
-    
+
     return sync_method, consensus_methods
+
+
+def _get_audio_processing_qc_defaults() -> Dict[str, Any]:
+    """Return all AudioProcessing QC fields with default values.
+
+    These fields are required by MovementCycle (which inherits from AudioProcessing)
+    but not present in Synchronization records.
+    """
+    return {
+        # Cycle-level QC flags (supplied during MovementCycle creation)
+        'biomechanics_qc_fail': False,
+        'sync_qc_fail': False,
+        # QC type fields
+        'qc_artifact_type': None,
+        'qc_artifact_type_ch1': None,
+        'qc_artifact_type_ch2': None,
+        'qc_artifact_type_ch3': None,
+        'qc_artifact_type_ch4': None,
+        # QC fail segment fields
+        'qc_fail_segments': [],
+        'qc_fail_segments_ch1': [],
+        'qc_fail_segments_ch2': [],
+        'qc_fail_segments_ch3': [],
+        'qc_fail_segments_ch4': [],
+        # QC signal dropout fields
+        'qc_signal_dropout': False,
+        'qc_signal_dropout_segments': [],
+        'qc_signal_dropout_ch1': False,
+        'qc_signal_dropout_segments_ch1': [],
+        'qc_signal_dropout_ch2': False,
+        'qc_signal_dropout_segments_ch2': [],
+        'qc_signal_dropout_ch3': False,
+        'qc_signal_dropout_segments_ch3': [],
+        'qc_signal_dropout_ch4': False,
+        'qc_signal_dropout_segments_ch4': [],
+        # QC artifact fields
+        'qc_artifact': False,
+        'qc_artifact_segments': [],
+        'qc_artifact_ch1': False,
+        'qc_artifact_segments_ch1': [],
+        'qc_artifact_ch2': False,
+        'qc_artifact_segments_ch2': [],
+        'qc_artifact_ch3': False,
+        'qc_artifact_segments_ch3': [],
+        'qc_artifact_ch4': False,
+        'qc_artifact_segments_ch4': [],
+    }
+
+
+def _normalize_maneuver_code(maneuver: Optional[str]) -> Optional[str]:
+    """Map human-readable maneuver names to internal short codes.
+
+    Accepts legacy names like "sit_to_stand" and "flexion_extension" and
+    converts them to the literals expected by metadata models ("sts", "fe", "walk").
+    Returns None when input is None.
+    """
+    if maneuver is None:
+        return None
+
+    # Handle NaN/empty strings coming from Excel
+    try:
+        if pd.isna(maneuver):
+            return None
+    except Exception:
+        pass
+
+    m = str(maneuver).strip().lower()
+    if m == "":
+        return None
+
+    mapping = {
+        "sit_to_stand": "sts",
+        "sts": "sts",
+        "flexion_extension": "fe",
+        "fe": "fe",
+        "walk": "walk",
+    }
+    return mapping.get(m, m)
 
 
 @dataclass
@@ -134,6 +212,83 @@ class ManeuverProcessingLog:
         self.movement_cycles_records = list(seen.values())
         self.log_updated = datetime.now()
 
+    # ------------------------------------------------------------------
+    # Reusable summary helpers
+    # ------------------------------------------------------------------
+    def is_audio_processed(self) -> bool:
+        """Return True when audio processing succeeded or a processed .pkl exists.
+
+        This combines in-memory status with an on-disk fallback so downstream
+        stages (e.g., starting from sync) still report processed audio.
+        """
+        processed_in_memory = bool(
+            self.audio_record and self.audio_record.processing_status == "success"
+        )
+        return processed_in_memory or self._check_processed_audio_exists()
+
+    def is_biomechanics_imported(self) -> bool:
+        """Return True when biomechanics import completed successfully."""
+        return bool(
+            self.biomechanics_record
+            and self.biomechanics_record.processing_status == "success"
+        )
+
+    def count_synced_files(self) -> int:
+        """Count synchronization records currently attached to this log."""
+        return len(self.synchronization_records)
+
+    def count_movement_cycles(self) -> int:
+        """Sum total cycles across all movement cycle records."""
+        return sum(
+            getattr(rec, "total_cycles_extracted", 0) or 0
+            for rec in self.movement_cycles_records
+        )
+
+    def build_summary_row(self) -> Dict[str, Any]:
+        """Build a single summary row for Excel export and reuse elsewhere."""
+        return {
+            "Study ID": self.study_id,
+            "Knee Side": self.knee_side,
+            "Maneuver": self.maneuver,
+            "Maneuver Directory": str(self.maneuver_directory),
+            "Log Created": self.log_created,
+            "Log Updated": self.log_updated,
+            "Audio Processed": self.is_audio_processed(),
+            "Biomechanics Imported": self.is_biomechanics_imported(),
+            "Num Synced Files": self.count_synced_files(),
+            "Num Movement Cycles": self.count_movement_cycles(),
+        }
+
+    def _check_processed_audio_exists(self) -> bool:
+        """Check if processed audio .pkl file exists on disk.
+
+        Returns True if the processed audio .pkl file exists, even if
+        audio_record is not in memory (e.g., when starting from 'sync' entrypoint).
+        """
+        try:
+            from src.audio.readers import get_audio_file_name
+
+            # Get audio file name with frequency info
+            audio_file_with_freq = get_audio_file_name(self.maneuver_directory, with_freq=True)
+            if not audio_file_with_freq:
+                return False
+
+            # Get base audio file name (without _with_freq)
+            audio_file = get_audio_file_name(self.maneuver_directory, with_freq=False)
+            if not audio_file:
+                return False
+
+            audio_base = Path(audio_file).name
+            pickle_base = Path(audio_file_with_freq).name
+
+            # Check for .pkl file in outputs directory
+            processed_audio_outputs = self.maneuver_directory / f"{audio_base}_outputs"
+            pkl_file = processed_audio_outputs / f"{pickle_base}.pkl"
+
+            return pkl_file.exists()
+        except Exception:
+            return False
+
     def save_to_excel(self, filepath: Optional[Path] = None) -> Path:
         """Save processing log to Excel file.
 
@@ -152,21 +307,7 @@ class ManeuverProcessingLog:
         sheets: Dict[str, pd.DataFrame] = {}
 
         # Summary sheet
-        summary_data = {
-            "Study ID": [self.study_id],
-            "Knee Side": [self.knee_side],
-            "Maneuver": [self.maneuver],
-            "Maneuver Directory": [str(self.maneuver_directory)],
-            "Log Created": [self.log_created],
-            "Log Updated": [self.log_updated],
-            "Audio Processed": [self.audio_record is not None and self.audio_record.processing_status == "success"],
-            "Biomechanics Imported": [self.biomechanics_record is not None and self.biomechanics_record.processing_status == "success"],
-            "Num Synced Files": [len(self.synchronization_records)],
-            "Num Movement Cycles": [
-                sum(rec.total_cycles_extracted for rec in self.movement_cycles_records)
-            ],
-        }
-        sheets["Summary"] = pd.DataFrame(summary_data)
+        sheets["Summary"] = pd.DataFrame([self.build_summary_row()])
 
         # Audio processing sheet
         if self.audio_record:
@@ -334,17 +475,44 @@ class ManeuverProcessingLog:
                 audio_df = pd.read_excel(filepath, sheet_name="Audio")
                 if len(audio_df) > 0 and "Audio File" in audio_df.columns:
                     row = audio_df.iloc[0]
+
+                    # Check if biomechanics fields are actually present
+                    # If linked_biomechanics is True but required fields are None, set it to False
+                    raw_linked = bool(row.get("Linked Biomechanics", False))
+                    biomech_type = str(row.get("Biomechanics Type")) if pd.notna(row.get("Biomechanics Type")) else None
+                    biomech_sample_rate = float(row.get("Biomechanics Sample Rate (Hz)")) if pd.notna(row.get("Biomechanics Sample Rate (Hz)")) else None
+
+                    # If marked as linked but missing required fields, treat as not linked
+                    if raw_linked and (biomech_type is None or biomech_sample_rate is None):
+                        linked_biomechanics = False
+                    else:
+                        linked_biomechanics = raw_linked
+
+                    # When not linked, all biomechanics fields must be None
+                    if not linked_biomechanics:
+                        biomechanics_file = None
+                        biomechanics_type = None
+                        biomechanics_sync_method = None
+                        biomechanics_sample_rate = None
+                        biomechanics_notes = None
+                    else:
+                        biomechanics_file = str(row.get("Biomechanics File")) if pd.notna(row.get("Biomechanics File")) else None
+                        biomechanics_type = biomech_type
+                        biomechanics_sync_method = str(row.get("Biomechanics Sync Method")) if pd.notna(row.get("Biomechanics Sync Method")) else None
+                        biomechanics_sample_rate = biomech_sample_rate
+                        biomechanics_notes = str(row.get("Biomechanics Notes")) if pd.notna(row.get("Biomechanics Notes")) else None
+
                     log.audio_record = AudioProcessing(
                         # StudyMetadata
                         study=row.get("Study", "AOA"),
                         study_id=int(row.get("Study ID", 1)),
                         # BiomechanicsMetadata
-                        linked_biomechanics=bool(row.get("Linked Biomechanics", False)),
-                        biomechanics_file=str(row.get("Biomechanics File")) if pd.notna(row.get("Biomechanics File")) else None,
-                        biomechanics_type=str(row.get("Biomechanics Type")) if pd.notna(row.get("Biomechanics Type")) else None,
-                        biomechanics_sync_method=str(row.get("Biomechanics Sync Method")) if pd.notna(row.get("Biomechanics Sync Method")) else None,
-                        biomechanics_sample_rate=float(row.get("Biomechanics Sample Rate (Hz)")) if pd.notna(row.get("Biomechanics Sample Rate (Hz)")) else None,
-                        biomechanics_notes=str(row.get("Biomechanics Notes")) if pd.notna(row.get("Biomechanics Notes")) else None,
+                        linked_biomechanics=linked_biomechanics,
+                        biomechanics_file=biomechanics_file,
+                        biomechanics_type=biomechanics_type,
+                        biomechanics_sync_method=biomechanics_sync_method,
+                        biomechanics_sample_rate=biomechanics_sample_rate,
+                        biomechanics_notes=biomechanics_notes,
                         # AcousticsFile
                         audio_file_name=row.get("Audio File", ""),
                         device_serial=str(row.get("Device Serial", "")),
@@ -354,7 +522,7 @@ class ManeuverProcessingLog:
                         recording_date=pd.to_datetime(row.get("Recording Date")) if pd.notna(row.get("Recording Date")) else datetime.now(),
                         recording_time=pd.to_datetime(row.get("Recording Time")) if pd.notna(row.get("Recording Time")) else datetime.now(),
                         knee=str(row.get("Knee", "left")).lower(),
-                        maneuver=str(row.get("Maneuver", "walk")).lower(),
+                        maneuver=_normalize_maneuver_code(str(row.get("Maneuver", "walk"))),
                         sample_rate=float(row.get("Sample Rate (Hz)", 46875.0)),
                         num_channels=int(row.get("Channels", 4)),
                         mic_1_position=str(row.get("Mic 1 Position", "IPM")),
@@ -416,6 +584,7 @@ class ManeuverProcessingLog:
                         processing_date=pd.to_datetime(row.get("Processing Date")) if pd.notna(row.get("Processing Date")) else datetime.now(),
                         processing_status=row.get("Status", "not_processed"),
                         error_message=str(row.get("Error")) if pd.notna(row.get("Error")) else None,
+                        maneuver=_normalize_maneuver_code(row.get("Maneuver")),
                         num_sub_recordings=int(row.get("Num Sub-Recordings", row.get("Num Recordings", 1))),
                         num_passes=int(row.get("Num Passes", 1)),
                         duration_seconds=float(row.get("Duration (s)")) if pd.notna(row.get("Duration (s)")) else None,
@@ -435,7 +604,7 @@ class ManeuverProcessingLog:
                             if pd.isna(value):
                                 return None
                             return pd.Timedelta(seconds=float(value))
-                        
+
                         try:
                             # Get biomechanics metadata, with defaults if not provided
                             biomechanics_file = str(row.get("Biomechanics File")) if pd.notna(row.get("Biomechanics File")) else "unknown.xlsx"
@@ -444,7 +613,7 @@ class ManeuverProcessingLog:
                             biomechanics_sample_rate = float(row.get("Biomechanics Sample Rate (Hz)")) if pd.notna(row.get("Biomechanics Sample Rate (Hz)")) else 100.0
                             sync_method = str(row.get("Sync Method", "consensus")).lower()
                             consensus_methods = str(row.get("Consensus Methods")) if pd.notna(row.get("Consensus Methods")) else ("consensus" if sync_method == "consensus" else None)
-                            
+
                             record = Synchronization(
                                 # StudyMetadata
                                 study=row.get("Study", "AOA"),
@@ -465,7 +634,7 @@ class ManeuverProcessingLog:
                                 recording_date=pd.to_datetime(row.get("Recording Date")) if pd.notna(row.get("Recording Date")) else datetime.now(),
                                 recording_time=pd.to_datetime(row.get("Recording Time")) if pd.notna(row.get("Recording Time")) else datetime.now(),
                                 knee=str(row.get("Knee", "left")).lower(),
-                                maneuver=str(row.get("Maneuver", "walk")).lower(),
+                                maneuver=_normalize_maneuver_code(str(row.get("Maneuver", "walk"))),
                                 sample_rate=float(row.get("Sample Rate (Hz)", 46875.0)),
                                 num_channels=int(row.get("Channels", 4)),
                                 mic_1_position=str(row.get("Mic 1 Position", "IPM")),
@@ -519,27 +688,43 @@ class ManeuverProcessingLog:
                                 biomech_qc_version=int(row.get("Biomech QC Version", 1)),
                                 cycle_qc_version=int(row.get("Cycle QC Version", 1)),
                             )
+
+                            # If speed is None, try to infer from sync_file_name
+                            if record.speed is None and record.maneuver == "walk":
+                                filename_lower = record.sync_file_name.lower()
+                                if "slow" in filename_lower:
+                                    record.speed = "slow"
+                                elif "medium" in filename_lower or "normal" in filename_lower:
+                                    record.speed = "medium"
+                                elif "fast" in filename_lower:
+                                    record.speed = "fast"
+
                             log.synchronization_records.append(record)
                         except Exception as e:
                             logger.debug(f"Could not load synchronization record from row: {e}")
             except Exception as e:
                 logger.warning(f"Could not load synchronization records: {e}")
 
-            # Load movement cycles records if present
+            # Load movement cycles records if present - if present, also use as synchronization records
             try:
                 cycles_df = pd.read_excel(filepath, sheet_name="Movement Cycles")
                 if len(cycles_df) > 0:
                     # Try both old and new column name conventions
-                    sync_file_col = "Source Sync File" if "Source Sync File" in cycles_df.columns else ("Sync File" if "Sync File" in cycles_df.columns else None)
-                    
-                    if sync_file_col:
+                    # Check for actual columns: "Sync File Name", "Source Sync File", or "Sync File"
+                    sync_file_col = (
+                        "Sync File Name" if "Sync File Name" in cycles_df.columns else
+                        ("Source Sync File" if "Source Sync File" in cycles_df.columns else
+                         ("Sync File" if "Sync File" in cycles_df.columns else None))
+                    )
+
+                    if sync_file_col and cycles_df[sync_file_col].notna().any():
                         for _, row in cycles_df.iterrows():
                             # Helper function to convert seconds to timedelta
                             def to_timedelta(value):
                                 if pd.isna(value):
                                     return None
                                 return pd.Timedelta(seconds=float(value))
-                            
+
                             try:
                                 # Get biomechanics metadata, with defaults if not provided
                                 biomechanics_file = str(row.get("Biomechanics File")) if pd.notna(row.get("Biomechanics File")) else "unknown.xlsx"
@@ -548,7 +733,7 @@ class ManeuverProcessingLog:
                                 biomechanics_sample_rate = float(row.get("Biomechanics Sample Rate (Hz)")) if pd.notna(row.get("Biomechanics Sample Rate (Hz)")) else 100.0
                                 sync_method = str(row.get("Sync Method", "consensus")).lower()
                                 consensus_methods = str(row.get("Consensus Methods")) if pd.notna(row.get("Consensus Methods")) else ("consensus" if sync_method == "consensus" else None)
-                                
+
                                 record = Synchronization(
                                     # StudyMetadata
                                     study=row.get("Study", "AOA"),
@@ -569,7 +754,7 @@ class ManeuverProcessingLog:
                                     recording_date=pd.to_datetime(row.get("Recording Date")) if pd.notna(row.get("Recording Date")) else datetime.now(),
                                     recording_time=pd.to_datetime(row.get("Recording Time")) if pd.notna(row.get("Recording Time")) else datetime.now(),
                                     knee=str(row.get("Knee", "left")).lower(),
-                                    maneuver=str(row.get("Maneuver", "walk")).lower(),
+                                    maneuver=_normalize_maneuver_code(str(row.get("Maneuver", "walk"))),
                                     sample_rate=float(row.get("Sample Rate (Hz)", 46875.0)),
                                     num_channels=int(row.get("Channels", 4)),
                                     mic_1_position=str(row.get("Mic 1 Position", "IPM")),
@@ -623,11 +808,27 @@ class ManeuverProcessingLog:
                                     biomech_qc_version=int(row.get("Biomech QC Version", 1)),
                                     cycle_qc_version=int(row.get("Cycle QC Version", 1)),
                                 )
+
+                                # If speed is None, try to infer from sync_file_name
+                                if record.speed is None and record.maneuver == "walk":
+                                    filename_lower = record.sync_file_name.lower()
+                                    if "slow" in filename_lower:
+                                        record.speed = "slow"
+                                    elif "medium" in filename_lower or "normal" in filename_lower:
+                                        record.speed = "medium"
+                                    elif "fast" in filename_lower:
+                                        record.speed = "fast"
+
                                 log.movement_cycles_records.append(record)
                             except Exception as e:
                                 logger.debug(f"Could not load movement cycles record from row: {e}")
             except Exception as e:
                 logger.warning(f"Could not load movement cycles records: {e}")
+
+            # If synchronization_records are empty but movement_cycles_records exist,
+            # use movement cycles records as synchronization records (they contain all the data)
+            if not log.synchronization_records and log.movement_cycles_records:
+                log.synchronization_records = log.movement_cycles_records.copy()
 
             # Note: Do NOT load Cycle Details from Excel. Cycle details are always regenerated
             # from cycle pickle files during the cycles stage to ensure proper metadata
@@ -987,7 +1188,7 @@ def create_audio_record_from_data(
         "processing_status": "error" if error else "not_processed",
         "error_message": str(error) if error else None,
     }
-    
+
     # Initialize QC fields with default values (empty lists and False)
     # These will be populated from qc_data if available
     data.update({
@@ -1025,7 +1226,7 @@ def create_audio_record_from_data(
         "qc_artifact_type_ch4": None,
         "qc_artifact_segments_ch4": [],
     })
-    
+
     # Extract metadata if available (needed even for error cases)
     if metadata:
         # Parent class fields (StudyMetadata, BiomechanicsMetadata, AcousticsFile)
@@ -1034,8 +1235,11 @@ def create_audio_record_from_data(
                       'file_size_mb', 'linked_biomechanics', 'biomechanics_file', 'biomechanics_type',
                       'biomechanics_sync_method', 'biomechanics_sample_rate', 'biomechanics_notes', 'num_channels']:
             if field in metadata:
-                data[field] = metadata[field]
-        
+                if field == "maneuver":
+                    data[field] = _normalize_maneuver_code(metadata[field])
+                else:
+                    data[field] = metadata[field]
+
 
         # Normalize sample rate from metadata
         meta_fs = metadata.get("fs")
@@ -1061,7 +1265,7 @@ def create_audio_record_from_data(
         data["file_time"] = metadata.get("fileTime")
         if "file_time" in metadata:
             data["file_time"] = metadata["file_time"]
-    
+
     # Provide defaults for required fields if not present
     # These defaults ensure the function can be called with minimal metadata
     if "study" not in data:
@@ -1121,7 +1325,7 @@ def create_audio_record_from_data(
             data["qc_fail_segments_ch3"] = qc_data["qc_fail_segments_ch3"]
         if "qc_fail_segments_ch4" in qc_data:
             data["qc_fail_segments_ch4"] = qc_data["qc_fail_segments_ch4"]
-        
+
         # Signal dropout QC
         if "qc_signal_dropout" in qc_data:
             data["qc_signal_dropout"] = qc_data["qc_signal_dropout"]
@@ -1132,7 +1336,7 @@ def create_audio_record_from_data(
                 data[f"qc_signal_dropout_ch{ch_num}"] = qc_data[f"qc_signal_dropout_ch{ch_num}"]
             if f"qc_signal_dropout_segments_ch{ch_num}" in qc_data:
                 data[f"qc_signal_dropout_segments_ch{ch_num}"] = qc_data[f"qc_signal_dropout_segments_ch{ch_num}"]
-        
+
         # Artifact QC
         if "qc_artifact" in qc_data:
             data["qc_artifact"] = qc_data["qc_artifact"]
@@ -1157,13 +1361,13 @@ def create_audio_record_from_data(
             ch_name = f"ch{ch_num}"
             if ch_name in audio_df.columns:
                 channels_present.append(ch_num)
-        
+
         if channels_present:
             data["num_channels"] = len(channels_present)
         elif "num_channels" not in data:
             # If no channel columns found and not in metadata, raise error
             raise ValueError("Cannot determine num_channels: no channel data found in audio_df")
-        
+
         # Duration (metadata field - used for QC, represents recording metadata)
         if "tt" in audio_df.columns:
             dur = audio_df["tt"].iloc[-1] - audio_df["tt"].iloc[0]
@@ -1219,6 +1423,7 @@ def create_biomechanics_record_from_data(
     biomechanics_file: Path,
     recordings: List['BiomechanicsRecording'],
     sheet_name: Optional[str] = None,
+    maneuver: Optional[str] = None,
     error: Optional[Exception] = None,
 ) -> BiomechanicsImport:
     """Create a BiomechanicsImport record from import data.
@@ -1237,6 +1442,7 @@ def create_biomechanics_record_from_data(
         "biomechanics_file": str(biomechanics_file),
         "sheet_name": sheet_name,
         "processing_date": datetime.now(),
+        "maneuver": _normalize_maneuver_code(maneuver),
         # Provide defaults for required StudyMetadata fields
         "study": "AOA",
         "study_id": 1,
@@ -1412,7 +1618,7 @@ def create_sync_record_from_data(
     else:
         data_study = study
         data_study_id = study_id
-    
+
     # BiomechanicsMetadata fields
     # Note: sync_method is redefined in SynchronizationMetadata, so we don't set it here
     # Note: Synchronization REQUIRES linked_biomechanics=True
@@ -1432,7 +1638,7 @@ def create_sync_record_from_data(
         biomechanics_file = "unknown"
         biomechanics_type = "Gonio"
         biomechanics_sample_rate = 100.0  # Default sample rate for tests
-    
+
     # AcousticsFile fields
     if audio_record:
         audio_file_name = audio_record.audio_file_name
@@ -1443,7 +1649,7 @@ def create_sync_record_from_data(
         recording_date = audio_record.recording_date
         recording_time = audio_record.recording_time
         knee = audio_record.knee
-        maneuver = audio_record.maneuver
+        maneuver = _normalize_maneuver_code(audio_record.maneuver)
         sample_rate = audio_record.sample_rate
         num_channels = audio_record.num_channels
         mic_1_position = audio_record.mic_1_position
@@ -1459,7 +1665,7 @@ def create_sync_record_from_data(
         recording_date = metadata.get("recording_date", datetime.now())
         recording_time = metadata.get("recording_time", datetime.now())
         knee = metadata.get("knee", knee_side if knee_side else "left")
-        maneuver = metadata.get("maneuver", "walk")
+        maneuver = _normalize_maneuver_code(metadata.get("maneuver", "walk"))
         sample_rate = metadata.get("sample_rate", 46875.0)
         num_channels = metadata.get("num_channels", _infer_num_channels_from_df(synced_df))
         mic_1_position = metadata.get("mic_1_position", "IPM")
@@ -1483,15 +1689,20 @@ def create_sync_record_from_data(
         mic_2_position = "IPL"
         mic_3_position = "SPM"
         mic_4_position = "SPL"
-    
+
     # SynchronizationMetadata fields - sync times as timedeltas
     # Convert from seconds to timedelta
     def _to_timedelta(seconds: Optional[float]) -> timedelta:
         """Convert seconds to timedelta, defaulting to 0 if None."""
         return timedelta(seconds=seconds) if seconds is not None else timedelta(0)
-    
+
+    # If metadata provides a more specific maneuver, override now
+    meta_maneuver = _normalize_maneuver_code(metadata.get("maneuver")) if metadata else None
+    if meta_maneuver:
+        maneuver = meta_maneuver
+
     audio_sync_time = _to_timedelta(audio_stomp_s)
-    
+
     # bio_left/right_sync_time is required based on knee side
     # If not provided, use a default value to avoid validation error
     if knee == "left":
@@ -1504,11 +1715,11 @@ def create_sync_record_from_data(
         # Default case - assume left
         bio_left_sync_time = _to_timedelta(bio_left_s) if bio_left_s is not None else timedelta(0)
         bio_right_sync_time = _to_timedelta(bio_right_s) if bio_right_s is not None else None
-    
+
     sync_offset_td = _to_timedelta(stomp_offset)
     aligned_audio_sync_time = _to_timedelta(aligned_audio_stomp)
     aligned_bio_sync_time = _to_timedelta(aligned_bio_stomp)
-    
+
     # Synchronization-specific fields
     # Calculate sync_duration from synced_df
     if "tt" in synced_df.columns and len(synced_df) > 0:
@@ -1519,14 +1730,14 @@ def create_sync_record_from_data(
             sync_duration = timedelta(seconds=float(duration))
     else:
         sync_duration = timedelta(0)
-    
+
     # Initialize aggregate statistics with defaults (will be populated from cycles if available)
     mean_cycle_duration_s = 0.0
     median_cycle_duration_s = 0.0
     min_cycle_duration_s = 0.0
     max_cycle_duration_s = 0.0
     mean_acoustic_auc = 0.0
-    
+
     # Build complete data dictionary
     data = {
         # StudyMetadata
@@ -1591,13 +1802,13 @@ def create_sync_record_from_data(
             rms_time_s = _to_seconds(detection_results.get("rms_time"))
             onset_time_s = _to_seconds(detection_results.get("onset_time"))
             freq_time_s = _to_seconds(detection_results.get("freq_time"))
-            
+
             # Convert to timedeltas for metadata fields
             data["consensus_time"] = _to_timedelta(consensus_time_s)
             data["rms_time"] = _to_timedelta(rms_time_s)
             data["onset_time"] = _to_timedelta(onset_time_s)
             data["freq_time"] = _to_timedelta(freq_time_s)
-            
+
             # Extract which methods contributed to consensus
             consensus_methods_list = detection_results.get("consensus_methods", [])
             if consensus_methods_list:
@@ -1709,6 +1920,17 @@ def create_cycles_record_from_data(
     Returns:
         Synchronization instance
     """
+
+    def _infer_maneuver_from_name(name: str) -> Optional[str]:
+        """Best-effort inference of maneuver from a file name/path."""
+        lower = str(name).lower()
+        if "sit" in lower and "stand" in lower:
+            return "sts"
+        if "flex" in lower:
+            return "fe"
+        if "walk" in lower:
+            return "walk"
+        return None
     def _infer_pass_number_from_name(name: str) -> Optional[int]:
         match = re.search(r"Pass(\d{2,4})", name, re.IGNORECASE)
         if match:
@@ -1747,7 +1969,7 @@ def create_cycles_record_from_data(
                 "recording_date": audio_record.recording_date,
                 "recording_time": audio_record.recording_time,
                 "knee": audio_record.knee,
-                "maneuver": audio_record.maneuver,
+                "maneuver": _normalize_maneuver_code(audio_record.maneuver),
                 "sample_rate": audio_record.sample_rate,
                 "mic_1_position": audio_record.mic_1_position,
                 "mic_2_position": audio_record.mic_2_position,
@@ -1773,7 +1995,7 @@ def create_cycles_record_from_data(
                 "recording_date": datetime.now(),
                 "recording_time": datetime.now(),
                 "knee": "left",
-                "maneuver": "walk",
+                "maneuver": _normalize_maneuver_code(metadata.get("maneuver")) if metadata else "walk",
                 "sample_rate": 46875.0,
                 "num_channels": 4,
                 "mic_1_position": "IPM",
@@ -1781,7 +2003,7 @@ def create_cycles_record_from_data(
                 "mic_3_position": "SPM",
                 "mic_4_position": "SPL",
             }
-        
+
         # Add SynchronizationMetadata fields
         data.update({
             "audio_sync_time": timedelta(0),
@@ -1796,7 +2018,7 @@ def create_cycles_record_from_data(
             "onset_time": timedelta(0),
             "freq_time": timedelta(0),
         })
-        
+
         # Add Synchronization fields
         data.update({
             "sync_file_name": sync_file_name,
@@ -1808,7 +2030,34 @@ def create_cycles_record_from_data(
     # Update pass/speed/knee context
     if not sync_record:
         data["pass_number"] = _infer_pass_number_from_name(sync_file_name)
-        data["speed"] = None
+        # Extract speed from filename
+        filename_lower = sync_file_name.lower()
+        if "slow" in filename_lower:
+            data["speed"] = "slow"
+        elif "medium" in filename_lower or "normal" in filename_lower:
+            data["speed"] = "medium"
+        elif "fast" in filename_lower:
+            data["speed"] = "fast"
+        else:
+            data["speed"] = None
+
+    # Normalize maneuver and prefer provided metadata/sync context when current is walk/None
+    normalized_maneuver = _normalize_maneuver_code(data.get("maneuver"))
+    meta_maneuver = _normalize_maneuver_code(metadata.get("maneuver")) if metadata else None
+    sync_maneuver = _normalize_maneuver_code(getattr(sync_record, "maneuver", None)) if sync_record else None
+
+    for candidate in (meta_maneuver, sync_maneuver):
+        if candidate and (normalized_maneuver is None or normalized_maneuver == "walk"):
+            normalized_maneuver = candidate
+
+    if normalized_maneuver in (None, "walk"):
+        inferred = _infer_maneuver_from_name(sync_file_name)
+        if inferred:
+            normalized_maneuver = inferred
+
+    if normalized_maneuver is None:
+        normalized_maneuver = "walk"
+    data["maneuver"] = normalized_maneuver
 
     if error:
         data["processing_status"] = "error"
@@ -1849,50 +2098,6 @@ def create_cycles_record_from_data(
         data["clean_cycles"] = len(clean_cycles)
         data["outlier_cycles"] = len(outlier_cycles)
         data["total_cycles_extracted"] = len(clean_cycles) + len(outlier_cycles)
-
-    # Helper to get all AudioProcessing QC fields with default values
-    def _get_audio_processing_qc_defaults() -> Dict[str, Any]:
-        """Return all AudioProcessing QC fields with default values.
-        
-        These fields are required by MovementCycle (which inherits from AudioProcessing)
-        but not present in Synchronization records.
-        """
-        return {
-            # QC type fields
-            'qc_artifact_type': None,
-            'qc_artifact_type_ch1': None,
-            'qc_artifact_type_ch2': None,
-            'qc_artifact_type_ch3': None,
-            'qc_artifact_type_ch4': None,
-            # QC fail segment fields
-            'qc_fail_segments': [],
-            'qc_fail_segments_ch1': [],
-            'qc_fail_segments_ch2': [],
-            'qc_fail_segments_ch3': [],
-            'qc_fail_segments_ch4': [],
-            # QC signal dropout fields
-            'qc_signal_dropout': False,
-            'qc_signal_dropout_segments': [],
-            'qc_signal_dropout_ch1': False,
-            'qc_signal_dropout_segments_ch1': [],
-            'qc_signal_dropout_ch2': False,
-            'qc_signal_dropout_segments_ch2': [],
-            'qc_signal_dropout_ch3': False,
-            'qc_signal_dropout_segments_ch3': [],
-            'qc_signal_dropout_ch4': False,
-            'qc_signal_dropout_segments_ch4': [],
-            # QC artifact fields
-            'qc_artifact': False,
-            'qc_artifact_segments': [],
-            'qc_artifact_ch1': False,
-            'qc_artifact_segments_ch1': [],
-            'qc_artifact_ch2': False,
-            'qc_artifact_segments_ch2': [],
-            'qc_artifact_ch3': False,
-            'qc_artifact_segments_ch3': [],
-            'qc_artifact_ch4': False,
-            'qc_artifact_segments_ch4': [],
-        }
 
     # Helper to compute duration (s) and acoustic AUC for one cycle
     def _cycle_metrics(cycle_df: pd.DataFrame) -> tuple[float, float, float, float]:
@@ -1953,13 +2158,37 @@ def create_cycles_record_from_data(
 
             # Build cycle_record fields from sync_record if available
             cycle_fields = {}
+            # Normalize maneuver context, preferring sync_record then metadata
+            maneuver_ctx = None
+            if sync_record:
+                maneuver_ctx = getattr(sync_record, "maneuver", None)
+            elif metadata:
+                maneuver_ctx = metadata.get("maneuver")
+
+            normalized_maneuver = _normalize_maneuver_code(maneuver_ctx)
+
+            # Prefer metadata maneuver when available and more specific
+            if metadata:
+                meta_maneuver = _normalize_maneuver_code(metadata.get("maneuver"))
+                if meta_maneuver and (normalized_maneuver is None or normalized_maneuver == "walk"):
+                    normalized_maneuver = meta_maneuver
+
+            # Heuristic: infer from file name if still unknown/walk
+            if normalized_maneuver in (None, "walk"):
+                inferred = _infer_maneuver_from_name(sync_file_name)
+                if inferred:
+                    normalized_maneuver = inferred
+
+            if normalized_maneuver is None:
+                normalized_maneuver = "walk"
+
             if sync_record:
                 # Copy all fields from sync_record that exist in both models
                 for field_name in sync_record.__dataclass_fields__.keys():
                     # Skip fields that are specific to Synchronization (not MovementCycle)
-                    if field_name not in ['sync_file_name', 'sync_duration', 'total_cycles_extracted', 
-                                          'clean_cycles', 'outlier_cycles', 'mean_cycle_duration_s', 
-                                          'median_cycle_duration_s', 'min_cycle_duration_s', 
+                    if field_name not in ['sync_file_name', 'sync_duration', 'total_cycles_extracted',
+                                          'clean_cycles', 'outlier_cycles', 'mean_cycle_duration_s',
+                                          'median_cycle_duration_s', 'min_cycle_duration_s',
                                           'max_cycle_duration_s', 'mean_acoustic_auc', 'per_cycle_details',
                                           'output_directory', 'plots_created', 'qc_acoustic_threshold',
                                           'audio_sync_time', 'bio_left_sync_time', 'bio_right_sync_time',
@@ -1968,13 +2197,16 @@ def create_cycles_record_from_data(
                                           'sync_method', 'consensus_methods', 'consensus_time', 'rms_time',
                                           'onset_time', 'freq_time', 'biomechanics_time', 'biomechanics_time_contralateral']:
                         cycle_fields[field_name] = getattr(sync_record, field_name)
-                
+
+                    # Ensure maneuver uses normalized code
+                    cycle_fields["maneuver"] = normalized_maneuver
+
                 # Add missing AudioProcessing QC type fields if sync_record doesn't have them
                 # (Synchronization doesn't inherit from AudioProcessing, but MovementCycle does)
                 for field_name, default_value in _get_audio_processing_qc_defaults().items():
                     if field_name not in cycle_fields:
                         cycle_fields[field_name] = default_value
-                
+
                 # Derive timestamps
                 audio_start = sync_record.recording_time + timedelta(seconds=s)
                 audio_end = sync_record.recording_time + timedelta(seconds=e)
@@ -1987,7 +2219,7 @@ def create_cycles_record_from_data(
                 audio_end = now + timedelta(seconds=d)
                 bio_start = now
                 bio_end = now + timedelta(seconds=d)
-                
+
                 # Provide minimal required fields
                 cycle_fields = {
                     'study': study,
@@ -2001,7 +2233,7 @@ def create_cycles_record_from_data(
                     'recording_date': now,
                     'recording_time': now,
                     'knee': 'left',
-                    'maneuver': 'walk',
+                    'maneuver': normalized_maneuver,
                     'num_channels': 4,
                     'mic_1_position': 'IPL',
                     'mic_2_position': 'IPM',
@@ -2049,15 +2281,34 @@ def create_cycles_record_from_data(
                     arr = pd.to_numeric(cdf[col], errors="coerce").to_numpy()
                     ch_rms[n] = float(np.sqrt(np.nanmean(arr ** 2)))
 
+            # Determine maneuver context
+            maneuver_ctx = None
+            if sync_record:
+                maneuver_ctx = getattr(sync_record, "maneuver", None)
+            elif metadata:
+                maneuver_ctx = metadata.get("maneuver")
+
+            normalized_maneuver = _normalize_maneuver_code(maneuver_ctx)
+            if metadata:
+                meta_maneuver = _normalize_maneuver_code(metadata.get("maneuver"))
+                if meta_maneuver and (normalized_maneuver is None or normalized_maneuver == "walk"):
+                    normalized_maneuver = meta_maneuver
+            if normalized_maneuver in (None, "walk"):
+                inferred = _infer_maneuver_from_name(sync_file_name)
+                if inferred:
+                    normalized_maneuver = inferred
+            if normalized_maneuver is None:
+                normalized_maneuver = "walk"
+
             # Build cycle_record fields from sync_record if available
             cycle_fields = {}
             if sync_record:
                 # Copy all fields from sync_record that exist in both models
                 for field_name in sync_record.__dataclass_fields__.keys():
                     # Skip fields that are specific to Synchronization (not MovementCycle)
-                    if field_name not in ['sync_file_name', 'sync_duration', 'total_cycles_extracted', 
-                                          'clean_cycles', 'outlier_cycles', 'mean_cycle_duration_s', 
-                                          'median_cycle_duration_s', 'min_cycle_duration_s', 
+                    if field_name not in ['sync_file_name', 'sync_duration', 'total_cycles_extracted',
+                                          'clean_cycles', 'outlier_cycles', 'mean_cycle_duration_s',
+                                          'median_cycle_duration_s', 'min_cycle_duration_s',
                                           'max_cycle_duration_s', 'mean_acoustic_auc', 'per_cycle_details',
                                           'output_directory', 'plots_created', 'qc_acoustic_threshold',
                                           'audio_sync_time', 'bio_left_sync_time', 'bio_right_sync_time',
@@ -2066,13 +2317,16 @@ def create_cycles_record_from_data(
                                           'sync_method', 'consensus_methods', 'consensus_time', 'rms_time',
                                           'onset_time', 'freq_time', 'biomechanics_time', 'biomechanics_time_contralateral']:
                         cycle_fields[field_name] = getattr(sync_record, field_name)
-                
+
+                    # Ensure maneuver uses normalized code
+                    cycle_fields["maneuver"] = normalized_maneuver
+
                 # Add missing AudioProcessing QC type fields if sync_record doesn't have them
                 # (Synchronization doesn't inherit from AudioProcessing, but MovementCycle does)
                 for field_name, default_value in _get_audio_processing_qc_defaults().items():
                     if field_name not in cycle_fields:
                         cycle_fields[field_name] = default_value
-                
+
                 # Derive timestamps
                 audio_start = sync_record.recording_time + timedelta(seconds=s)
                 audio_end = sync_record.recording_time + timedelta(seconds=e)
@@ -2085,7 +2339,7 @@ def create_cycles_record_from_data(
                 audio_end = now + timedelta(seconds=d)
                 bio_start = now
                 bio_end = now + timedelta(seconds=d)
-                
+
                 # Provide minimal required fields
                 cycle_fields = {
                     'study': study,
@@ -2099,7 +2353,7 @@ def create_cycles_record_from_data(
                     'recording_date': now,
                     'recording_time': now,
                     'knee': 'left',
-                    'maneuver': 'walk',
+                    'maneuver': normalized_maneuver,
                     'num_channels': 4,
                     'mic_1_position': 'IPL',
                     'mic_2_position': 'IPM',
@@ -2143,7 +2397,7 @@ def create_cycles_record_from_data(
         data["median_cycle_duration_s"] = 0.0
         data["min_cycle_duration_s"] = 0.0
         data["max_cycle_duration_s"] = 0.0
-    
+
     if aucs:
         data["mean_acoustic_auc"] = float(np.nanmean(aucs))
     else:

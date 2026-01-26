@@ -236,17 +236,33 @@ def _save_or_update_processing_log(
                 audio_pkl_path=audio_pkl_file,
                 metadata=audio_metadata,
             )
+            # If biomechanics were processed, propagate linkage and context
+            if biomechanics_recordings is not None and biomechanics_file is not None:
+                audio_record.linked_biomechanics = True
+                audio_record.biomechanics_file = str(biomechanics_file)
+                # Use known biomech type/sample rate when available
+                if biomechanics_recordings:
+                    first_rec = biomechanics_recordings[0]
+                    if hasattr(first_rec, "data") and hasattr(first_rec, "sample_rate"):
+                        try:
+                            audio_record.biomechanics_sample_rate = float(first_rec.sample_rate)
+                        except Exception:
+                            pass
+                # Default sync method for biomech-guided alignment is stomp
+                audio_record.biomechanics_sync_method = "stomp"
+            # Maneuver should mirror the current processing step
+            audio_record.maneuver = maneuver_key
             # Set QC_not_passed fields if provided
             if qc_not_passed is not None:
-                audio_record.QC_not_passed = qc_not_passed
+                audio_record.qc_not_passed = qc_not_passed
             if qc_not_passed_mic_1 is not None:
-                audio_record.QC_not_passed_mic_1 = qc_not_passed_mic_1
+                audio_record.qc_not_passed_mic_1 = qc_not_passed_mic_1
             if qc_not_passed_mic_2 is not None:
-                audio_record.QC_not_passed_mic_2 = qc_not_passed_mic_2
+                audio_record.qc_not_passed_mic_2 = qc_not_passed_mic_2
             if qc_not_passed_mic_3 is not None:
-                audio_record.QC_not_passed_mic_3 = qc_not_passed_mic_3
+                audio_record.qc_not_passed_mic_3 = qc_not_passed_mic_3
             if qc_not_passed_mic_4 is not None:
-                audio_record.QC_not_passed_mic_4 = qc_not_passed_mic_4
+                audio_record.qc_not_passed_mic_4 = qc_not_passed_mic_4
             log.update_audio_record(audio_record)
 
         # Update biomechanics record if data provided
@@ -255,6 +271,7 @@ def _save_or_update_processing_log(
                 biomechanics_file=biomechanics_file,
                 recordings=biomechanics_recordings,
                 sheet_name=f"{maneuver_key}_data",
+                maneuver=maneuver_key,
             )
             log.update_biomechanics_record(bio_record)
 
@@ -279,7 +296,7 @@ def _save_or_update_processing_log(
                     numeric_id = int(study_id_str)
                 except ValueError:
                     numeric_id = 1
-            
+
             for item in synced_data:
                 # Support both legacy 3-tuple and new 4-tuple with detection_results
                 output_path, synced_df, stomp_tuple = item
@@ -1827,6 +1844,7 @@ def process_participant(participant_dir: Path, entrypoint: Literal["bin", "sync"
                                     acoustic_threshold=100.0,  # Default threshold
                                     plots_created=True,
                                     sync_record=sync_record,
+                                    metadata={"maneuver": maneuver_key},
                                 )
                                 log.add_movement_cycles_record(cycles_record)
 
