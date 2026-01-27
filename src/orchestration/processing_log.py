@@ -462,7 +462,7 @@ class ManeuverProcessingLog:
             for sheet_name, df in sheets.items():
                 df.to_excel(writer, sheet_name=sheet_name, index=False)
 
-        logger.info(f"Saved processing log to {filepath}")
+        logger.debug(f"Saved processing log to {filepath}")
         return filepath
 
     @classmethod
@@ -907,7 +907,7 @@ class ManeuverProcessingLog:
         # Try to load existing log
         existing_log = cls.load_from_excel(log_path)
         if existing_log:
-            logger.info(f"Loaded existing processing log from {log_path}")
+            logger.debug(f"Loaded existing processing log from {log_path}")
             return existing_log
 
         # Create new log
@@ -1082,7 +1082,7 @@ class KneeProcessingLog:
             for sheet_name, df in sheets.items():
                 df.to_excel(writer, sheet_name=sheet_name, index=False)
 
-        logger.info(f"Saved knee processing log to {filepath}")
+        logger.debug(f"Saved knee processing log to {filepath}")
         return filepath
 
     @classmethod
@@ -1174,7 +1174,7 @@ class KneeProcessingLog:
         # Try to load existing log
         existing_log = cls.load_from_excel(log_path)
         if existing_log:
-            logger.info(f"Loaded existing knee processing log from {log_path}")
+            logger.debug(f"Loaded existing knee processing log from {log_path}")
             return existing_log
 
         # Create new log

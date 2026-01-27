@@ -1788,7 +1788,10 @@ def _run_audio_qc_for_maneuver(df: pd.DataFrame, maneuver_key: str, biomech_file
 
 
 def process_participant(participant_dir: Path, entrypoint: Literal["bin", "sync", "cycles"] = "sync", knee: Optional[str] = None, maneuver: Optional[str] = None, biomechanics_type: Optional[str] = None) -> bool:
-    """Process a single participant directory.
+    """Process a single participant directory (wrapper for backward compatibility).
+
+    Delegates to the new ParticipantProcessor class-based architecture while
+    maintaining the original function signature for CLI compatibility.
 
     Runs all stages from the specified entrypoint onwards:
     - 'bin': runs bin -> sync -> cycles
@@ -1800,232 +1803,38 @@ def process_participant(participant_dir: Path, entrypoint: Literal["bin", "sync"
         entrypoint: Stage to start from: 'bin' | 'sync' | 'cycles'
         knee: Specify which knee to process ('left' or 'right')
         maneuver: Specify which maneuver to process ('walk', 'fe', or 'sts')
+        biomechanics_type: Optional biomechanics type (e.g., 'Motion Analysis', 'Gonio', 'IMU')
 
     Returns:
         True if processing succeeded, False otherwise
     """
-    # Define processing stage order
-    stage_order = ["bin", "sync", "cycles"]
-    entrypoint_idx = stage_order.index(entrypoint)
-    run_bin = entrypoint_idx <= stage_order.index("bin")
-    run_sync = entrypoint_idx <= stage_order.index("sync")
-    run_cycles = entrypoint_idx <= stage_order.index("cycles")
+    from src.orchestration.participant_processor import ParticipantProcessor
 
-    # Normalize maneuver shorthand to internal format
-    maneuver = _normalize_maneuver(maneuver)
-
+    study_id = participant_dir.name.lstrip("#")
     try:
-        study_id = participant_dir.name.lstrip("#")
-        logging.info("Processing participant #%s", study_id)
+        # Normalize maneuver shorthand to internal format
+        maneuver = _normalize_maneuver(maneuver)
 
-        # Validate directory structure
-        if entrypoint == "bin":
-            check_participant_dir_for_bin_stage(participant_dir, knee=knee, maneuver=maneuver)
-        else:
-            # When filters are applied (knee/maneuver), skip strict validation because
-            # only the filtered subset may exist. Still ensure top-level folders exist.
-            if knee is None and maneuver is None:
-                check_participant_dir_for_required_files(participant_dir)
-            else:
-                # Skip full validation with filters - check top-level folders only
-                participant_dir_has_top_level_folders(participant_dir, knee=knee)
-
-        # Biomechanics validation (best-effort) — skip for bin-only stage
-        motion_capture_dir = participant_dir / "Motion Capture"
-        bio_valid = False
-        biomechanics_file = _find_excel_file(
-            motion_capture_dir,
-            f"AOA{study_id}_Biomechanics_Full_Set",
+        # Create processor and run
+        processor = ParticipantProcessor(
+            participant_dir=participant_dir,
+            biomechanics_type=biomechanics_type,
         )
-        if entrypoint != "bin":
-            try:
-                motion_capture_folder_has_required_data(motion_capture_dir)
-                bio_valid = True
-            except Exception as e:
-                logging.error("Biomechanics validation failed: %s", e)
-
-        # BIN stage: process raw audio to frequency DF + audio QC
-        if run_bin:
-            # Pass back both files and DataFrames to avoid reloading
-            produced, produced_dfs = _process_bin_stage(participant_dir, knee=knee, maneuver=maneuver, biomechanics_type=biomechanics_type)
-            logging.info("Bin stage produced %d frequency pickle(s)", len(produced))
-            # Run audio QC per maneuver using already-loaded DataFrames
-            for pkl, df in zip(produced, produced_dfs):
-                if df is None:
-                    continue
-                # Infer maneuver from path components
-                parts = set(Path(pkl).parts)
-                if "Walking" in parts:
-                    _run_audio_qc_for_maneuver(
-                        df,
-                        "walk",
-                        biomechanics_file if (bio_valid and biomechanics_file.exists()) else None,
-                    )
-                elif "Flexion-Extension" in parts:
-                    _run_audio_qc_for_maneuver(
-                        df,
-                        "flexion_extension",
-                        biomechanics_file if (bio_valid and biomechanics_file.exists()) else None,
-                    )
-                elif "Sit-Stand" in parts:
-                    _run_audio_qc_for_maneuver(
-                        df,
-                        "sit_to_stand",
-                        biomechanics_file if (bio_valid and biomechanics_file.exists()) else None,
-                    )
-
-            # If nothing was produced, stop early so validation doesn't fail with a
-            # missing processed-file error that hides the missing .bin root cause.
-            if not produced:
-                logging.error(
-                    "Bin stage produced no outputs; verify raw .bin files exist in each maneuver folder."
-                )
-                return False
-
-        # SYNC stage: synchronize audio with biomechanics and save Synced files
-        if run_sync:
-            parse_participant_directory(participant_dir, knee=knee, maneuver=maneuver, biomechanics_type=biomechanics_type)
-            logging.info(
-                "Synchronization completed for participant #%s", study_id
-            )
-
-        # CYCLES stage: run movement cycle QC on all Synced files and save outputs
-        if run_cycles:
-            # Parse study name and numeric ID from study_id (for use in cycles record creation)
-            study_id_str = str(study_id).lstrip("#")
-            study_name = "AOA"  # default
-            numeric_id = 1
-            if study_id_str.startswith("AOA"):
-                study_name = "AOA"
-                numeric_id = int(study_id_str[3:]) if len(study_id_str) > 3 else 1
-            elif study_id_str.startswith("preOA"):
-                study_name = "preOA"
-                numeric_id = int(study_id_str[5:]) if len(study_id_str) > 5 else 1
-            elif study_id_str.startswith("SMoCK"):
-                study_name = "SMoCK"
-                numeric_id = int(study_id_str[5:]) if len(study_id_str) > 5 else 1
-            else:
-                # Try to parse as just a number
-                try:
-                    numeric_id = int(study_id_str)
-                except ValueError:
-                    numeric_id = 1
-
-            synced_files = find_synced_files(participant_dir)
-            # Apply knee and maneuver filters to synced files
-            synced_files = _filter_synced_files(synced_files, knee=knee, maneuver=maneuver)
-            if not synced_files:
-                logging.warning("No synced files found to run cycle QC")
-            for synced_file in synced_files:
-                try:
-                    clean_cycles, outlier_cycles, output_dir = perform_sync_qc(synced_file, create_plots=True)
-
-                    # Update processing log with movement cycles info
-                    try:
-                        # Extract metadata from path
-                        parts = synced_file.parts
-                        knee_idx = -1
-                        for i, part in enumerate(parts):
-                            if "Knee" in part:
-                                knee_idx = i
-                                break
-
-                        if knee_idx >= 0:
-                            knee_side = parts[knee_idx].split()[0]  # "Left" or "Right"
-                            maneuver_dir = synced_file.parent.parent  # Go up from Synced to maneuver dir
-
-                            # Determine maneuver type from path
-                            maneuver_key = None
-                            for part in parts:
-                                if "walk" in part.lower():
-                                    maneuver_key = "walk"
-                                elif "sit" in part.lower() and "stand" in part.lower():
-                                    maneuver_key = "sit_to_stand"
-                                elif "flexion" in part.lower():
-                                    maneuver_key = "flexion_extension"
-
-                            if maneuver_key:
-                                log = ManeuverProcessingLog.get_or_create(
-                                    study_id=study_id,
-                                    knee_side=cast(Literal["Left", "Right"], knee_side),
-                                    maneuver=cast(Literal["walk", "sit_to_stand", "flexion_extension"], maneuver_key),
-                                    maneuver_directory=maneuver_dir,
-                                )
-
-                                # Retrieve the synchronization record to propagate pass/speed/knee context
-                                sync_record = None
-                                try:
-                                    sync_record = next(
-                                        (rec for rec in log.synchronization_records if rec.sync_file_name == synced_file.stem),
-                                        None,
-                                    )
-                                except Exception:
-                                    sync_record = None
-
-                                cycles_record = create_cycles_record_from_data(
-                                    sync_file_name=synced_file.stem,
-                                    clean_cycles=clean_cycles,
-                                    outlier_cycles=outlier_cycles,
-                                    output_dir=output_dir,
-                                    acoustic_threshold=100.0,  # Default threshold
-                                    plots_created=True,
-                                    sync_record=sync_record,
-                                    metadata={"maneuver": maneuver_key},
-                                    study=study_name,
-                                    study_id=numeric_id,
-                                    biomechanics_type=biomechanics_type,
-                                )
-                                log.add_movement_cycles_record(cycles_record)
-
-                                # Mark synchronization record QC status
-                                try:
-                                    for i, rec in enumerate(log.synchronization_records):
-                                        if rec.sync_file_name == synced_file.stem:
-                                            rec.sync_qc_performed = True
-                                            # Simple pass criterion: at least one clean cycle
-                                            rec.sync_qc_passed = bool(len(clean_cycles) > 0)
-                                            log.synchronization_records[i] = rec
-                                            break
-                                except Exception:
-                                    pass
-                                log.save_to_excel()
-
-                                # Update knee-level log
-                                try:
-                                    knee_log = KneeProcessingLog.get_or_create(
-                                        study_id=study_id,
-                                        knee_side=cast(Literal["Left", "Right"], knee_side),
-                                        knee_directory=maneuver_dir.parent,
-                                    )
-                                    knee_log.update_maneuver_summary(
-                                        cast(Literal["walk", "sit_to_stand", "flexion_extension"], maneuver_key),
-                                        log
-                                    )
-                                    knee_log.save_to_excel()
-                                except Exception as e:
-                                    logging.warning(f"Failed to update knee-level log: {e}")
-                    except Exception as e:
-                        logging.warning(f"Failed to update movement cycles log for {synced_file}: {e}")
-
-                except Exception as e:  # pylint: disable=broad-except
-                    logging.warning("Cycle QC failed for %s: %s", synced_file, e)
-
-        logging.info(
-            "Successfully completed processing participant #%s", study_id
+        success = processor.process(
+            entrypoint=entrypoint,
+            knee=knee,
+            maneuver=maneuver,
         )
-        return True
 
+        if success:
+            logging.info("Successfully completed processing participant #%s", study_id)
+
+        return success
     except FileNotFoundError as e:
-        logging.error(
-            "Validation error for %s: %s", participant_dir.name, str(e)
-        )
+        logging.error("Validation error for %s: %s", participant_dir.name, str(e))
         return False
-    except Exception as e:  # pylint: disable=broad-except
-        logging.error(
-            "Unexpected error processing %s: %s",
-            participant_dir.name,
-            str(e),
-        )
+    except Exception as e:
+        logging.error("Error processing participant #%s: %s", study_id, e)
         return False
 
 

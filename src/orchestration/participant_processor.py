@@ -139,9 +139,11 @@ class ManeuverProcessor:
 
     def process_sync_stage(self) -> bool:
         """Synchronize audio with biomechanics."""
+        # Load audio state if not already loaded (handles resuming from sync)
         if not self.audio or self.audio.df is None:
-            logging.error("Audio must be processed before sync")
-            return False
+            if not self._load_existing_audio_state():
+                logging.error("Audio state must be available to run sync stage")
+                return False
 
         try:
             logging.info(f"Processing {self.knee_side} {self.maneuver_key} sync stage")
@@ -209,10 +211,16 @@ class ManeuverProcessor:
             return False
 
     def process_cycles_stage(self) -> bool:
-        """Run movement cycle QC on all synced files."""
+        """Run movement cycle QC on all synced files.
+
+        If resuming from cycles stage (synced_data is empty), loads synced files
+        from disk and processes them.
+        """
+        # Load synced files from disk if needed (handles resuming from cycles)
         if not self.synced_data:
-            logging.warning(f"No synced data to run cycles on for {self.knee_side} {self.maneuver_key}")
-            return True  # Not a failure
+            if not self._load_existing_synced_data():
+                logging.warning(f"No synced data to run cycles on for {self.knee_side} {self.maneuver_key}")
+                return True  # Not a failure
 
         try:
             logging.info(f"Processing {self.knee_side} {self.maneuver_key} cycles stage")
@@ -223,6 +231,44 @@ class ManeuverProcessor:
             return True
         except Exception as e:
             logging.error(f"Cycles stage failed for {self.knee_side} {self.maneuver_key}: {e}")
+            return False
+
+    def _load_existing_synced_data(self) -> bool:
+        """Load existing synced files when resuming from cycles stage.
+
+        Returns:
+            True if synced files were found and loaded, False otherwise
+        """
+        try:
+            synced_dir = self.maneuver_dir / "Synced"
+            if not synced_dir.exists():
+                return False
+
+            # Find all synced pickle files
+            synced_files = list(synced_dir.glob("*.pkl"))
+            if not synced_files:
+                return False
+
+            # Load each synced file
+            for synced_file in synced_files:
+                try:
+                    df = pd.read_pickle(synced_file)
+                    sync_data = SyncData(
+                        output_path=synced_file,
+                        df=df,
+                        stomp_times=(0.0, 0.0, 0.0, {}),  # Placeholder
+                    )
+                    self.synced_data.append(sync_data)
+                except Exception as e:
+                    logging.warning(f"Failed to load synced file {synced_file}: {e}")
+
+            if self.synced_data:
+                logging.info(f"Loaded {len(self.synced_data)} synced file(s) from {synced_dir}")
+                return True
+
+            return False
+        except Exception as e:
+            logging.error(f"Failed to load existing synced data: {e}")
             return False
 
     def save_logs(self) -> bool:
@@ -259,6 +305,56 @@ class ManeuverProcessor:
             return True
         except Exception as e:
             logging.error(f"Failed to save logs: {e}")
+            return False
+
+    def _load_existing_audio_state(self) -> bool:
+        """Load existing audio state when resuming from a later stage.
+
+        This handles the case where bin stage has already been completed
+        and we're resuming from sync or cycles. Loads the audio pickle
+        and metadata from disk.
+
+        Returns:
+            True if audio state was successfully loaded, False otherwise
+        """
+        try:
+            audio_pkl_path = self._find_audio_pickle()
+            if not audio_pkl_path or not audio_pkl_path.exists():
+                logging.warning(f"No existing audio pickle found in {self.maneuver_dir}")
+                return False
+
+            # Load audio data
+            audio_df = load_audio_data(audio_pkl_path)
+
+            # Load metadata if available
+            audio_metadata = self._load_audio_metadata(audio_pkl_path)
+
+            # Create AudioData with loaded state
+            self.audio = AudioData(
+                pkl_path=audio_pkl_path,
+                df=audio_df,
+                metadata=audio_metadata,
+                qc_not_passed=None,  # TODO: Load from processing log if available
+                qc_not_passed_mic_1=None,
+                qc_not_passed_mic_2=None,
+                qc_not_passed_mic_3=None,
+                qc_not_passed_mic_4=None,
+            )
+
+            # Create audio record
+            self.audio.record = create_audio_record_from_data(
+                audio_file_name=audio_pkl_path.stem,
+                audio_df=audio_df,
+                audio_bin_path=self._find_bin_file(),
+                audio_pkl_path=audio_pkl_path,
+                metadata=audio_metadata,
+                biomechanics_type=None,  # Will be linked during sync
+            )
+
+            logging.info(f"Loaded existing audio state for {self.knee_side} {self.maneuver_key}")
+            return True
+        except Exception as e:
+            logging.error(f"Failed to load existing audio state: {e}")
             return False
 
     def _find_audio_pickle(self) -> Optional[Path]:
@@ -432,7 +528,10 @@ class KneeProcessor:
 
             for maneuver_key, proc in self.maneuver_processors.items():
                 if proc.log:
-                    self.knee_log.add_maneuver_log(proc.log)
+                    self.knee_log.update_maneuver_summary(
+                        cast(Literal["walk", "sit_to_stand", "flexion_extension"], maneuver_key),
+                        proc.log
+                    )
 
             self.knee_log.save_to_excel()
             return True
