@@ -72,18 +72,33 @@ class BiomechanicsMetadata(StudyMetadata):
     biomechanics_sample_rate: Optional[float] = None
     biomechanics_notes: Optional[str] = None
 
-    @field_validator("biomechanics_file", "biomechanics_type", "biomechanics_sync_method", "biomechanics_sample_rate")
+    @field_validator("biomechanics_file", "biomechanics_type", "biomechanics_sync_method")
     @classmethod
     def validate_biomechanics_fields(cls, value: Optional[Any], info) -> Optional[Any]:
         """Validate biomechanics fields are provided when linked_biomechanics is True."""
         field_name = info.field_name
 
         if info.data.get("linked_biomechanics") is True:
-            if value is None and field_name != "biomechanics_notes":
+            if value is None:
                 raise ValueError(f"{field_name} is required when linked_biomechanics is True")
         else:
             if value is not None:
                 raise ValueError(f"{field_name} must be None when linked_biomechanics is False")
+        return value
+
+    @field_validator("biomechanics_notes")
+    @classmethod
+    def validate_biomechanics_notes(cls, value: Optional[str], info) -> Optional[str]:
+        """Validate biomechanics_notes is optional regardless of linked status."""
+        # Notes can be provided or not, regardless of linkage status
+        return value
+
+    @field_validator("biomechanics_sample_rate")
+    @classmethod
+    def validate_biomechanics_sample_rate(cls, value: Optional[float]) -> Optional[float]:
+        """Validate biomechanics sample rate is positive if provided."""
+        if value is not None and value <= 0:
+            raise ValueError("biomechanics_sample_rate must be positive")
         return value
 
     @field_validator("biomechanics_sync_method")
@@ -404,12 +419,33 @@ class AudioProcessing(AcousticsFile):
     qc_artifact_type_ch3: Optional[Literal["intermittent", "continuous"]] = None
     qc_artifact_type_ch4: Optional[Literal["intermittent", "continuous"]] = None
 
-    # Legacy QC fields (for backward compatibility, populated from new fields)
-    qc_not_passed: Optional[str] = None  # String repr of qc_fail_segments
-    qc_not_passed_mic_1: Optional[str] = None
-    qc_not_passed_mic_2: Optional[str] = None
-    qc_not_passed_mic_3: Optional[str] = None
-    qc_not_passed_mic_4: Optional[str] = None
+    # Boolean QC status indicators (auto-populated from fail segments)
+    qc_not_passed: bool = False  # True if any qc_fail_segments exist
+    qc_not_passed_mic_1: bool = False
+    qc_not_passed_mic_2: bool = False
+    qc_not_passed_mic_3: bool = False
+    qc_not_passed_mic_4: bool = False
+
+    # Log tracking
+    log_updated: Optional[datetime] = None
+
+    @model_validator(mode="after")
+    def populate_qc_not_passed_fields(self) -> "AudioProcessing":
+        """Auto-populate qc_not_passed boolean fields from qc_fail_segments.
+
+        These fields indicate whether QC failed (True) or passed (False)
+        based on whether any fail segments exist.
+        """
+        # Set overall qc_not_passed based on whether any fail segments exist
+        self.qc_not_passed = len(self.qc_fail_segments) > 0
+
+        # Set per-mic qc_not_passed fields based on per-channel fail segments
+        self.qc_not_passed_mic_1 = len(self.qc_fail_segments_ch1) > 0
+        self.qc_not_passed_mic_2 = len(self.qc_fail_segments_ch2) > 0
+        self.qc_not_passed_mic_3 = len(self.qc_fail_segments_ch3) > 0
+        self.qc_not_passed_mic_4 = len(self.qc_fail_segments_ch4) > 0
+
+        return self
 
     @field_validator("duration_seconds")
     @classmethod
@@ -461,14 +497,17 @@ class AudioProcessing(AcousticsFile):
             "QC Artifact Ch4": self.qc_artifact_ch4,
             "QC Artifact Type Ch4": self.qc_artifact_type_ch4,
             "QC Artifact Segments Ch4": str(self.qc_artifact_segments_ch4),
-            # Legacy fields
+            # Boolean QC status indicators
             "QC_not_passed": self.qc_not_passed,
             "QC_not_passed_mic_1": self.qc_not_passed_mic_1,
             "QC_not_passed_mic_2": self.qc_not_passed_mic_2,
             "QC_not_passed_mic_3": self.qc_not_passed_mic_3,
             "QC_not_passed_mic_4": self.qc_not_passed_mic_4,
+            # Log tracking
+            "Log Updated": self.log_updated.isoformat() if self.log_updated else None,
         })
         return result
+
 
 
 @dataclass(kw_only=True)
@@ -505,6 +544,9 @@ class BiomechanicsImport(StudyMetadata):
 
     # Number of passes in the biomechanics data (only relevant for walking)
     num_passes: int = 0
+
+    # Biomechanics type (for tracking which modality was used)
+    biomechanics_type: Optional[Literal["Gonio", "IMU", "Motion Analysis"]] = None
 
     @field_validator("num_sub_recordings")
     @classmethod

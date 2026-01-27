@@ -114,6 +114,34 @@ def _get_audio_processing_qc_defaults() -> Dict[str, Any]:
     }
 
 
+def _infer_biomechanics_type_from_study(study: Optional[str]) -> str:
+    """Infer biomechanics system type from study name.
+
+    Provides a small mapping for known studies; defaults to 'Gonio'.
+    """
+    if study is None:
+        return "Gonio"
+    s = str(study).strip().lower()
+    mapping = {
+        "aoa": "Motion Analysis",
+    }
+    return mapping.get(s, "Gonio")
+
+
+def _default_biomechanics_sync_method(biomechanics_type: Optional[str]) -> str:
+    """Return the default biomechanics sync method for a given biomechanics_type.
+
+    - Motion Analysis or IMU -> 'stomp'
+    - Gonio -> 'flick'
+    - Unknown -> 'flick'
+    """
+    if biomechanics_type is None:
+        return "flick"
+    bt = str(biomechanics_type).strip().lower()
+    if bt in ("motion analysis", "imu"):
+        return "stomp"
+    return "flick"
+
 def _normalize_maneuver_code(maneuver: Optional[str]) -> Optional[str]:
     """Map human-readable maneuver names to internal short codes.
 
@@ -480,10 +508,11 @@ class ManeuverProcessingLog:
                     # If linked_biomechanics is True but required fields are None, set it to False
                     raw_linked = bool(row.get("Linked Biomechanics", False))
                     biomech_type = str(row.get("Biomechanics Type")) if pd.notna(row.get("Biomechanics Type")) else None
-                    biomech_sample_rate = float(row.get("Biomechanics Sample Rate (Hz)")) if pd.notna(row.get("Biomechanics Sample Rate (Hz)")) else None
+                    biomech_file = str(row.get("Biomechanics File")) if pd.notna(row.get("Biomechanics File")) else None
 
-                    # If marked as linked but missing required fields, treat as not linked
-                    if raw_linked and (biomech_type is None or biomech_sample_rate is None):
+                    # If marked as linked but missing biomechanics_type or biomechanics_file, treat as not linked
+                    # Note: biomechanics_sample_rate may be None if the recording doesn't have that attribute
+                    if raw_linked and (biomech_type is None or biomech_file is None):
                         linked_biomechanics = False
                     else:
                         linked_biomechanics = raw_linked
@@ -496,10 +525,10 @@ class ManeuverProcessingLog:
                         biomechanics_sample_rate = None
                         biomechanics_notes = None
                     else:
-                        biomechanics_file = str(row.get("Biomechanics File")) if pd.notna(row.get("Biomechanics File")) else None
+                        biomechanics_file = biomech_file
                         biomechanics_type = biomech_type
                         biomechanics_sync_method = str(row.get("Biomechanics Sync Method")) if pd.notna(row.get("Biomechanics Sync Method")) else None
-                        biomechanics_sample_rate = biomech_sample_rate
+                        biomechanics_sample_rate = float(row.get("Biomechanics Sample Rate (Hz)")) if pd.notna(row.get("Biomechanics Sample Rate (Hz)")) else None
                         biomechanics_notes = str(row.get("Biomechanics Notes")) if pd.notna(row.get("Biomechanics Notes")) else None
 
                     log.audio_record = AudioProcessing(
@@ -565,6 +594,8 @@ class ManeuverProcessingLog:
                         qc_artifact_segments_ch3=[],
                         qc_artifact_ch4=False,
                         qc_artifact_segments_ch4=[],
+                        # Log tracking
+                        log_updated=pd.to_datetime(row.get("Log Updated")) if pd.notna(row.get("Log Updated")) else None,
                     )
             except Exception as e:
                 logger.warning(f"Could not load audio record: {e}")
@@ -608,8 +639,12 @@ class ManeuverProcessingLog:
                         try:
                             # Get biomechanics metadata, with defaults if not provided
                             biomechanics_file = str(row.get("Biomechanics File")) if pd.notna(row.get("Biomechanics File")) else "unknown.xlsx"
-                            biomechanics_type = str(row.get("Biomechanics Type")) if pd.notna(row.get("Biomechanics Type")) else "Gonio"
-                            biomechanics_sync_method = str(row.get("Biomechanics Sync Method")) if pd.notna(row.get("Biomechanics Sync Method")) else "flick"
+                            biomechanics_type = str(row.get("Biomechanics Type")) if pd.notna(row.get("Biomechanics Type")) else _infer_biomechanics_type_from_study(row.get("Study", "AOA"))
+                            biomechanics_sync_method = (
+                                str(row.get("Biomechanics Sync Method"))
+                                if pd.notna(row.get("Biomechanics Sync Method"))
+                                else _default_biomechanics_sync_method(biomechanics_type)
+                            )
                             biomechanics_sample_rate = float(row.get("Biomechanics Sample Rate (Hz)")) if pd.notna(row.get("Biomechanics Sample Rate (Hz)")) else 100.0
                             sync_method = str(row.get("Sync Method", "consensus")).lower()
                             consensus_methods = str(row.get("Consensus Methods")) if pd.notna(row.get("Consensus Methods")) else ("consensus" if sync_method == "consensus" else None)
@@ -728,8 +763,12 @@ class ManeuverProcessingLog:
                             try:
                                 # Get biomechanics metadata, with defaults if not provided
                                 biomechanics_file = str(row.get("Biomechanics File")) if pd.notna(row.get("Biomechanics File")) else "unknown.xlsx"
-                                biomechanics_type = str(row.get("Biomechanics Type")) if pd.notna(row.get("Biomechanics Type")) else "Gonio"
-                                biomechanics_sync_method = str(row.get("Biomechanics Sync Method")) if pd.notna(row.get("Biomechanics Sync Method")) else "flick"
+                                biomechanics_type = str(row.get("Biomechanics Type")) if pd.notna(row.get("Biomechanics Type")) else _infer_biomechanics_type_from_study(row.get("Study", "AOA"))
+                                biomechanics_sync_method = (
+                                    str(row.get("Biomechanics Sync Method"))
+                                    if pd.notna(row.get("Biomechanics Sync Method"))
+                                    else _default_biomechanics_sync_method(biomechanics_type)
+                                )
                                 biomechanics_sample_rate = float(row.get("Biomechanics Sample Rate (Hz)")) if pd.notna(row.get("Biomechanics Sample Rate (Hz)")) else 100.0
                                 sync_method = str(row.get("Sync Method", "consensus")).lower()
                                 consensus_methods = str(row.get("Consensus Methods")) if pd.notna(row.get("Consensus Methods")) else ("consensus" if sync_method == "consensus" else None)
@@ -1161,6 +1200,7 @@ def create_audio_record_from_data(
     metadata: Optional[Dict[str, Any]] = None,
     error: Optional[Exception] = None,
     qc_data: Optional[Dict[str, Any]] = None,
+    biomechanics_type: Optional[str] = None,
 ) -> AudioProcessing:
     """Create an AudioProcessing record from processing data with Pydantic validation.
 
@@ -1266,24 +1306,37 @@ def create_audio_record_from_data(
         if "file_time" in metadata:
             data["file_time"] = metadata["file_time"]
 
-    # Provide defaults for required fields if not present
-    # These defaults ensure the function can be called with minimal metadata
+    # Provide defaults only for non-critical fields
+    # Critical fields (recording_date, recording_time, mic positions) should come from metadata
+    # but we provide minimal fallbacks for error cases and testing
     if "study" not in data:
         data["study"] = "AOA"  # Default study
     if "study_id" not in data:
         data["study_id"] = 1  # Default ID
     if "linked_biomechanics" not in data:
         data["linked_biomechanics"] = False
+    # Recording date/time: prefer metadata, fallback to file_time or datetime.now() for errors/tests
     if "recording_date" not in data:
-        data["recording_date"] = datetime.now()
+        if "file_time" in data and data["file_time"] is not None:
+            data["recording_date"] = data["file_time"]
+        else:
+            data["recording_date"] = datetime.now()
     if "recording_time" not in data:
-        data["recording_time"] = datetime.now()
+        if "file_time" in data and data["file_time"] is not None:
+            data["recording_time"] = data["file_time"]
+        else:
+            data["recording_time"] = datetime.now()
     if "file_time" not in data or data["file_time"] is None:
-        data["file_time"] = datetime.now()
+        # file_time can default to recording_time if available
+        if "recording_time" in data:
+            data["file_time"] = data["recording_time"]
+        else:
+            data["file_time"] = datetime.now()
     if "knee" not in data:
         data["knee"] = "left"  # Default knee
     if "maneuver" not in data:
         data["maneuver"] = "walk"  # Default maneuver
+    # Mic positions: prefer metadata, provide defaults as last resort for errors/tests
     if "mic_1_position" not in data:
         data["mic_1_position"] = "IPM"
     if "mic_2_position" not in data:
@@ -1304,6 +1357,15 @@ def create_audio_record_from_data(
             data["num_channels"] = _infer_num_channels_from_df(audio_df)
         else:
             data["num_channels"] = 4
+
+    # If caller provided a biomechanics_type override, prefer it when metadata
+    # explicitly indicates a linkage to biomechanics (do not set if not linked).
+    if (
+        biomechanics_type is not None
+        and "biomechanics_type" not in data
+        and data.get("linked_biomechanics", False)
+    ):
+        data["biomechanics_type"] = biomechanics_type
 
 
     if error:
@@ -1425,6 +1487,7 @@ def create_biomechanics_record_from_data(
     sheet_name: Optional[str] = None,
     maneuver: Optional[str] = None,
     error: Optional[Exception] = None,
+    biomechanics_type: Optional[str] = None,
 ) -> BiomechanicsImport:
     """Create a BiomechanicsImport record from import data.
 
@@ -1447,6 +1510,10 @@ def create_biomechanics_record_from_data(
         "study": "AOA",
         "study_id": 1,
     }
+
+    # Add biomechanics_type if provided
+    if biomechanics_type is not None:
+        data["biomechanics_type"] = biomechanics_type
 
     if error:
         data["processing_status"] = "error"
@@ -1538,6 +1605,7 @@ def create_sync_record_from_data(
     metadata: Optional[Dict[str, Any]] = None,
     study: str = "AOA",  # Default to AOA
     study_id: int = 1,  # Default to 1 (must be positive)
+    biomechanics_type: Optional[str] = None,
 ) -> Synchronization:
     """Create a SynchronizationRecord from sync data.
 
@@ -1607,6 +1675,9 @@ def create_sync_record_from_data(
         # Bio stomp remains at its original position (synced timeline is in bio coords)
         aligned_bio_stomp = bio_stomp_s
 
+    # Preserve any explicitly provided biomechanics_type parameter
+    provided_biomechanics_type = biomechanics_type
+
     # Build data dictionary with all required fields from inheritance chain
     # Start with required StudyMetadata fields
     if audio_record:
@@ -1625,19 +1696,23 @@ def create_sync_record_from_data(
     if biomech_record:
         linked_biomechanics = True
         biomechanics_file = biomech_record.biomechanics_file
-        biomechanics_type = biomech_record.biomechanics_type if hasattr(biomech_record, 'biomechanics_type') else "Gonio"
+        biomechanics_type = biomech_record.biomechanics_type if hasattr(biomech_record, 'biomechanics_type') else _infer_biomechanics_type_from_study(data_study)
         biomechanics_sample_rate = biomech_record.sample_rate if hasattr(biomech_record, 'sample_rate') else 100.0
     elif metadata and metadata.get("linked_biomechanics"):
         linked_biomechanics = True
         biomechanics_file = metadata.get("biomechanics_file", "unknown")
-        biomechanics_type = metadata.get("biomechanics_type", "Gonio")
+        biomechanics_type = metadata.get("biomechanics_type", _infer_biomechanics_type_from_study(data_study))
         biomechanics_sample_rate = metadata.get("biomechanics_sample_rate", 100.0)
     else:
         # Synchronization requires linked_biomechanics=True, so default to True with placeholder values
         linked_biomechanics = True
         biomechanics_file = "unknown"
-        biomechanics_type = "Gonio"
+        biomechanics_type = _infer_biomechanics_type_from_study(data_study)
         biomechanics_sample_rate = 100.0  # Default sample rate for tests
+
+    # If caller provided an explicit biomechanics_type, prefer it
+    if provided_biomechanics_type is not None:
+        biomechanics_type = provided_biomechanics_type
 
     # AcousticsFile fields
     if audio_record:
@@ -1899,6 +1974,7 @@ def create_cycles_record_from_data(
     metadata: Optional[Dict[str, Any]] = None,
     study: str = "AOA",
     study_id: int = 1,
+    biomechanics_type: Optional[str] = None,
 ) -> Synchronization:
     """Create a Synchronization record from cycle extraction data.
 
@@ -1959,7 +2035,7 @@ def create_cycles_record_from_data(
                 "study_id": audio_record.study_id,
                 "linked_biomechanics": audio_record.linked_biomechanics,
                 "biomechanics_file": audio_record.biomechanics_file,
-                "biomechanics_type": audio_record.biomechanics_type,
+                "biomechanics_type": audio_record.biomechanics_type if audio_record.biomechanics_type is not None else biomechanics_type,
                 "biomechanics_sample_rate": audio_record.biomechanics_sample_rate,
                 "audio_file_name": audio_record.audio_file_name,
                 "device_serial": audio_record.device_serial,
@@ -1978,13 +2054,14 @@ def create_cycles_record_from_data(
             }
         else:
             # Use defaults
+            chosen_biomechanics_type = biomechanics_type if biomechanics_type is not None else _infer_biomechanics_type_from_study(metadata.get("study", study) if metadata else study)
             data = {
                 "study": metadata.get("study", study) if metadata else study,
                 "study_id": metadata.get("study_id", study_id) if metadata else study_id,
                 "linked_biomechanics": True,  # Synchronization requires this to be True
                 "biomechanics_file": "unknown_biomechanics.xlsx",
-                "biomechanics_type": "Gonio",
-                "biomechanics_sync_method": "flick",
+                "biomechanics_type": chosen_biomechanics_type,
+                "biomechanics_sync_method": _default_biomechanics_sync_method(chosen_biomechanics_type),
                 "biomechanics_sample_rate": 100.0,
                 "biomechanics_notes": None,
                 "audio_file_name": sync_file_name,

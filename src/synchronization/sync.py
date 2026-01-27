@@ -28,6 +28,8 @@ except ImportError:
 def get_biomechanics_metadata(
     directory: Path,
     sheet_name: str,
+    biomechanics_type: Optional[str] = None,
+    study_name: Optional[str] = None,
 ) -> pd.DataFrame:
     """Load biomechanics metadata from a pickled DataFrame in the given directory."""
 
@@ -48,6 +50,8 @@ def get_biomechanics_metadata(
 def get_event_metadata(
     bio_meta: pd.DataFrame,
     event_name: str,
+    biomechanics_type: Optional[str] = None,
+    study_name: Optional[str] = None,
 ) -> pd.DataFrame:
     """Extract event metadata for a specific event from biomechanics metadata.
 
@@ -67,6 +71,8 @@ def get_event_metadata(
 def get_stomp_time(
     bio_meta: pd.DataFrame,
     foot: str,
+    biomechanics_type: Optional[str] = None,
+    study_name: Optional[str] = None,
 ) -> timedelta:
     """Extract the timestamp of the foot stomp event from biomechanics metadata.
     foot: 'left' or 'right'"""
@@ -85,6 +91,8 @@ def get_stomp_time(
 
 def get_right_stomp_time(
     bio_meta: pd.DataFrame,
+    biomechanics_type: Optional[str] = None,
+    study_name: Optional[str] = None,
 ) -> timedelta:
     """Extract the timestamp of the right foot stomp event from biomechanics metadata.
     Sync Right is a item in the first row Event Info. The second column Time (sec)
@@ -95,6 +103,8 @@ def get_right_stomp_time(
 
 def get_left_stomp_time(
     bio_meta: pd.DataFrame,
+    biomechanics_type: Optional[str] = None,
+    study_name: Optional[str] = None,
 ) -> timedelta:
     """Extract the timestamp of the left foot stomp event from biomechanics metadata."""
 
@@ -354,6 +364,8 @@ def get_audio_stomp_time(
     right_stomp_time: Optional[timedelta] = None,
     left_stomp_time: Optional[timedelta] = None,
     return_details: bool = False,
+    biomechanics_type: Optional[str] = None,
+    study_name: Optional[str] = None,
 ) -> Union[timedelta, tuple[timedelta, dict]]:
     """Detect the audio stomp time using multi-method approach with optional biomechanics refinement.
 
@@ -410,6 +422,8 @@ def get_audio_stomp_time(
         left_stomp_time: Biomechanics-measured left foot stomp time (timedelta).
                          Required for biomechanics refinement.
         return_details: If True, return tuple `(stomp_time, detection_results_dict)`.
+        biomechanics_type: Optional biomechanics system/type (e.g., "IMU", "Gonio").
+        study_name: Optional study name token (e.g., "AOA").
                        If False, return only `stomp_time` (backward compatible).
 
     Returns:
@@ -1161,7 +1175,7 @@ def plot_stomp_detection(
 ) -> None:
     """Create a visualization of stomp detection with overview and per-channel plots.
 
-    Top row: 
+    Top row:
       - Left: Full recording RMS energy + knee angle with stomp markers
       - Middle-Left: Synchronized window with knee angle
       - Middle-Right: First 30 seconds of raw audio (ch1-4 voltage)
@@ -1386,18 +1400,18 @@ def plot_stomp_detection(
         channel_colors_raw = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728"]  # Blue, orange, green, red
         first_30s_mask = tt_audio <= min(30.0, tt_audio.max())
         tt_audio_30s = tt_audio[first_30s_mask]
-        
+
         # Downsample for plotting if needed
         raw_downsample = max(1, len(tt_audio_30s) // max_plot_points)
         tt_audio_30s_plot = tt_audio_30s[::raw_downsample]
-        
+
         for idx, ch in enumerate(channel_names):
             if ch in audio_channels.columns:
                 ch_voltage_30s = audio_channels[ch].values[first_30s_mask][::raw_downsample]
-                ax_zoom.plot(tt_audio_30s_plot, ch_voltage_30s, 
+                ax_zoom.plot(tt_audio_30s_plot, ch_voltage_30s,
                            color=channel_colors_raw[idx], linewidth=0.8, alpha=0.7,
                            label=ch.upper())
-        
+
         ax_zoom.set_title("First 30 Seconds - Raw Audio (Untruncated)", fontsize=12, fontweight="bold")
         ax_zoom.set_xlabel("Time (seconds)", fontsize=11)
         ax_zoom.set_ylabel("Voltage", fontsize=11)

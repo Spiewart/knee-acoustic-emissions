@@ -16,6 +16,7 @@ from src.orchestration.participant import (
     setup_logging,
     sync_single_audio_file,
 )
+from src.orchestration.processing_log import _infer_biomechanics_type_from_study
 
 
 def main() -> None:
@@ -141,6 +142,24 @@ def main() -> None:
         logging.error("Path is not a directory: %s", path)
         return
 
+    # Infer study token from folder path (e.g., path contains 'AOA').
+    # If not found, default to 'AOA' to preserve previous behavior.
+    study_token = None
+    for part in path.parts:
+        if str(part).strip().lower() == "aoa":
+            study_token = "AOA"
+            break
+
+    if study_token is None:
+        study_token = "AOA"
+        logging.warning(
+            "Could not find explicit study folder in path %s; defaulting study to '%s'",
+            path,
+            study_token,
+        )
+
+    biomechanics_type = _infer_biomechanics_type_from_study(study_token)
+
     # Find participant directories
     participants = find_participant_directories(path)
     if not participants:
@@ -181,6 +200,7 @@ def main() -> None:
             entrypoint=args.entrypoint,
             knee=args.knee,
             maneuver=args.maneuver,
+            biomechanics_type=biomechanics_type,
         ):
             success_count += 1
         else:

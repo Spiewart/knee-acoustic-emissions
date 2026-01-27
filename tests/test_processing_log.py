@@ -586,6 +586,23 @@ class TestHelperFunctions:
         assert record.processing_status == "error"
         assert record.error_message == "Processing failed"
 
+    def test_infer_biomechanics_type_from_study(self):
+        """Unit tests for _infer_biomechanics_type_from_study helper.
+
+        Ensures study name mapping is applied (AOA -> Motion Analysis),
+        defaults to 'Gonio' for unknown or missing studies, and is
+        case/whitespace tolerant.
+        """
+        from src.orchestration.processing_log import _infer_biomechanics_type_from_study
+
+        # Known mapping
+        assert _infer_biomechanics_type_from_study("AOA") == "Motion Analysis"
+        assert _infer_biomechanics_type_from_study(" aoa ") == "Motion Analysis"
+
+        # Unknown or missing study -> fallback
+        assert _infer_biomechanics_type_from_study(None) == "Gonio"
+        assert _infer_biomechanics_type_from_study("UNKNOWN_STUDY") == "Gonio"
+
     def test_create_biomechanics_record_from_data(self, tmp_path):
         """Test creating biomechanics record from recordings."""
         # Create mock recordings

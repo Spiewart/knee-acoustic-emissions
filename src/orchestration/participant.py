@@ -21,6 +21,7 @@ import argparse
 import json
 import logging
 import re
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Dict, Literal, Optional, cast
 
@@ -110,7 +111,7 @@ def _filter_synced_files(synced_files: list[Path], knee: Optional[str] = None, m
     return filtered
 
 
-def parse_participant_directory(participant_dir: Path, knee: Optional[str] = None, maneuver: Optional[str] = None) -> None:
+def parse_participant_directory(participant_dir: Path, knee: Optional[str] = None, maneuver: Optional[str] = None, biomechanics_type: Optional[str] = None) -> None:
     """Parse and process a complete participant study directory.
 
     Orchestrates the full processing pipeline for a single participant:
@@ -128,6 +129,7 @@ def parse_participant_directory(participant_dir: Path, knee: Optional[str] = Non
                         Expected to contain "Motion Capture" and "Left Knee"/"Right Knee" subdirectories.
         knee: Optional knee filter ('left' or 'right')
         maneuver: Optional maneuver filter (internal format: 'walk', 'flexion_extension', 'sit_to_stand')
+        biomechanics_type: Optional biomechanics type (e.g., 'Motion Analysis', 'Gonio', 'IMU')
 
     Raises:
         FileNotFoundError: If required files or directory structure is missing.
@@ -163,7 +165,7 @@ def parse_participant_directory(participant_dir: Path, knee: Optional[str] = Non
         knee_dir = participant_dir / f"{knee_side} Knee"
         logging.info("Processing %s knee", knee_side)
         knee_synced_data, _ = _process_knee_maneuvers(
-            knee_dir, biomechanics_file, knee_side, maneuver=maneuver
+            knee_dir, biomechanics_file, knee_side, maneuver=maneuver, biomechanics_type=biomechanics_type
         )
         all_synced_data.extend(knee_synced_data)
 
@@ -192,6 +194,7 @@ def _save_or_update_processing_log(
     qc_not_passed_mic_2: Optional[str] = None,
     qc_not_passed_mic_3: Optional[str] = None,
     qc_not_passed_mic_4: Optional[str] = None,
+    biomechanics_type: Optional[str] = None,
 ) -> None:
     """Save or update the processing log for a maneuver.
 
@@ -235,21 +238,56 @@ def _save_or_update_processing_log(
                 audio_bin_path=audio_bin_path,
                 audio_pkl_path=audio_pkl_file,
                 metadata=audio_metadata,
+                biomechanics_type=biomechanics_type,
             )
-            # If biomechanics were processed, propagate linkage and context
-            if biomechanics_recordings is not None and biomechanics_file is not None:
+
+            # Preserve existing biomechanics metadata from log if present
+            # This ensures we don't overwrite biomechanics info when re-running bin stage
+            if log.audio_record is not None and log.audio_record.linked_biomechanics:
+                audio_record.linked_biomechanics = True
+                audio_record.biomechanics_file = log.audio_record.biomechanics_file
+                audio_record.biomechanics_type = log.audio_record.biomechanics_type
+                audio_record.biomechanics_sync_method = log.audio_record.biomechanics_sync_method
+                audio_record.biomechanics_sample_rate = log.audio_record.biomechanics_sample_rate
+                audio_record.biomechanics_notes = log.audio_record.biomechanics_notes
+            # If biomechanics were processed in this call, propagate linkage and context
+            elif biomechanics_recordings is not None and len(biomechanics_recordings) > 0 and biomechanics_file is not None:
                 audio_record.linked_biomechanics = True
                 audio_record.biomechanics_file = str(biomechanics_file)
+                audio_record.biomechanics_type = biomechanics_type
                 # Use known biomech type/sample rate when available
                 if biomechanics_recordings:
                     first_rec = biomechanics_recordings[0]
-                    if hasattr(first_rec, "data") and hasattr(first_rec, "sample_rate"):
-                        try:
+                    # Try to infer sample rate from the biomechanics data
+                    try:
+                        # Check if data is a BiomechanicsData object with a TIME column
+                        if hasattr(first_rec, "data") and first_rec.data is not None:
+                            data_obj = first_rec.data
+                            # BiomechanicsData is a dataclass with a 'data' DataFrame attribute
+                            if hasattr(data_obj, "data"):
+                                time_col = data_obj.data.get("TIME", None)
+                            else:
+                                # data_obj is a DataFrame
+                                time_col = data_obj.get("TIME", None) if hasattr(data_obj, "get") else None
+
+                            if time_col is not None and len(time_col) > 1:
+                                time_diffs = time_col.diff().dropna()
+                                if len(time_diffs) > 0:
+                                    avg_diff_sec = time_diffs.mean().total_seconds()
+                                    if avg_diff_sec > 0:
+                                        audio_record.biomechanics_sample_rate = 1.0 / avg_diff_sec
+                        elif hasattr(first_rec, "sample_rate"):
                             audio_record.biomechanics_sample_rate = float(first_rec.sample_rate)
-                        except Exception:
-                            pass
-                # Default sync method for biomech-guided alignment is stomp
-                audio_record.biomechanics_sync_method = "stomp"
+                    except Exception:
+                        pass
+                # Set sync method based on biomechanics type
+                if biomechanics_type == "Gonio":
+                    audio_record.biomechanics_sync_method = "flick"
+                else:
+                    # Default sync method for IMU, Motion Analysis, or unknown types is stomp
+                    audio_record.biomechanics_sync_method = "stomp"
+            else:
+                pass
             # Maneuver should mirror the current processing step
             audio_record.maneuver = maneuver_key
             # Set QC_not_passed fields if provided
@@ -263,6 +301,8 @@ def _save_or_update_processing_log(
                 audio_record.qc_not_passed_mic_3 = qc_not_passed_mic_3
             if qc_not_passed_mic_4 is not None:
                 audio_record.qc_not_passed_mic_4 = qc_not_passed_mic_4
+            # Set log update timestamp
+            audio_record.log_updated = datetime.now()
             log.update_audio_record(audio_record)
 
         # Update biomechanics record if data provided
@@ -272,8 +312,51 @@ def _save_or_update_processing_log(
                 recordings=biomechanics_recordings,
                 sheet_name=f"{maneuver_key}_data",
                 maneuver=maneuver_key,
+                biomechanics_type=biomechanics_type,
             )
             log.update_biomechanics_record(bio_record)
+
+            # Back-populate biomechanics metadata to audio record if it exists
+            # This handles the case where audio was processed in bin stage (without biomechanics)
+            # and now we're in sync stage (with biomechanics)
+            if log.audio_record is not None:
+                log.audio_record.linked_biomechanics = True
+                log.audio_record.biomechanics_file = str(biomechanics_file)
+                log.audio_record.biomechanics_type = biomechanics_type
+                # Set sync method based on biomechanics type
+                if biomechanics_type == "Gonio":
+                    log.audio_record.biomechanics_sync_method = "flick"
+                else:
+                    # Default sync method for IMU, Motion Analysis, or unknown types is stomp
+                    log.audio_record.biomechanics_sync_method = "stomp"
+                if biomechanics_recordings:
+                    first_rec = biomechanics_recordings[0]
+                    # Try to infer sample rate from the biomechanics data
+                    try:
+                        # Check if data is a BiomechanicsData object with a TIME column
+                        if hasattr(first_rec, "data") and first_rec.data is not None:
+                            data_obj = first_rec.data
+                            # BiomechanicsData is a dataclass with a 'data' DataFrame attribute
+                            if hasattr(data_obj, "data"):
+                                time_col = data_obj.data.get("TIME", None)
+                            else:
+                                # data_obj is a DataFrame
+                                time_col = data_obj.get("TIME", None) if hasattr(data_obj, "get") else None
+
+                            if time_col is not None and len(time_col) > 1:
+                                time_diffs = time_col.diff().dropna()
+                                if len(time_diffs) > 0:
+                                    avg_diff_sec = time_diffs.mean().total_seconds()
+                                    if avg_diff_sec > 0:
+                                        log.audio_record.biomechanics_sample_rate = 1.0 / avg_diff_sec
+                        elif hasattr(first_rec, "sample_rate"):
+                            log.audio_record.biomechanics_sample_rate = float(first_rec.sample_rate)
+                    except Exception:
+                        pass
+                # Update timestamp on audio record as well
+                log.audio_record.log_updated = datetime.now()
+                # Mark log as updated so it gets saved
+                log.log_updated = datetime.now()
 
         # Update synchronization records if data provided
         if synced_data is not None:
@@ -337,6 +420,7 @@ def _save_or_update_processing_log(
                     metadata=audio_metadata,
                     study=study_name,
                     study_id=numeric_id,
+                    biomechanics_type=biomechanics_type,
                 )
                 log.add_synchronization_record(sync_record)
 
@@ -365,6 +449,7 @@ def _process_knee_maneuvers(
     biomechanics_file: Path,
     knee_side: str,
     maneuver: Optional[str] = None,
+    biomechanics_type: Optional[str] = None,
 ) -> tuple[list[tuple[Path, pd.DataFrame]], list[tuple[Path, pd.DataFrame, tuple]]]:
     """Process all maneuvers for a specific knee (Left or Right).
 
@@ -427,6 +512,7 @@ def _process_knee_maneuvers(
                 maneuver_key,
             ),
             knee_side=knee_side,
+            biomechanics_type=biomechanics_type,
         )
         all_synced_data.extend(maneuver_synced_data)
         all_viz_data.extend(maneuver_viz_data)
@@ -441,6 +527,7 @@ def _sync_maneuver_data(
     maneuver_key: Literal["walk", "sit_to_stand", "flexion_extension"],
     knee_side: str,
     with_freq: bool = True,
+    biomechanics_type: Optional[str] = None,
 ) -> tuple[list[tuple[Path, pd.DataFrame]], list[tuple[Path, pd.DataFrame, tuple]]]:
     """Synchronize audio and biomechanics data for a specific maneuver.
 
@@ -509,16 +596,20 @@ def _sync_maneuver_data(
                 maneuver_dir=maneuver_dir,
                 synced_dir=synced_dir,
                 knee_side=knee_side,
+                biomechanics_type=biomechanics_type,
             )
             synced_data.extend(speed_synced_data)
             viz_data.extend(speed_viz_data)
             all_recordings.extend(speed_recordings)
     else:
         # For sit-to-stand and flexion-extension, single recording
+        study_name = biomechanics_file.stem.split("_")[0]
         recordings = import_biomechanics_recordings(
             biomechanics_file=biomechanics_file,
             maneuver=maneuver_key,
             speed=None,
+            biomechanics_type=biomechanics_type,
+            study_name=study_name,
         )
 
         if not recordings:
@@ -538,6 +629,7 @@ def _sync_maneuver_data(
             knee_side=knee_side,
             pass_number=None,
             speed=None,
+            biomechanics_type=biomechanics_type,
         )
         synced_data.append((output_path, synced_df, stomp_times))
         # Generate visualization immediately to avoid keeping large DataFrames in memory
@@ -569,6 +661,7 @@ def _sync_maneuver_data(
             biomechanics_file=biomechanics_file,
             biomechanics_recordings=all_recordings,
             synced_data=synced_log_data,
+            biomechanics_type=biomechanics_type,
         )
     except Exception as e:
         logging.warning(f"Failed to update processing log: {e}")
@@ -583,6 +676,7 @@ def _process_walk_speed(
     maneuver_dir: Path,
     synced_dir: Path,
     knee_side: str,
+    biomechanics_type: Optional[str] = None,
 ) -> tuple[list[tuple[Path, pd.DataFrame]], list[tuple[Path, pd.DataFrame, pd.DataFrame, pd.DataFrame, tuple]], list]:
     """Process walking data for a specific speed.
 
@@ -607,10 +701,13 @@ def _process_walk_speed(
     viz_data: list[tuple[Path, pd.DataFrame, pd.DataFrame, pd.DataFrame, tuple]] = []
 
     try:
+        study_name = biomechanics_file.stem.split("_")[0]
         recordings = import_biomechanics_recordings(
             biomechanics_file=biomechanics_file,
             maneuver="walk",
             speed=speed,  # type: ignore[arg-type]
+            biomechanics_type=biomechanics_type,
+            study_name=study_name,
         )
 
         if not recordings:
@@ -629,6 +726,7 @@ def _process_walk_speed(
                 pass_number=recording.pass_number,
                 # Keep original speed for filename; events normalized later
                 speed=speed,
+                biomechanics_type=biomechanics_type,
             )
             synced_data.append((output_path, synced_df, stomp_times))
 
@@ -660,6 +758,7 @@ def _sync_and_save_recording(
     knee_side: str,
     pass_number: Optional[int],
     speed: Optional[str],
+    biomechanics_type: Optional[str] = None,
 ) -> tuple[Path, pd.DataFrame, tuple]:
     """Synchronize a single biomechanics recording with audio.
 
@@ -698,13 +797,19 @@ def _sync_and_save_recording(
         "left" if knee_side == "Left" else "right"
     )
 
-    # Get audio stomp time with dual-knee disambiguation
+    # Get audio stomp time with dual-knee disambiguation and biomechanics context
+    try:
+        study_name = biomechanics_file.stem.split("_")[0] if biomechanics_file is not None else None
+    except Exception:
+        study_name = None
     audio_stomp_time, detection_results = get_audio_stomp_time(
         audio_df,
         recorded_knee=recorded_knee,
         right_stomp_time=right_stomp_time,
         left_stomp_time=left_stomp_time,
         return_details=True,
+        biomechanics_type=biomechanics_type,
+        study_name=study_name,
     )
 
     # Get biomechanics stomp time for the recorded knee
@@ -1478,7 +1583,7 @@ def _determine_fs_from_df_or_meta(df: pd.DataFrame, meta_json_path: Path) -> flo
     raise RuntimeError("Cannot determine sampling frequency for audio")
 
 
-def _process_bin_stage(participant_dir: Path, knee: Optional[str] = None, maneuver: Optional[str] = None) -> tuple[list[Path], list[pd.DataFrame]]:
+def _process_bin_stage(participant_dir: Path, knee: Optional[str] = None, maneuver: Optional[str] = None, biomechanics_type: Optional[str] = None) -> tuple[list[Path], list[pd.DataFrame]]:
     """Process all .bin files to frequency-augmented pickles with filtering options.
 
     Args:
@@ -1622,6 +1727,7 @@ def _process_bin_stage(participant_dir: Path, knee: Optional[str] = None, maneuv
                     qc_not_passed_mic_2=qc_not_passed_mic_2,
                     qc_not_passed_mic_3=qc_not_passed_mic_3,
                     qc_not_passed_mic_4=qc_not_passed_mic_4,
+                    biomechanics_type=biomechanics_type,
                 )
 
                 # Remove base pkl to keep only resultant dataframe
@@ -1681,7 +1787,7 @@ def _run_audio_qc_for_maneuver(df: pd.DataFrame, maneuver_key: str, biomech_file
         logging.warning("Audio QC failed (%s): %s", maneuver_key, e)
 
 
-def process_participant(participant_dir: Path, entrypoint: Literal["bin", "sync", "cycles"] = "sync", knee: Optional[str] = None, maneuver: Optional[str] = None) -> bool:
+def process_participant(participant_dir: Path, entrypoint: Literal["bin", "sync", "cycles"] = "sync", knee: Optional[str] = None, maneuver: Optional[str] = None, biomechanics_type: Optional[str] = None) -> bool:
     """Process a single participant directory.
 
     Runs all stages from the specified entrypoint onwards:
@@ -1741,7 +1847,7 @@ def process_participant(participant_dir: Path, entrypoint: Literal["bin", "sync"
         # BIN stage: process raw audio to frequency DF + audio QC
         if run_bin:
             # Pass back both files and DataFrames to avoid reloading
-            produced, produced_dfs = _process_bin_stage(participant_dir, knee=knee, maneuver=maneuver)
+            produced, produced_dfs = _process_bin_stage(participant_dir, knee=knee, maneuver=maneuver, biomechanics_type=biomechanics_type)
             logging.info("Bin stage produced %d frequency pickle(s)", len(produced))
             # Run audio QC per maneuver using already-loaded DataFrames
             for pkl, df in zip(produced, produced_dfs):
@@ -1778,13 +1884,33 @@ def process_participant(participant_dir: Path, entrypoint: Literal["bin", "sync"
 
         # SYNC stage: synchronize audio with biomechanics and save Synced files
         if run_sync:
-            parse_participant_directory(participant_dir, knee=knee, maneuver=maneuver)
+            parse_participant_directory(participant_dir, knee=knee, maneuver=maneuver, biomechanics_type=biomechanics_type)
             logging.info(
                 "Synchronization completed for participant #%s", study_id
             )
 
         # CYCLES stage: run movement cycle QC on all Synced files and save outputs
         if run_cycles:
+            # Parse study name and numeric ID from study_id (for use in cycles record creation)
+            study_id_str = str(study_id).lstrip("#")
+            study_name = "AOA"  # default
+            numeric_id = 1
+            if study_id_str.startswith("AOA"):
+                study_name = "AOA"
+                numeric_id = int(study_id_str[3:]) if len(study_id_str) > 3 else 1
+            elif study_id_str.startswith("preOA"):
+                study_name = "preOA"
+                numeric_id = int(study_id_str[5:]) if len(study_id_str) > 5 else 1
+            elif study_id_str.startswith("SMoCK"):
+                study_name = "SMoCK"
+                numeric_id = int(study_id_str[5:]) if len(study_id_str) > 5 else 1
+            else:
+                # Try to parse as just a number
+                try:
+                    numeric_id = int(study_id_str)
+                except ValueError:
+                    numeric_id = 1
+
             synced_files = find_synced_files(participant_dir)
             # Apply knee and maneuver filters to synced files
             synced_files = _filter_synced_files(synced_files, knee=knee, maneuver=maneuver)
@@ -1845,6 +1971,9 @@ def process_participant(participant_dir: Path, entrypoint: Literal["bin", "sync"
                                     plots_created=True,
                                     sync_record=sync_record,
                                     metadata={"maneuver": maneuver_key},
+                                    study=study_name,
+                                    study_id=numeric_id,
+                                    biomechanics_type=biomechanics_type,
                                 )
                                 log.add_movement_cycles_record(cycles_record)
 
@@ -2028,6 +2157,9 @@ def sync_single_audio_file(
             f"AOA{study_id}_Biomechanics_Full_Set",
         )
 
+        # Default biomechanics_type to None here; it may be inferred later
+        biomechanics_type = None
+
         if biomechanics_file is None:
             logging.error(
                 "Biomechanics file not found: %s", motion_capture_dir
@@ -2052,11 +2184,14 @@ def sync_single_audio_file(
         all_recordings = []
         if maneuver_key == "walk":
             # Process all speeds for walking
+            study_name = biomechanics_file.stem.split("_")[0]
             for speed in ["slow", "medium", "fast"]:
                 recordings = import_biomechanics_recordings(
                     biomechanics_file=biomechanics_file,
                     maneuver="walk",
                     speed=speed,  # type: ignore[arg-type]
+                    biomechanics_type=biomechanics_type,
+                    study_name=study_name,
                 )
                 all_recordings.extend(recordings)
 
@@ -2066,6 +2201,7 @@ def sync_single_audio_file(
                 )
                 return False
         else:
+            study_name = biomechanics_file.stem.split("_")[0]
             recordings = import_biomechanics_recordings(
                 biomechanics_file=biomechanics_file,
                 maneuver=cast(
@@ -2073,6 +2209,8 @@ def sync_single_audio_file(
                     maneuver_key,
                 ),
                 speed=None,
+                biomechanics_type=biomechanics_type,
+                study_name=study_name,
             )
             if not recordings:
                 logging.error(
@@ -2112,6 +2250,7 @@ def sync_single_audio_file(
                     knee_side=knee_side,
                     pass_number=pass_number,
                     speed=speed,
+                    biomechanics_type=biomechanics_type,
                 )
 
                 # Write the file

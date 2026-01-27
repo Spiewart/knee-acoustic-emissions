@@ -262,6 +262,8 @@ def _process_biomechanics_recordings(
     event_data_df: pd.DataFrame,
     maneuver: Literal["walk", "sit_to_stand", "flexion_extension"],
     biomechanics_file: Path,
+    biomechanics_type: str | None = None,
+    study_name: str | None = None,
 ) -> list[BiomechanicsRecording]:
     """Process biomechanics data into BiomechanicsRecording objects.
 
@@ -273,6 +275,8 @@ def _process_biomechanics_recordings(
         bio_df: DataFrame containing biomechanics data
         event_data_df: DataFrame containing event metadata
         maneuver: Type of maneuver
+        biomechanics_type: Optional biomechanics system/type (e.g., "IMU", "Gonio", "Motion Analysis")
+        study_name: Optional study name token extracted from the file
 
     Returns:
         List of BiomechanicsRecording objects
@@ -337,6 +341,8 @@ def _process_biomechanics_recordings(
 def import_walk_biomechanics(
     biomechanics_file: Path,
     speed: Literal["slow", "normal", "fast"],
+    biomechanics_type: str | None = None,
+    study_name: str | None = None,
 ) -> list[BiomechanicsRecording]:
     """Import walking biomechanics recordings from an Excel file.
 
@@ -397,6 +403,8 @@ def import_walk_biomechanics(
         event_data_df=event_data_df,
         maneuver="walk",
         biomechanics_file=bio_file,
+        biomechanics_type=biomechanics_type,
+        study_name=study_name,
     )
 
     # Validate: walking should have one or more recordings
@@ -412,6 +420,8 @@ def import_walk_biomechanics(
 def import_fe_sts_biomechanics(
     biomechanics_file: Path,
     maneuver: Literal["sit_to_stand", "flexion_extension"],
+    biomechanics_type: str | None = None,
+    study_name: str | None = None,
 ) -> list[BiomechanicsRecording]:
     """Import flexion-extension or sit-to-stand biomechanics recordings.
 
@@ -453,6 +463,8 @@ def import_fe_sts_biomechanics(
         event_data_df=event_data_df,
         maneuver=maneuver,
         biomechanics_file=bio_file,
+        biomechanics_type=biomechanics_type,
+        study_name=study_name,
     )
 
     # Validate: non-walk maneuvers should have exactly one recording
@@ -469,6 +481,8 @@ def import_biomechanics_recordings(
     biomechanics_file: Path,
     maneuver: Literal["walk", "sit_to_stand", "flexion_extension"],
     speed: Literal["slow", "normal", "fast"] | None = None,
+    biomechanics_type: str | None = None,
+    study_name: str | None = None,
 ) -> list[BiomechanicsRecording]:
     """Import biomechanics recordings from an Excel file.
 
@@ -506,11 +520,15 @@ def import_biomechanics_recordings(
         return import_walk_biomechanics(
             biomechanics_file=biomechanics_file,
             speed=speed,
+            biomechanics_type=biomechanics_type,
+            study_name=study_name,
         )
     else:
         return import_fe_sts_biomechanics(
             biomechanics_file=biomechanics_file,
             maneuver=maneuver,
+            biomechanics_type=biomechanics_type,
+            study_name=study_name,
         )
 
 
