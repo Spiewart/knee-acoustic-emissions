@@ -2,6 +2,7 @@
 
 import json
 import logging
+import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -21,6 +22,33 @@ from src.orchestration.processing_log import (
 )
 from src.synchronization.sync import load_audio_data
 
+# Maneuver folder naming variants
+_MANEUVER_ALIAS_MAP: dict[str, set[str]] = {
+    "walk": {"walking", "walk"},
+    "sit_to_stand": {
+        "sit-stand",
+        "sit-to-stand",
+        "sit_to_stand",
+        "sitstand",
+        "sit to stand",
+        "sittostand",
+    },
+    "flexion_extension": {
+        "flexion-extension",
+        "flexion_extension",
+        "flexion extension",
+        "flexionextension",
+    },
+}
+
+
+def _normalize_folder_name(name: str) -> str:
+    """Normalize maneuver folder names to compare variants."""
+    name = name.lower()
+    name = name.replace("_", "-").replace(" ", "-")
+    name = re.sub(r"-+", "-", name)
+    return name
+
 
 @dataclass
 class AudioData:
@@ -28,11 +56,6 @@ class AudioData:
     pkl_path: Path
     df: Optional[pd.DataFrame] = None
     metadata: Optional[dict] = None
-    qc_not_passed: Optional[str] = None
-    qc_not_passed_mic_1: Optional[str] = None
-    qc_not_passed_mic_2: Optional[str] = None
-    qc_not_passed_mic_3: Optional[str] = None
-    qc_not_passed_mic_4: Optional[str] = None
     record: Optional[AudioProcessing] = None
 
 
@@ -104,22 +127,10 @@ class ManeuverProcessor:
             # Load metadata if available
             audio_metadata = self._load_audio_metadata(audio_pkl_path)
 
-            # TODO: Add QC processing here (extract qc_not_passed values)
-            qc_not_passed = None
-            qc_not_passed_mic_1 = None
-            qc_not_passed_mic_2 = None
-            qc_not_passed_mic_3 = None
-            qc_not_passed_mic_4 = None
-
             self.audio = AudioData(
                 pkl_path=audio_pkl_path,
                 df=audio_df,
                 metadata=audio_metadata,
-                qc_not_passed=qc_not_passed,
-                qc_not_passed_mic_1=qc_not_passed_mic_1,
-                qc_not_passed_mic_2=qc_not_passed_mic_2,
-                qc_not_passed_mic_3=qc_not_passed_mic_3,
-                qc_not_passed_mic_4=qc_not_passed_mic_4,
             )
 
             # Create audio record
@@ -334,11 +345,6 @@ class ManeuverProcessor:
                 pkl_path=audio_pkl_path,
                 df=audio_df,
                 metadata=audio_metadata,
-                qc_not_passed=None,  # TODO: Load from processing log if available
-                qc_not_passed_mic_1=None,
-                qc_not_passed_mic_2=None,
-                qc_not_passed_mic_3=None,
-                qc_not_passed_mic_4=None,
             )
 
             # Create audio record
@@ -508,14 +514,21 @@ class KneeProcessor:
         return proc.save_logs()
 
     def _find_maneuver_dir(self, maneuver_key: str) -> Optional[Path]:
-        """Find the directory for a maneuver."""
-        maneuver_map = {
-            "walk": "Walking",
-            "sit_to_stand": "Sit-Stand",
-            "flexion_extension": "Flexion-Extension",
-        }
-        maneuver_dir = self.knee_dir / maneuver_map.get(maneuver_key, maneuver_key)
-        return maneuver_dir if maneuver_dir.exists() else None
+        """Find the directory for a maneuver using alias matching.
+
+        Handles naming variations like "Sit-Stand", "Sit_Stand", "sit-to-stand", etc.
+        """
+        aliases = _MANEUVER_ALIAS_MAP.get(maneuver_key, set())
+        try:
+            for child in self.knee_dir.iterdir():
+                if not child.is_dir():
+                    continue
+                norm = _normalize_folder_name(child.name)
+                if norm in aliases:
+                    return child
+        except (OSError, PermissionError):
+            pass
+        return None
 
     def _save_knee_log(self) -> bool:
         """Save knee-level aggregated log."""
@@ -565,6 +578,9 @@ class ParticipantProcessor:
         try:
             logging.info(f"Processing participant {self.study_id}")
 
+            # Validate directory structure based on entrypoint
+            self._validate_directory_structure(entrypoint, knee, maneuver)
+
             knees_to_process = [knee] if knee else ["Left", "Right"]
 
             for knee_side in knees_to_process:
@@ -591,6 +607,40 @@ class ParticipantProcessor:
             logging.error(f"Participant processing failed: {e}")
             return False
 
+    def _validate_directory_structure(
+        self,
+        entrypoint: Literal["bin", "sync", "cycles"],
+        knee: Optional[str] = None,
+        maneuver: Optional[str] = None,
+    ) -> None:
+        """Validate directory structure based on entrypoint.
+
+        Raises FileNotFoundError if required directories or files are missing.
+        """
+        # Always require Motion Capture folder with biomechanics file
+        if not self.biomechanics_file.exists():
+            raise FileNotFoundError(
+                f"Biomechanics Excel file not found: {self.biomechanics_file}"
+            )
+
+        # Validate knee directories
+        knees_to_check = [knee] if knee else ["Left", "Right"]
+        for knee_side in knees_to_check:
+            knee_dir = self.participant_dir / f"{knee_side} Knee"
+            if not knee_dir.exists():
+                raise FileNotFoundError(
+                    f"Required knee directory not found: {knee_dir}"
+                )
+
+            # Validate maneuver directories based on entrypoint
+            if entrypoint == "bin":
+                # For bin stage, just check that maneuver directories exist
+                self._validate_maneuver_dirs(knee_dir, knee_side, entrypoint, maneuver)
+            elif entrypoint in ("sync", "cycles"):
+                # For sync/cycles, maneuver directories should exist but processed files
+                # may or may not exist (they get loaded if available)
+                pass
+
     def _find_biomechanics_file(self) -> Path:
         """Find the biomechanics Excel file."""
         motion_capture_dir = self.participant_dir / "Motion Capture"
@@ -602,3 +652,32 @@ class ParticipantProcessor:
             return excel_files[0]
 
         raise FileNotFoundError(f"Biomechanics Excel file not found in {motion_capture_dir}")
+
+    def _validate_maneuver_dirs(
+        self,
+        knee_dir: Path,
+        knee_side: str,
+        entrypoint: str,
+        maneuver: Optional[str] = None,
+    ) -> None:
+        """Validate that required maneuver directories exist.
+
+        Raises FileNotFoundError if required maneuver directories are missing.
+        """
+        maneuvers_to_check = [maneuver] if maneuver else ["walk", "sit_to_stand", "flexion_extension"]
+
+        for maneuver_key in maneuvers_to_check:
+            # Use KneeProcessor's find method for flexible folder name matching
+            processor = KneeProcessor(
+                knee_dir=knee_dir,
+                knee_side=cast(Literal["Left", "Right"], knee_side),
+                study_id=self.study_id,
+                biomechanics_file=self.biomechanics_file,
+            )
+            maneuver_dir = processor._find_maneuver_dir(maneuver_key)
+
+            if maneuver_dir is None:
+                raise FileNotFoundError(
+                    f"Required maneuver directory for '{maneuver_key}' "
+                    f"not found in {knee_dir}"
+                )

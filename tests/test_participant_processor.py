@@ -226,6 +226,108 @@ class TestKneeProcessorInit:
         assert sit_stand_dir is not None
         assert sit_stand_dir.name == "Sit-Stand"
 
+    def test_find_maneuver_dir_with_naming_variants(self, tmp_path):
+        """Test _find_maneuver_dir handles naming variants like 'Sit_Stand', 'sit-to-stand', etc."""
+        from src.orchestration.participant_processor import KneeProcessor
+
+        # Create test directories with different naming conventions
+        knee_dir = tmp_path / "Left Knee"
+        knee_dir.mkdir()
+
+        # Create directories with different naming variants
+        (knee_dir / "Walking").mkdir()
+        (knee_dir / "Sit_Stand").mkdir()  # Underscore variant
+        (knee_dir / "Flexion-Extension").mkdir()
+
+        # Create biomechanics file (dummy)
+        biomech_file = tmp_path / "Motion Capture" / "AOA1011_Biomechanics_Full_Set.xlsx"
+        biomech_file.parent.mkdir(parents=True)
+        biomech_file.touch()
+
+        processor = KneeProcessor(
+            knee_dir=knee_dir,
+            knee_side="Left",
+            study_id="1011",
+            biomechanics_file=biomech_file,
+        )
+
+        # Should find "Walking" for walk
+        walk_dir = processor._find_maneuver_dir("walk")
+        assert walk_dir is not None
+        assert walk_dir.name == "Walking"
+
+        # Should find "Sit_Stand" even though it's not the standard "Sit-Stand"
+        sit_stand_dir = processor._find_maneuver_dir("sit_to_stand")
+        assert sit_stand_dir is not None
+        assert sit_stand_dir.name == "Sit_Stand"
+
+        # Should find "Flexion-Extension"
+        flex_ext_dir = processor._find_maneuver_dir("flexion_extension")
+        assert flex_ext_dir is not None
+        assert flex_ext_dir.name == "Flexion-Extension"
+
+    def test_find_maneuver_dir_with_multiple_variants(self, tmp_path):
+        """Test that _find_maneuver_dir matches against all known naming variants."""
+        from src.orchestration.participant_processor import KneeProcessor
+
+        knee_dir = tmp_path / "Left Knee"
+        knee_dir.mkdir()
+
+        # Test sit-to-stand variants
+        variants_to_test = [
+            "sit-stand",
+            "sit-to-stand",
+            "sit_to_stand",
+            "sitstand",
+            "sit to stand",
+            "sittostand",
+        ]
+
+        biomech_file = tmp_path / "Motion Capture" / "AOA1011_Biomechanics_Full_Set.xlsx"
+        biomech_file.parent.mkdir(parents=True)
+        biomech_file.touch()
+
+        for variant in variants_to_test:
+            test_dir = knee_dir / variant
+            test_dir.mkdir(exist_ok=True)
+
+            processor = KneeProcessor(
+                knee_dir=knee_dir,
+                knee_side="Left",
+                study_id="1011",
+                biomechanics_file=biomech_file,
+            )
+
+            # Clear the directory for next iteration
+            sit_stand_dir = processor._find_maneuver_dir("sit_to_stand")
+            assert sit_stand_dir is not None, f"Failed to find sit_to_stand variant: {variant}"
+            assert sit_stand_dir.name == variant
+
+            # Clean up for next test
+            test_dir.rmdir()
+
+    def test_find_maneuver_dir_returns_none_when_not_found(self, tmp_path):
+        """Test that _find_maneuver_dir returns None when directory doesn't exist."""
+        from src.orchestration.participant_processor import KneeProcessor
+
+        knee_dir = tmp_path / "Left Knee"
+        knee_dir.mkdir()
+
+        biomech_file = tmp_path / "Motion Capture" / "AOA1011_Biomechanics_Full_Set.xlsx"
+        biomech_file.parent.mkdir(parents=True)
+        biomech_file.touch()
+
+        processor = KneeProcessor(
+            knee_dir=knee_dir,
+            knee_side="Left",
+            study_id="1011",
+            biomechanics_file=biomech_file,
+        )
+
+        # Should return None when directory doesn't exist
+        result = processor._find_maneuver_dir("walk")
+        assert result is None
+
 
 class TestParticipantProcessorInit:
     """Test ParticipantProcessor initialization."""
