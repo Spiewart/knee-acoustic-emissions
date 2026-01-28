@@ -136,6 +136,28 @@ class BiomechanicsMetadata(StudyMetadata):
 
 
 @dataclass(kw_only=True)
+class WalkMetadata:
+    """Mixin providing optional walk-specific metadata fields.
+
+    These fields (pass_number and speed) are populated when the maneuver is "walk"
+    and are conditionally required for walk maneuvers. This mixin is used to provide
+    these fields to multiple classes (Synchronization, MovementCycle) without duplication.
+    """
+
+    # Walk-specific metadata (optional for non-walk maneuvers, required for walk)
+    pass_number: Optional[int] = None
+    speed: Optional[Literal["slow", "normal", "fast", "medium", "comfortable"]] = None
+
+    @field_validator("pass_number")
+    @classmethod
+    def validate_pass_number(cls, value: Optional[int]) -> Optional[int]:
+        """Validate pass number is non-negative if provided."""
+        if value is not None and value < 0:
+            raise ValueError("pass_number must be non-negative")
+        return value
+
+
+@dataclass(kw_only=True)
 class AcousticsFile(BiomechanicsMetadata):
     """Audio file metadata.
 
@@ -250,48 +272,56 @@ class AcousticsFile(BiomechanicsMetadata):
 class SynchronizationMetadata(AcousticsFile):
     """Synchronization metadata for audio-biomechanics alignment.
 
-    Inherits from AcousticsFile. Contains sync event times and
-    detection method details.
+    Inherits from AcousticsFile (audio file details).
+    Contains sync event times, detection method details, and walk-specific metadata.
     """
 
-    # Sync times (in original time coordinates) - required fields without defaults
-    audio_sync_time: timedelta = Field(...)
-    sync_offset: timedelta = Field(...)
-    aligned_audio_sync_time: timedelta = Field(...)
-    aligned_bio_sync_time: timedelta = Field(...)
+    # ===== Walk-specific metadata (from WalkMetadata) =====
+    # Optional for non-walk maneuvers, required for walk
+    pass_number: Optional[int] = None
+    speed: Optional[Literal["slow", "normal", "fast", "medium", "comfortable"]] = None
 
-    # Detection method - required field without default
-    sync_method: Literal["consensus", "biomechanics"] = Field(...)
+    # ===== Stomp Time Data (Core Synchronization Results) =====
+    # Primary stomp times - optional (float in seconds, not timedelta)
+    audio_sync_time: Optional[float] = None
+    sync_offset: Optional[float] = None
+    aligned_audio_sync_time: Optional[float] = None
+    aligned_biomechanics_sync_time: Optional[float] = None
 
-    # Detection times (all required) - required fields without defaults
-    consensus_time: timedelta = Field(...)
-    rms_time: timedelta = Field(...)
-    onset_time: timedelta = Field(...)
-    freq_time: timedelta = Field(...)
-
-    # Optional fields with defaults
-    bio_left_sync_time: Optional[timedelta] = None
-    bio_right_sync_time: Optional[timedelta] = None
-    audio_visual_sync_time: Optional[timedelta] = None
-    audio_visual_sync_time_contralateral: Optional[timedelta] = None
+    # ===== Sync Method Details =====
+    sync_method: Optional[Literal["consensus", "biomechanics"]] = None
     consensus_methods: Optional[str] = None  # Comma-separated if sync_method is "consensus"
-    biomechanics_time: Optional[timedelta] = None
-    biomechanics_time_contralateral: Optional[timedelta] = None
 
-    @field_validator("bio_left_sync_time", "bio_right_sync_time")
+    # ===== Detection Method Times =====
+    # Individual detection algorithm results (in seconds, not timedelta)
+    consensus_time: Optional[float] = None
+    rms_time: Optional[float] = None
+    onset_time: Optional[float] = None
+    freq_time: Optional[float] = None
+
+    # ===== Biomechanics-Guided Detection (Optional) =====
+    # Used when sync is determined via biomechanics guidance
+    selected_audio_sync_time: Optional[float] = None  # Selected audio stomp from biomechanics
+    contra_selected_audio_sync_time: Optional[float] = None  # Contralateral selection
+    detected_sync_energy_ratio: Optional[float] = None  # Energy ratio for guidance
+
+    # ===== Audio-Visual Sync (Optional) =====
+    # Legacy fields for visual/audio sync
+    audio_visual_sync_time: Optional[float] = None
+    audio_visual_sync_time_contralateral: Optional[float] = None
+    biomechanics_time: Optional[float] = None
+    biomechanics_time_contralateral: Optional[float] = None
+
+    # ===== Biomechanics-specific sync times (Optional) =====
+    bio_left_sync_time: Optional[float] = None
+    bio_right_sync_time: Optional[float] = None
+
+    @field_validator("pass_number")
     @classmethod
-    def validate_bio_sync_time_for_knee(cls, value: Optional[timedelta], info) -> Optional[timedelta]:
-        """Validate bio sync time is provided for the recorded knee."""
-        knee = info.data.get("knee")
-        field_name = info.field_name
-
-        if knee == "left" and field_name == "bio_left_sync_time":
-            if value is None:
-                raise ValueError("bio_left_sync_time is required when knee is 'left'")
-        elif knee == "right" and field_name == "bio_right_sync_time":
-            if value is None:
-                raise ValueError("bio_right_sync_time is required when knee is 'right'")
-
+    def validate_pass_number(cls, value: Optional[int]) -> Optional[int]:
+        """Validate pass number is non-negative if provided."""
+        if value is not None and value < 0:
+            raise ValueError("pass_number must be non-negative")
         return value
 
     @field_validator("consensus_methods")
@@ -303,57 +333,30 @@ class SynchronizationMetadata(AcousticsFile):
             raise ValueError("consensus_methods is required when sync_method is 'consensus'")
         return value
 
-    @field_validator("biomechanics_time")
-    @classmethod
-    def validate_biomechanics_time(cls, value: Optional[timedelta], info) -> Optional[timedelta]:
-        """Validate biomechanics_time is provided when sync_method is 'biomechanics'."""
-        sync_method = info.data.get("sync_method")
-        if sync_method == "biomechanics" and value is None:
-            raise ValueError("biomechanics_time is required when sync_method is 'biomechanics'")
-        return value
-
-    @field_validator("biomechanics_time_contralateral")
-    @classmethod
-    def validate_biomechanics_time_contralateral(cls, value: Optional[timedelta], info) -> Optional[timedelta]:
-        """Validate biomechanics_time_contralateral when contralateral knee has bio_sync_time."""
-        knee = info.data.get("knee")
-        if knee == "left":
-            bio_sync = info.data.get("bio_right_sync_time")
-        else:
-            bio_sync = info.data.get("bio_left_sync_time")
-
-        if bio_sync is not None and value is None:
-            raise ValueError("biomechanics_time_contralateral is required when contralateral knee has bio_sync_time")
-
-        return value
-
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for Excel export."""
         result = super().to_dict()
 
-        # Helper function to convert timedelta to seconds for Excel storage
-        def _td_to_seconds(td: Optional[timedelta]) -> Optional[float]:
-            if td is None:
-                return None
-            return td.total_seconds()
-
         result.update({
-            "Audio Sync Time": _td_to_seconds(self.audio_sync_time),
-            "Bio Left Sync Time": _td_to_seconds(self.bio_left_sync_time),
-            "Bio Right Sync Time": _td_to_seconds(self.bio_right_sync_time),
-            "Audio Visual Sync Time": _td_to_seconds(self.audio_visual_sync_time),
-            "Audio Visual Sync Time Contralateral": _td_to_seconds(self.audio_visual_sync_time_contralateral),
-            "Sync Offset": _td_to_seconds(self.sync_offset),
-            "Aligned Audio Sync Time": _td_to_seconds(self.aligned_audio_sync_time),
-            "Aligned Bio Sync Time": _td_to_seconds(self.aligned_bio_sync_time),
+            "Audio Sync Time (s)": self.audio_sync_time,
+            "Sync Offset (s)": self.sync_offset,
+            "Aligned Audio Sync Time (s)": self.aligned_audio_sync_time,
+            "Aligned Biomechanics Sync Time (s)": self.aligned_biomechanics_sync_time,
             "Sync Method": self.sync_method,
             "Consensus Methods": self.consensus_methods,
-            "Consensus Time": _td_to_seconds(self.consensus_time),
-            "RMS Time": _td_to_seconds(self.rms_time),
-            "Onset Time": _td_to_seconds(self.onset_time),
-            "Freq Time": _td_to_seconds(self.freq_time),
-            "Biomechanics Time": _td_to_seconds(self.biomechanics_time),
-            "Biomechanics Time Contralateral": _td_to_seconds(self.biomechanics_time_contralateral),
+            "Consensus Time (s)": self.consensus_time,
+            "RMS Time (s)": self.rms_time,
+            "Onset Time (s)": self.onset_time,
+            "Freq Time (s)": self.freq_time,
+            "Selected Audio Sync Time (s)": self.selected_audio_sync_time,
+            "Contra Selected Audio Sync Time (s)": self.contra_selected_audio_sync_time,
+            "Detected Sync Energy Ratio": self.detected_sync_energy_ratio,
+            "Audio Visual Sync Time (s)": self.audio_visual_sync_time,
+            "Audio Visual Sync Time Contralateral (s)": self.audio_visual_sync_time_contralateral,
+            "Biomechanics Time (s)": self.biomechanics_time,
+            "Biomechanics Time Contralateral (s)": self.biomechanics_time_contralateral,
+            "Bio Left Sync Time (s)": self.bio_left_sync_time,
+            "Bio Right Sync Time (s)": self.bio_right_sync_time,
         })
         return result
 
@@ -618,75 +621,53 @@ class BiomechanicsImport(StudyMetadata):
 
 @dataclass(kw_only=True)
 class Synchronization(SynchronizationMetadata):
-    """Audio-biomechanics synchronization and movement cycle extraction metadata.
+    """Synchronization process record.
 
-    Inherits from SynchronizationMetadata (which inherits from AcousticsFile, BiomechanicsMetadata, StudyMetadata).
-    Merges synchronization tracking with movement cycle extraction (previously MovementCycles).
-    Tracks synchronization process, alignment details, and cycle extraction results.
-    Fields use snake_case for direct mapping to database columns and Excel headers.
-
-    Note: This class is used for audio-biomechanics synchronization, so linked_biomechanics
-    is required to be True (biomechanics data must be associated).
+    Inherits from SynchronizationMetadata (which inherits from AcousticsFile and WalkMetadata).
+    Contains synchronization process metadata, aggregate statistics across all cycles,
+    but NOT per-cycle details (those are stored in MovementCycle records).
+    
+    Note: This class requires linked_biomechanics to be True (biomechanics data must be present).
     """
 
-    # REQUIRED FIELDS (no defaults) - must come first in Python 3.9
-    # File identification
+    # ===== Sync Process Identification =====
     sync_file_name: str = Field(...)
-
-    # Processing metadata
     processing_date: datetime = Field(...)
 
-    # Synchronized data characteristics
-    sync_duration: timedelta = Field(...)  # Total time of overlapped recording/biomechanics
-
-    # Movement cycle extraction results (must be populated from processing)
-    total_cycles_extracted: int = Field(...)
-    clean_cycles: int = Field(...)
-    outlier_cycles: int = Field(...)
-
-    # Aggregate statistics (across clean cycles)
-    mean_cycle_duration_s: float = Field(...)
-    median_cycle_duration_s: float = Field(...)
-    min_cycle_duration_s: float = Field(...)
-    max_cycle_duration_s: float = Field(...)
-    mean_acoustic_auc: float = Field(...)
-
-    # FIELDS WITH DEFAULTS - must come after required fields
-    # Override linked_biomechanics from parent to make it required True for synchronization
-    linked_biomechanics: Literal[True] = True  # Must be True for synchronization
-
-    pass_number: Optional[int] = None  # For walking
-    speed: Optional[Literal["slow", "normal", "fast", "medium"]] = None
-
+    # ===== Processing Details =====
+    sync_duration: Optional[float] = None  # Duration in seconds
     processing_status: Literal["not_processed", "success", "error"] = "not_processed"
     error_message: Optional[str] = None
 
-    # QC parameters
+    # ===== Aggregate Statistics (from all cycles) =====
+    total_cycles_extracted: int = 0
+    clean_cycles: int = 0
+    outlier_cycles: int = 0
+
+    # ===== Cycle Duration Statistics =====
+    mean_cycle_duration_s: Optional[float] = None
+    median_cycle_duration_s: Optional[float] = None
+    min_cycle_duration_s: Optional[float] = None
+    max_cycle_duration_s: Optional[float] = None
+
+    # ===== Acoustic Statistics =====
+    mean_acoustic_auc: Optional[float] = None
+
+    # ===== Detection Method Details =====
+    method_agreement_span: Optional[float] = None  # Time span between methods in consensus
+    audio_stomp_method: Optional[str] = None  # Detection method used for audio sync
+
+    # ===== QC Parameters =====
     qc_acoustic_threshold: Optional[float] = None
 
-    # Per-cycle details list (for Cycle Details sheet in Excel)
-    per_cycle_details: List['MovementCycle'] = Field(default_factory=list)
+    # ===== Constraints =====
+    # Override linked_biomechanics from parent - always True for synchronization
+    linked_biomechanics: Literal[True] = True
 
-    # Detection method agreement (for consensus detection)
-    method_agreement_span: Optional[float] = None  # Time span between methods in consensus
-
-    # Biomechanics-guided detection fields
-    audio_stomp_method: Optional[str] = None  # Detection method used for audio sync
-    selected_time: Optional[float] = None  # Selected time for biomechanics-guided detection (seconds)
-    contra_selected_time: Optional[float] = None  # Contralateral selected time (seconds)
-
-    # QC version tracking
+    # ===== QC Version Tracking =====
     audio_qc_version: int = Field(default_factory=get_audio_qc_version)
     biomech_qc_version: int = Field(default_factory=get_biomech_qc_version)
     cycle_qc_version: int = Field(default_factory=get_cycle_qc_version)
-
-    @field_validator("pass_number")
-    @classmethod
-    def validate_pass_number(cls, value: Optional[int]) -> Optional[int]:
-        """Validate pass number is non-negative if provided."""
-        if value is not None and value < 0:
-            raise ValueError("pass_number must be non-negative")
-        return value
 
     @field_validator("total_cycles_extracted", "clean_cycles", "outlier_cycles")
     @classmethod
@@ -706,25 +687,21 @@ class Synchronization(SynchronizationMetadata):
         result = super().to_dict()
         result.update({
             "Sync File": self.sync_file_name,
-            "Pass Number": self.pass_number,
-            "Speed": self.speed,
             "Processing Date": self.processing_date,
-            "Status": self.processing_status,
-            "Error": self.error_message,
-            "Sync Duration": self.sync_duration,
-            "Total Cycles": self.total_cycles_extracted,
+            "Processing Status": self.processing_status,
+            "Error Message": self.error_message,
+            "Sync Duration (s)": self.sync_duration,
+            "Total Cycles Extracted": self.total_cycles_extracted,
             "Clean Cycles": self.clean_cycles,
             "Outlier Cycles": self.outlier_cycles,
-            "Acoustic Threshold": self.qc_acoustic_threshold,
-            "Mean Duration (s)": self.mean_cycle_duration_s,
-            "Median Duration (s)": self.median_cycle_duration_s,
-            "Min Duration (s)": self.min_cycle_duration_s,
-            "Max Duration (s)": self.max_cycle_duration_s,
+            "Mean Cycle Duration (s)": self.mean_cycle_duration_s,
+            "Median Cycle Duration (s)": self.median_cycle_duration_s,
+            "Min Cycle Duration (s)": self.min_cycle_duration_s,
+            "Max Cycle Duration (s)": self.max_cycle_duration_s,
             "Mean Acoustic AUC": self.mean_acoustic_auc,
             "Method Agreement Span (s)": self.method_agreement_span,
-            "Detection Method": self.audio_stomp_method,
-            "Selected Time (s)": self.selected_time,
-            "Contra Selected Time (s)": self.contra_selected_time,
+            "Audio Stomp Method": self.audio_stomp_method,
+            "QC Acoustic Threshold": self.qc_acoustic_threshold,
             "Audio QC Version": self.audio_qc_version,
             "Biomech QC Version": self.biomech_qc_version,
             "Cycle QC Version": self.cycle_qc_version,
@@ -733,43 +710,43 @@ class Synchronization(SynchronizationMetadata):
 
 
 @dataclass(kw_only=True)
-class MovementCycle(AudioProcessing):
+class MovementCycle(SynchronizationMetadata, AudioProcessing):
     """Single movement cycle metadata.
 
-    Inherits from AudioProcessing (which inherits from AcousticsFile, BiomechanicsMetadata, StudyMetadata).
+    Inherits from:
+    - SynchronizationMetadata: sync times and sync method data
+    - AudioProcessing: all audio QC fields (qc_artifact, qc_signal_dropout, etc.)
+    
     Represents a single extracted movement cycle with all upstream processing context via inheritance.
     Fields use snake_case for direct mapping to database columns and Excel headers.
+    
+    Note: This class automatically inherits:
+    - All sync times and methods from SynchronizationMetadata
+    - All audio QC fields from AudioProcessing
+    - Walk metadata (pass_number, speed) from WalkMetadata (via SynchronizationMetadata)
     """
 
-    # REQUIRED FIELDS (no defaults) - must come first in Python 3.9
-    # Cycle identification
-    cycle_file: str = Field(...)  # Path to .pkl file
+    # ===== Cycle Identification =====
+    cycle_file: str = Field(...)
     cycle_index: int = Field(...)
-    is_outlier: bool = Field(...)  # True if failed any QC (audio, biomech, or sync)
+    is_outlier: bool = Field(default=False)
 
-    # Cycle temporal characteristics (based on synchronized data)
-    start_time_s: float = Field(...)  # Start time within synced recording
-    end_time_s: float = Field(...)    # End time within synced recording
+    # ===== Cycle Temporal Characteristics =====
+    start_time_s: float = Field(...)
+    end_time_s: float = Field(...)
     duration_s: float = Field(...)
 
-    # Audio timestamps
-    audio_start_time: datetime = Field(...)
-    audio_end_time: datetime = Field(...)
+    # ===== Audio/Biomechanics Timestamps =====
+    audio_start_time: Optional[datetime] = None
+    audio_end_time: Optional[datetime] = None
+    bio_start_time: Optional[datetime] = None
+    bio_end_time: Optional[datetime] = None
 
-    # Biomechanics timestamps
-    bio_start_time: datetime = Field(...)
-    bio_end_time: datetime = Field(...)
+    # ===== Cycle-Level QC Flags (CYCLE-LEVEL ONLY - NOT inherited) =====
+    biomechanics_qc_fail: bool = Field(default=False)
+    sync_qc_fail: bool = Field(default=False)
 
-    # QC flags (must be provided by processing)
-    biomechanics_qc_fail: bool = Field(...)
-    sync_qc_fail: bool = Field(...)
-
-    # FIELDS WITH DEFAULTS - must come after required fields
-    # Biomechanics context (conditionally required for walk maneuver)
-    pass_number: Optional[int] = None
-    speed: Optional[Literal["slow", "normal", "fast", "medium"]] = None
-
-    # QC tracking
+    # ===== QC Version Tracking =====
     biomechanics_qc_version: int = Field(default_factory=get_biomech_qc_version)
     sync_qc_version: int = Field(default_factory=get_cycle_qc_version)
 
@@ -825,11 +802,9 @@ class MovementCycle(AudioProcessing):
             "Audio End Time": self.audio_end_time,
             "Bio Start Time": self.bio_start_time,
             "Bio End Time": self.bio_end_time,
-            "Pass Number": self.pass_number,
-            "Speed": self.speed,
-            "Biomechanics QC Version": self.biomechanics_qc_version,
             "Biomechanics QC Fail": self.biomechanics_qc_fail,
-            "Sync QC Version": self.sync_qc_version,
             "Sync QC Fail": self.sync_qc_fail,
+            "Biomechanics QC Version": self.biomechanics_qc_version,
+            "Sync QC Version": self.sync_qc_version,
         })
         return result

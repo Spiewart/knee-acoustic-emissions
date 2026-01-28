@@ -173,6 +173,137 @@ def _normalize_maneuver_code(maneuver: Optional[str]) -> Optional[str]:
     return mapping.get(m, m)
 
 
+# ===== Phase 2: Dual-track record creation helpers =====
+
+def _timedelta_to_seconds(td: Optional[Any]) -> Optional[float]:
+    """Convert timedelta or numeric value to float seconds.
+    
+    Handles:
+    - None -> None
+    - pd.Timedelta -> float seconds
+    - float/int -> returns as-is (assume already seconds)
+    - str -> attempts numeric conversion
+    """
+    if td is None:
+        return None
+    
+    if isinstance(td, pd.Timedelta):
+        return td.total_seconds()
+    
+    if isinstance(td, (int, float)):
+        return float(td)
+    
+    # Try string conversion
+    try:
+        return float(str(td))
+    except (ValueError, TypeError):
+        return None
+
+
+def _create_synchronization_metadata_from_row(
+    row: Any,
+    study: str,
+    study_id: int,
+    knee: str,
+    maneuver: Optional[str],
+    audio_file_name: str,
+    device_serial: str,
+    firmware_version: int,
+    file_time: datetime,
+    file_size_mb: float,
+    recording_date: datetime,
+    recording_time: datetime,
+    num_channels: int,
+    mic_1_position: str,
+    mic_2_position: str,
+    mic_3_position: str,
+    mic_4_position: str,
+    linked_biomechanics: bool = False,
+    mic_1_notes: Optional[str] = None,
+    mic_2_notes: Optional[str] = None,
+    mic_3_notes: Optional[str] = None,
+    mic_4_notes: Optional[str] = None,
+    notes: Optional[str] = None,
+    biomechanics_file: Optional[str] = None,
+    biomechanics_type: Optional[str] = None,
+    biomechanics_sync_method: Optional[str] = None,
+    biomechanics_sample_rate: Optional[float] = None,
+    biomechanics_notes: Optional[str] = None,
+    sample_rate: float = 46875.0,
+) -> "SynchronizationMetadata":
+    """Create SynchronizationMetadata from row data.
+    
+    This helper extracts stomp times and sync method info from a row,
+    combines with acoustics file metadata, and creates a SynchronizationMetadata record.
+    All time fields are converted to float seconds (not timedelta).
+    """
+    from src.metadata import SynchronizationMetadata
+    
+    sync_method, consensus_methods = _get_sync_method_defaults(row)
+    
+    return SynchronizationMetadata(
+        # StudyMetadata
+        study=study,
+        study_id=study_id,
+        # BiomechanicsMetadata
+        linked_biomechanics=linked_biomechanics,
+        biomechanics_file=biomechanics_file,
+        biomechanics_type=biomechanics_type,
+        biomechanics_sync_method=biomechanics_sync_method,
+        biomechanics_sample_rate=biomechanics_sample_rate,
+        biomechanics_notes=biomechanics_notes,
+        # AcousticsFile
+        audio_file_name=audio_file_name,
+        device_serial=device_serial,
+        firmware_version=firmware_version,
+        file_time=file_time,
+        file_size_mb=file_size_mb,
+        recording_date=recording_date,
+        recording_time=recording_time,
+        knee=knee,
+        maneuver=maneuver,
+        sample_rate=sample_rate,
+        num_channels=num_channels,
+        mic_1_position=mic_1_position,
+        mic_2_position=mic_2_position,
+        mic_3_position=mic_3_position,
+        mic_4_position=mic_4_position,
+        mic_1_notes=mic_1_notes,
+        mic_2_notes=mic_2_notes,
+        mic_3_notes=mic_3_notes,
+        mic_4_notes=mic_4_notes,
+        notes=notes,
+        # Walk metadata
+        pass_number=int(row.get("Pass Number")) if pd.notna(row.get("Pass Number")) else None,
+        speed=str(row.get("Speed")) if pd.notna(row.get("Speed")) else None,
+        # Stomp Time Data - convert to float seconds
+        audio_sync_time=_timedelta_to_seconds(row.get("Audio Sync Time")),
+        sync_offset=_timedelta_to_seconds(row.get("Sync Offset")),
+        aligned_audio_sync_time=_timedelta_to_seconds(row.get("Aligned Audio Sync Time")),
+        aligned_biomechanics_sync_time=_timedelta_to_seconds(row.get("Aligned Bio Sync Time")),
+        # Sync Method Details
+        sync_method=sync_method,
+        consensus_methods=consensus_methods,
+        # Detection Method Times - convert to float seconds
+        consensus_time=_timedelta_to_seconds(row.get("Consensus Time")),
+        rms_time=_timedelta_to_seconds(row.get("RMS Time")),
+        onset_time=_timedelta_to_seconds(row.get("Onset Time")),
+        freq_time=_timedelta_to_seconds(row.get("Freq Time")),
+        # Biomechanics-Guided Detection
+        selected_audio_sync_time=float(row.get("Selected Time (s)")) if pd.notna(row.get("Selected Time (s)")) else None,
+        contra_selected_audio_sync_time=float(row.get("Contra Selected Time (s)")) if pd.notna(row.get("Contra Selected Time (s)")) else None,
+        detected_sync_energy_ratio=float(row.get("Energy Ratio")) if pd.notna(row.get("Energy Ratio")) else None,
+        # Audio-Visual Sync
+        audio_visual_sync_time=_timedelta_to_seconds(row.get("Audio Visual Sync Time")),
+        audio_visual_sync_time_contralateral=_timedelta_to_seconds(row.get("Audio Visual Sync Time Contralateral")),
+        biomechanics_time=_timedelta_to_seconds(row.get("Biomechanics Time")),
+        biomechanics_time_contralateral=_timedelta_to_seconds(row.get("Biomechanics Time Contralateral")),
+        # Biomechanics-specific sync times
+        bio_left_sync_time=_timedelta_to_seconds(row.get("Bio Left Sync Time")),
+        bio_right_sync_time=_timedelta_to_seconds(row.get("Bio Right Sync Time")),
+    )
+
+
 @dataclass
 class ManeuverProcessingLog:
     """Complete processing log for a knee/maneuver combination."""
@@ -271,6 +402,57 @@ class ManeuverProcessingLog:
             getattr(rec, "total_cycles_extracted", 0) or 0
             for rec in self.movement_cycles_records
         )
+
+    def validate_metadata_consistency(self) -> List[str]:
+        """Validate that metadata is consistent across records.
+        
+        Checks:
+        - Synchronization records have required fields
+        - MovementCycle records have required fields
+        - No field duplication issues
+        
+        Returns:
+            List of validation errors (empty list if all OK)
+        """
+        errors = []
+        
+        # Check Synchronization records
+        for i, rec in enumerate(self.synchronization_records):
+            # Verify required fields present
+            if not getattr(rec, 'sync_file_name', None):
+                errors.append(f"Synchronization[{i}]: missing sync_file_name")
+            if rec.linked_biomechanics != True:
+                errors.append(f"Synchronization[{i}]: linked_biomechanics not True")
+            
+            # Verify it has sync-level aggregates
+            if not hasattr(rec, 'total_cycles_extracted'):
+                errors.append(f"Synchronization[{i}]: missing total_cycles_extracted")
+            if not hasattr(rec, 'clean_cycles'):
+                errors.append(f"Synchronization[{i}]: missing clean_cycles")
+        
+        # Check MovementCycle records
+        for i, rec in enumerate(self.movement_cycles_records):
+            # Verify required fields present
+            if not getattr(rec, 'cycle_file', None):
+                errors.append(f"MovementCycle[{i}]: missing cycle_file")
+            if not hasattr(rec, 'cycle_index'):
+                errors.append(f"MovementCycle[{i}]: missing cycle_index")
+            if not hasattr(rec, 'duration_s'):
+                errors.append(f"MovementCycle[{i}]: missing duration_s")
+            
+            # Verify has inherited fields
+            if not hasattr(rec, 'audio_sync_time'):
+                errors.append(f"MovementCycle[{i}]: missing inherited audio_sync_time")
+            if not hasattr(rec, 'qc_artifact'):
+                errors.append(f"MovementCycle[{i}]: missing inherited qc_artifact")
+            
+            # Verify has cycle-level fields
+            if not hasattr(rec, 'biomechanics_qc_fail'):
+                errors.append(f"MovementCycle[{i}]: missing biomechanics_qc_fail")
+            if not hasattr(rec, 'sync_qc_fail'):
+                errors.append(f"MovementCycle[{i}]: missing sync_qc_fail")
+        
+        return errors
 
     def build_summary_row(self) -> Dict[str, Any]:
         """Build a single summary row for Excel export and reuse elsewhere."""
