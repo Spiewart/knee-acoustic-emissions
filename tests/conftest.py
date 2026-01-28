@@ -790,7 +790,6 @@ def synchronization_factory():
             "median_cycle_duration_s": 0.0,
             "min_cycle_duration_s": 0.0,
             "max_cycle_duration_s": 0.0,
-            "mean_acoustic_auc": 0.0,
         }
         defaults.update(overrides)
         return Synchronization(**defaults)

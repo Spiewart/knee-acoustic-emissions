@@ -431,8 +431,6 @@ class TestFieldNameTransitions:
             freq_time=10.1,
             sync_method="consensus",
             consensus_methods="rms_energy, biomechanics",
-            biomechanics_time=10.2,
-            biomechanics_time_contralateral=None,
             sync_file_name="test_sync.pkl",
             processing_date=datetime(2024, 1, 1),
             sync_duration=60.0,
@@ -443,7 +441,6 @@ class TestFieldNameTransitions:
             median_cycle_duration_s=6.0,
             min_cycle_duration_s=5.0,
             max_cycle_duration_s=7.0,
-            mean_acoustic_auc=100.0,
         )
 
         # New names should work
@@ -510,7 +507,6 @@ class TestFieldNameTransitions:
             sync_method="consensus",
             consensus_methods="rms_energy, biomechanics",
             biomechanics_time=10.2,
-            biomechanics_time_contralateral=None,
             sync_file_name="test_sync.pkl",
             processing_date=datetime(2024, 1, 1),
             sync_duration=60.0,
@@ -521,7 +517,6 @@ class TestFieldNameTransitions:
             median_cycle_duration_s=6.0,
             min_cycle_duration_s=5.0,
             max_cycle_duration_s=7.0,
-            mean_acoustic_auc=100.0,
         )
 
         # New name should work

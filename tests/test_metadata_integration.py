@@ -143,7 +143,6 @@ class TestSynchronizationClass:
         assert 'outlier_cycles' in fields
         assert 'mean_cycle_duration_s' in fields
         assert 'median_cycle_duration_s' in fields
-        assert 'mean_acoustic_auc' in fields
     
     def test_linked_biomechanics_always_true(self):
         """Verify linked_biomechanics is always True for Synchronization."""
@@ -324,6 +323,7 @@ class TestInstantiation:
     
     def test_movement_cycle_instantiation(self):
         """Verify MovementCycle records can be created with all inherited fields."""
+        now = datetime.now()
         cycle = MovementCycle(
             study="AOA",
             study_id=1011,
@@ -375,9 +375,14 @@ class TestInstantiation:
             qc_artifact_type_ch4=None,
             cycle_file="cycle.pkl",
             cycle_index=0,
+            is_outlier=False,  # NOW REQUIRED
             start_time_s=0.0,
             end_time_s=1.0,
             duration_s=1.0,
+            audio_start_time=now,  # NOW REQUIRED
+            audio_end_time=now,  # NOW REQUIRED
+            biomechanics_qc_fail=False,  # NOW REQUIRED
+            sync_qc_fail=False,  # NOW REQUIRED
             audio_sync_time=1.5,
             sync_method="consensus",
         )
@@ -386,6 +391,9 @@ class TestInstantiation:
         assert cycle.cycle_file == "cycle.pkl"
         assert cycle.cycle_index == 0
         assert cycle.duration_s == 1.0
+        assert cycle.is_outlier is False
+        assert cycle.biomechanics_qc_fail is False
+        assert cycle.sync_qc_fail is False
         
         # Inherited from SynchronizationMetadata
         assert cycle.audio_sync_time == 1.5

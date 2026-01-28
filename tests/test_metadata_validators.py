@@ -176,20 +176,13 @@ class TestSynchronizationMetadataValidators:
             freq_time=10.0,
         )
 
-        # biomechanics requires biomechanics_time
+        # biomechanics method should use bio_left_sync_time and/or bio_right_sync_time
         sm_bio = SynchronizationMetadata(
             **base_kwargs,
             sync_method="biomechanics",
-            biomechanics_time=10.2,
         )
         assert sm_bio.sync_method == "biomechanics"
-
-        with pytest.raises(ValidationError):
-            SynchronizationMetadata(
-                **base_kwargs,
-                sync_method="biomechanics",
-                biomechanics_time=None,
-            )
+        # Note: bio_left_sync_time and bio_right_sync_time are the sync times for biomechanics
 
         # consensus requires consensus_methods
         sm_cons = SynchronizationMetadata(
@@ -302,7 +295,14 @@ class TestSynchronizationValidators:
 
 
 class TestMovementCycleValidators:
-    def test_is_outlier_flag_set_on_qc_fail(self):
+    def test_is_outlier_flag_manually_set_by_processing(self):
+        """Verify is_outlier must be manually set by processing, not auto-calculated.
+        
+        The is_outlier flag represents processing-level determination of whether a cycle
+        is an outlier, and should be explicitly set by the processing pipeline based on
+        QC flags and other criteria, not automatically derived from QC fields.
+        """
+        # Create a cycle with qc_artifact=True but is_outlier=False
         cycle = MovementCycle(
             study="AOA",
             study_id=1011,
@@ -367,7 +367,8 @@ class TestMovementCycleValidators:
             pass_number=1,
             speed="normal",
         )
-        assert cycle.is_outlier is True
+        # is_outlier is independent of QC flags - it's a processing decision
+        assert cycle.is_outlier is False
 
 
 class TestExcelExport:

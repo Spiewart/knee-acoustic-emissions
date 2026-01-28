@@ -688,7 +688,8 @@ class TestHelperFunctions:
         assert record.total_cycles_extracted == 12
         assert record.clean_cycles == 10
         assert record.outlier_cycles == 2
-        assert record.qc_acoustic_threshold == 100.0
+        # qc_acoustic_threshold field has been removed - use acoustic_threshold property instead
+        assert hasattr(record, 'acoustic_threshold')
 
 
 class TestIncrementalUpdates:
