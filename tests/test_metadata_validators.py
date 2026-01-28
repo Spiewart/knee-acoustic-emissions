@@ -412,14 +412,14 @@ class TestExcelExport:
         d = sync_meta.to_dict()
         expected_keys = {
             "Audio Sync Time (s)",
-            "Bio Left Sync Time",
-            "Bio Right Sync Time",
+            "Bio Left Sync Time (s)",
+            "Bio Right Sync Time (s)",
             "Sync Offset (s)",
-            "Aligned Audio Sync Time",
-            "Aligned Bio Sync Time",
+            "Aligned Audio Sync Time (s)",
+            "Aligned Biomechanics Sync Time (s)",
             "Sync Method",
             "Consensus Methods",
-            "Consensus Time",
+            "Consensus Time (s)",
         }
         missing = expected_keys - set(d.keys())
         assert not missing, f"Missing keys in to_dict: {missing}"

@@ -418,13 +418,13 @@ def test_knee_log_right_knee_stomp_selection(temp_knee_dir, tmp_path):
     sync = _create_test_synchronization(
         sync_file_name="sync_pass_1",
         processing_status="success",
-        audio_sync_time=timedelta(seconds=5.0),
-        bio_left_sync_time=timedelta(seconds=10.0),
-        bio_right_sync_time=timedelta(seconds=8.0),  # Different from left
+        audio_sync_time=5.0,
+        bio_left_sync_time=10.0,
+        bio_right_sync_time=8.0,  # Different from left
         knee="right",
-        sync_offset=timedelta(seconds=3.0),  # 8 - 5
-        aligned_audio_sync_time=timedelta(seconds=8.0),
-        aligned_bio_sync_time=timedelta(seconds=8.0),
+        sync_offset=3.0,  # 8 - 5
+        aligned_audio_sync_time=8.0,
+        aligned_biomechanics_sync_time=8.0,
     )
     log.synchronization_records.append(sync)
 
