@@ -7,7 +7,7 @@ functionality of the processing log system.
 
 import sys
 import tempfile
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 # Add parent directory to path for module imports
@@ -115,7 +115,6 @@ def test_basic_functionality():
 
         # Test 4: Add sync records
         print("  ✓ Adding synchronization records...")
-        from datetime import timedelta
         for i in range(3):
             sync_record = Synchronization(
                 study='AOA',
@@ -190,18 +189,18 @@ def test_basic_functionality():
                 mic_2_position='IPL',
                 mic_3_position='SPM',
                 mic_4_position='SPL',
-                audio_sync_time=timedelta(seconds=0),
-                bio_right_sync_time=timedelta(seconds=1),
-                sync_offset=timedelta(seconds=0),
-                aligned_audio_sync_time=timedelta(seconds=0),
-                aligned_bio_sync_time=timedelta(seconds=1),
+                audio_sync_time=0.0,
+                bio_right_sync_time=1.0,
+                sync_offset=0.0,
+                aligned_audio_sync_time=0.0,
+                aligned_biomechanics_sync_time=1.0,
                 sync_method="consensus",
-                consensus_time=timedelta(seconds=0),
-                rms_time=timedelta(seconds=0),
-                onset_time=timedelta(seconds=0),
-                freq_time=timedelta(seconds=0),
+                consensus_time=0.0,
+                rms_time=0.0,
+                onset_time=0.0,
+                freq_time=0.0,
                 sync_file_name=f"sync_{i}",
-                sync_duration=timedelta(seconds=10),
+                sync_duration=10.0,
                 total_cycles_extracted=12,
                 clean_cycles=10,
                 outlier_cycles=2,
@@ -254,18 +253,18 @@ def test_basic_functionality():
             mic_2_position='IPL',
             mic_3_position='SPM',
             mic_4_position='SPL',
-            audio_sync_time=timedelta(seconds=0),
-            bio_right_sync_time=timedelta(seconds=1),
-            sync_offset=timedelta(seconds=0),
-            aligned_audio_sync_time=timedelta(seconds=0),
-            aligned_bio_sync_time=timedelta(seconds=1),
+            audio_sync_time=0.0,
+            bio_right_sync_time=1.0,
+            sync_offset=0.0,
+            aligned_audio_sync_time=0.0,
+            aligned_biomechanics_sync_time=1.0,
             sync_method="consensus",
-            consensus_time=timedelta(seconds=0),
-            rms_time=timedelta(seconds=0),
-            onset_time=timedelta(seconds=0),
-            freq_time=timedelta(seconds=0),
+            consensus_time=0.0,
+            rms_time=0.0,
+            onset_time=0.0,
+            freq_time=0.0,
             sync_file_name="sync_0",
-            sync_duration=timedelta(seconds=20),  # Updated value
+            sync_duration=20.0,
             total_cycles_extracted=2000,
             clean_cycles=1900,
             outlier_cycles=100,
@@ -349,8 +348,8 @@ def test_helper_functions():
         # Sync duration depends on exact calculation from DataFrame timestamps
         # The calculation: last_tt - first_tt. With 500 samples @ 10ms freq, the duration
         # is from sample 0 to sample 499, which is 499 * 10ms = 4.99 seconds
-        assert sync_record.sync_duration.total_seconds() > 4.98
-        assert sync_record.audio_sync_time.total_seconds() == 10.5
+        assert sync_record.sync_duration > 4.98
+        assert sync_record.audio_sync_time == 10.5
 
         print("✅ All helper function tests passed!")
 
