@@ -47,17 +47,18 @@ def _make_minimal_sync(
         mic_3_position="SPM",  # Suprapatellar Medial
         mic_4_position="SPL",  # Suprapatellar Lateral
         # SynchronizationMetadata fields
-        audio_sync_time=timedelta(seconds=1.0),
-        bio_left_sync_time=timedelta(seconds=1.0),  # Required for left knee
-        sync_offset=timedelta(seconds=0.5),
-        aligned_audio_sync_time=timedelta(seconds=1.5),
-        aligned_bio_sync_time=timedelta(seconds=1.5),
+        audio_sync_time=1.0,
+        bio_left_sync_time=1.0,
+        bio_right_sync_time=2.0,
+        sync_offset=0.5,
+        aligned_audio_sync_time=1.5,
+        aligned_biomechanics_sync_time=1.0,
         sync_method="consensus",
         consensus_methods="rms,onset",
-        consensus_time=timedelta(seconds=1.0),
-        rms_time=timedelta(seconds=1.0),
-        onset_time=timedelta(seconds=1.0),
-        freq_time=timedelta(seconds=1.0),
+        consensus_time=1.0,
+        rms_time=1.0,
+        onset_time=1.0,
+        freq_time=1.0,
         # AudioProcessing fields
         processing_date=datetime.now(),
         qc_fail_segments=[],
@@ -89,7 +90,7 @@ def _make_minimal_sync(
         sync_file_name=sync_file_name,
         pass_number=pass_number,
         speed=speed,
-        sync_duration=timedelta(seconds=10.0),
+        sync_duration=10.0,
         total_cycles_extracted=0,
         clean_cycles=0,
         outlier_cycles=0,

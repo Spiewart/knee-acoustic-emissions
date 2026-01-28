@@ -29,11 +29,11 @@ def test_stomp_offset_calculation():
     )
 
     # Offset should be bio - audio = 10 - 5 = 5s
-    # New fields are timedeltas, convert to seconds for comparison
-    assert record.sync_offset.total_seconds() == pytest.approx(5.0)
-    assert record.audio_sync_time.total_seconds() == pytest.approx(5.0)
-    assert record.bio_left_sync_time.total_seconds() == pytest.approx(10.0)
-    assert record.bio_right_sync_time.total_seconds() == pytest.approx(12.0)
+    # New fields are floats, compare directly
+    assert record.sync_offset == pytest.approx(5.0)
+    assert record.audio_sync_time == pytest.approx(5.0)
+    assert record.bio_left_sync_time == pytest.approx(10.0)
+    assert record.bio_right_sync_time == pytest.approx(12.0)
 
 
 def test_aligned_stomp_times():
@@ -57,8 +57,8 @@ def test_aligned_stomp_times():
 
     # After alignment, audio stomp appears at: audio_stomp + offset = 5 + 5 = 10s
     # Bio stomp remains at 10s (synced timeline is in bio coords)
-    assert record.aligned_audio_sync_time.total_seconds() == pytest.approx(10.0)
-    assert record.aligned_bio_sync_time.total_seconds() == pytest.approx(10.0)
+    assert record.aligned_audio_sync_time == pytest.approx(10.0)
+    assert record.aligned_biomechanics_sync_time == pytest.approx(10.0)
 
 
 def test_aligned_stomp_times_right_knee():
@@ -81,11 +81,11 @@ def test_aligned_stomp_times_right_knee():
     )
 
     # Offset = bio_right - audio = 8 - 3 = 5s
-    assert record.sync_offset.total_seconds() == pytest.approx(5.0)
+    assert record.sync_offset == pytest.approx(5.0)
     # Aligned audio = 3 + 5 = 8s
-    assert record.aligned_audio_sync_time.total_seconds() == pytest.approx(8.0)
+    assert record.aligned_audio_sync_time == pytest.approx(8.0)
     # Aligned bio = 8s (right knee)
-    assert record.aligned_bio_sync_time.total_seconds() == pytest.approx(8.0)
+    assert record.aligned_biomechanics_sync_time == pytest.approx(8.0)
 
 
 def test_stomp_offset_with_timedelta_input():
@@ -105,9 +105,9 @@ def test_stomp_offset_with_timedelta_input():
         knee_side="left",
     )
 
-    assert record.sync_offset.total_seconds() == pytest.approx(5.0)
-    assert record.aligned_audio_sync_time.total_seconds() == pytest.approx(10.0)
-    assert record.aligned_bio_sync_time.total_seconds() == pytest.approx(10.0)
+    assert record.sync_offset == pytest.approx(5.0)
+    assert record.aligned_audio_sync_time == pytest.approx(10.0)
+    assert record.aligned_biomechanics_sync_time == pytest.approx(10.0)
 
 
 def test_sync_record_to_dict_includes_new_fields():
@@ -128,14 +128,14 @@ def test_sync_record_to_dict_includes_new_fields():
 
     data_dict = record.to_dict()
 
-    # Check for new field names with timedeltas
-    assert "Sync Offset" in data_dict
-    assert "Aligned Audio Sync Time" in data_dict
-    assert "Aligned Bio Sync Time" in data_dict
+    # Check for new field names with seconds suffix
+    assert "Sync Offset (s)" in data_dict
+    assert "Aligned Audio Sync Time (s)" in data_dict
+    assert "Aligned Biomechanics Sync Time (s)" in data_dict
     # Values are exported as seconds (floats)
-    assert data_dict["Sync Offset"] == pytest.approx(5.0)
-    assert data_dict["Aligned Audio Sync Time"] == pytest.approx(10.0)
-    assert data_dict["Aligned Bio Sync Time"] == pytest.approx(10.0)
+    assert data_dict["Sync Offset (s)"] == pytest.approx(5.0)
+    assert data_dict["Aligned Audio Sync Time (s)"] == pytest.approx(10.0)
+    assert data_dict["Aligned Biomechanics Sync Time (s)"] == pytest.approx(10.0)
 
 
 def test_stomp_offset_none_when_missing_data():
@@ -155,10 +155,10 @@ def test_stomp_offset_none_when_missing_data():
         knee_side="left",
     )
 
-    # When data is missing, defaults to zero timedelta
-    assert record.sync_offset.total_seconds() == 0.0
-    assert record.aligned_audio_sync_time.total_seconds() == 0.0
-    assert record.aligned_bio_sync_time.total_seconds() == 0.0
+    # When data is missing, defaults to None
+    assert record.sync_offset is None
+    assert record.aligned_audio_sync_time is None
+    assert record.aligned_biomechanics_sync_time is None
 
 
 def test_stomp_offset_none_when_knee_side_missing():
@@ -178,7 +178,7 @@ def test_stomp_offset_none_when_knee_side_missing():
         knee_side=None,
     )
 
-    # Without knee_side, can't determine which bio stomp to use, so defaults to 0
-    assert record.sync_offset.total_seconds() == 0.0
-    assert record.aligned_audio_sync_time.total_seconds() == 0.0
-    assert record.aligned_bio_sync_time.total_seconds() == 0.0
+    # Without knee_side, can't determine which bio stomp to use, so defaults to None
+    assert record.sync_offset is None
+    assert record.aligned_audio_sync_time is None
+    assert record.aligned_biomechanics_sync_time is None

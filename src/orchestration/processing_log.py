@@ -1947,46 +1947,30 @@ def create_sync_record_from_data(
         mic_3_position = "SPM"
         mic_4_position = "SPL"
 
-    # SynchronizationMetadata fields - sync times as timedeltas
-    # Convert from seconds to timedelta
-    def _to_timedelta(seconds: Optional[float]) -> timedelta:
-        """Convert seconds to timedelta, defaulting to 0 if None."""
-        return timedelta(seconds=seconds) if seconds is not None else timedelta(0)
-
+    # SynchronizationMetadata fields - sync times as float (seconds)
     # If metadata provides a more specific maneuver, override now
     meta_maneuver = _normalize_maneuver_code(metadata.get("maneuver")) if metadata else None
     if meta_maneuver:
         maneuver = meta_maneuver
 
-    audio_sync_time = _to_timedelta(audio_stomp_s)
-
-    # bio_left/right_sync_time is required based on knee side
-    # If not provided, use a default value to avoid validation error
-    if knee == "left":
-        bio_left_sync_time = _to_timedelta(bio_left_s) if bio_left_s is not None else timedelta(0)
-        bio_right_sync_time = _to_timedelta(bio_right_s) if bio_right_s is not None else None
-    elif knee == "right":
-        bio_right_sync_time = _to_timedelta(bio_right_s) if bio_right_s is not None else timedelta(0)
-        bio_left_sync_time = _to_timedelta(bio_left_s) if bio_left_s is not None else None
-    else:
-        # Default case - assume left
-        bio_left_sync_time = _to_timedelta(bio_left_s) if bio_left_s is not None else timedelta(0)
-        bio_right_sync_time = _to_timedelta(bio_right_s) if bio_right_s is not None else None
-
-    sync_offset_td = _to_timedelta(stomp_offset)
-    aligned_audio_sync_time = _to_timedelta(aligned_audio_stomp)
-    aligned_bio_sync_time = _to_timedelta(aligned_bio_stomp)
+    # Keep sync times as float (seconds) - matches new SynchronizationMetadata definition
+    audio_sync_time = audio_stomp_s
+    bio_left_sync_time = bio_left_s
+    bio_right_sync_time = bio_right_s
+    sync_offset_float = stomp_offset
+    aligned_audio_sync_time = aligned_audio_stomp
+    aligned_bio_sync_time = aligned_bio_stomp
 
     # Synchronization-specific fields
     # Calculate sync_duration from synced_df
     if "tt" in synced_df.columns and len(synced_df) > 0:
         duration = synced_df["tt"].iloc[-1] - synced_df["tt"].iloc[0]
         if hasattr(duration, 'total_seconds'):
-            sync_duration = duration
+            sync_duration = float(duration.total_seconds())
         else:
-            sync_duration = timedelta(seconds=float(duration))
+            sync_duration = float(duration)
     else:
-        sync_duration = timedelta(0)
+        sync_duration = 0.0
 
     # Initialize aggregate statistics with defaults (will be populated from cycles if available)
     mean_cycle_duration_s = 0.0
@@ -2021,13 +2005,13 @@ def create_sync_record_from_data(
         "mic_2_position": mic_2_position,
         "mic_3_position": mic_3_position,
         "mic_4_position": mic_4_position,
-        # SynchronizationMetadata
+        # SynchronizationMetadata fields
         "audio_sync_time": audio_sync_time,
         "bio_left_sync_time": bio_left_sync_time,
         "bio_right_sync_time": bio_right_sync_time,
-        "sync_offset": sync_offset_td,
+        "sync_offset": sync_offset_float,
         "aligned_audio_sync_time": aligned_audio_sync_time,
-        "aligned_bio_sync_time": aligned_bio_sync_time,
+        "aligned_biomechanics_sync_time": aligned_bio_sync_time,
         "sync_method": "consensus",  # Detection method (consensus or biomechanics); will be overridden from detection_results if provided
         # Synchronization
         "sync_file_name": sync_file_name,
@@ -2047,7 +2031,6 @@ def create_sync_record_from_data(
     }
 
     # Populate detection method details if provided
-    # These times need to be timedeltas for SynchronizationMetadata
     # Store energy/magnitude as separate data-derived fields (not metadata)
     rms_energy = None
     onset_magnitude = None
@@ -2060,11 +2043,11 @@ def create_sync_record_from_data(
             onset_time_s = _to_seconds(detection_results.get("onset_time"))
             freq_time_s = _to_seconds(detection_results.get("freq_time"))
 
-            # Convert to timedeltas for metadata fields
-            data["consensus_time"] = _to_timedelta(consensus_time_s)
-            data["rms_time"] = _to_timedelta(rms_time_s)
-            data["onset_time"] = _to_timedelta(onset_time_s)
-            data["freq_time"] = _to_timedelta(freq_time_s)
+            # Keep as float (seconds) for metadata fields
+            data["consensus_time"] = consensus_time_s
+            data["rms_time"] = rms_time_s
+            data["onset_time"] = onset_time_s
+            data["freq_time"] = freq_time_s
 
             # Extract which methods contributed to consensus
             consensus_methods_list = detection_results.get("consensus_methods", [])
@@ -2101,16 +2084,16 @@ def create_sync_record_from_data(
 
             # Biomechanics-guided detection metadata
             data["audio_stomp_method"] = detection_results.get("audio_stomp_method")
-            data["selected_time"] = _to_seconds(detection_results.get("selected_time"))
-            data["contra_selected_time"] = _to_seconds(detection_results.get("contra_selected_time"))
+            data["selected_audio_sync_time"] = _to_seconds(detection_results.get("selected_time"))
+            data["contra_selected_audio_sync_time"] = _to_seconds(detection_results.get("contra_selected_time"))
         except Exception as e:
             logger.debug(f"Failed to populate detection_results in sync record: {e}")
     else:
-        # If no detection_results provided, set required detection times to defaults
-        data["consensus_time"] = timedelta(0)
-        data["rms_time"] = timedelta(0)
-        data["onset_time"] = timedelta(0)
-        data["freq_time"] = timedelta(0)
+        # If no detection_results provided, set required detection times to defaults (None for optional fields)
+        data["consensus_time"] = None
+        data["rms_time"] = None
+        data["onset_time"] = None
+        data["freq_time"] = None
 
 
     if error:
@@ -2265,17 +2248,17 @@ def create_cycles_record_from_data(
 
         # Add SynchronizationMetadata fields
         data.update({
-            "audio_sync_time": timedelta(0),
-            "bio_left_sync_time": timedelta(0),
+            "audio_sync_time": None,
+            "bio_left_sync_time": None,
             "bio_right_sync_time": None,
-            "sync_offset": timedelta(0),
-            "aligned_audio_sync_time": timedelta(0),
-            "aligned_bio_sync_time": timedelta(0),
+            "sync_offset": None,
+            "aligned_audio_sync_time": None,
+            "aligned_biomechanics_sync_time": None,
             "sync_method": "consensus",
-            "consensus_time": timedelta(0),
-            "rms_time": timedelta(0),
-            "onset_time": timedelta(0),
-            "freq_time": timedelta(0),
+            "consensus_time": None,
+            "rms_time": None,
+            "onset_time": None,
+            "freq_time": None,
         })
 
         # Add Synchronization fields
