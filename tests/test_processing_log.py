@@ -103,8 +103,6 @@ def create_minimal_biomech_record(**overrides):
 
 def create_minimal_sync_record(**overrides):
     """Create a minimal Synchronization record for testing."""
-    from datetime import timedelta
-
     defaults = {
         # StudyMetadata
         "study": "AOA",
@@ -130,20 +128,20 @@ def create_minimal_sync_record(**overrides):
         "mic_3_position": "SPM",
         "mic_4_position": "SPL",
         # SynchronizationMetadata
-        "audio_sync_time": timedelta(seconds=5.0),
-        "bio_left_sync_time": timedelta(seconds=10.0),
-        "sync_offset": timedelta(seconds=5.0),
-        "aligned_audio_sync_time": timedelta(seconds=10.0),
-        "aligned_bio_sync_time": timedelta(seconds=10.0),
+        "audio_sync_time": 5.0,
+        "bio_left_sync_time": 10.0,
+        "sync_offset": 5.0,
+        "aligned_audio_sync_time": 10.0,
+        "aligned_biomechanics_sync_time": 10.0,
         "sync_method": "consensus",
-        "consensus_time": timedelta(seconds=5.0),
-        "rms_time": timedelta(seconds=5.0),
-        "onset_time": timedelta(seconds=5.0),
-        "freq_time": timedelta(seconds=5.0),
+        "consensus_time": 5.0,
+        "rms_time": 5.0,
+        "onset_time": 5.0,
+        "freq_time": 5.0,
         # Synchronization
         "sync_file_name": "test_sync.pkl",
         "processing_date": datetime(2024, 1, 1, 12, 0, 0),
-        "sync_duration": timedelta(seconds=120.0),
+        "sync_duration": 120.0,
         "total_cycles_extracted": 0,
         "clean_cycles": 0,
         "outlier_cycles": 0,
@@ -246,20 +244,19 @@ class TestSynchronization:
 
     def test_create_record(self):
         """Test creating a synchronization record."""
-        from datetime import timedelta
         record = create_minimal_sync_record(
             sync_file_name="left_walk_slow_pass1",
             pass_number=1,
             speed="slow",
-            audio_sync_time=timedelta(seconds=10.5),
-            bio_left_sync_time=timedelta(seconds=5.2),
+            audio_sync_time=10.5,
+            bio_left_sync_time=5.2,
             knee="left",
         )
 
         assert record.sync_file_name == "left_walk_slow_pass1"
         assert record.pass_number == 1
         assert record.speed == "slow"
-        assert record.audio_sync_time.total_seconds() == 10.5
+        assert record.audio_sync_time == 10.5
         assert record.knee == "left"
 
     def test_to_dict(self):
@@ -737,20 +734,20 @@ class TestIncrementalUpdates:
         from datetime import timedelta
         sync_record1 = create_minimal_sync_record(
             sync_file_name="test_sync",
-            sync_duration=timedelta(seconds=10.0),
+            sync_duration=10.0,
         )
         log.add_synchronization_record(sync_record1)
 
         # Update with new data for same file
         sync_record2 = create_minimal_sync_record(
             sync_file_name="test_sync",
-            sync_duration=timedelta(seconds=20.0),
+            sync_duration=20.0,
         )
         log.add_synchronization_record(sync_record2)
 
         # Should only have one record with updated values
         assert len(log.synchronization_records) == 1
-        assert log.synchronization_records[0].sync_duration.total_seconds() == 20.0
+        assert log.synchronization_records[0].sync_duration == 20.0
 
     def test_roundtrip_preserves_data(self, tmp_path):
         """Test that save and load preserves all data."""

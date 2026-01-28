@@ -1149,9 +1149,8 @@ class KneeProcessingLog:
         # Add stomp time details from synchronization records
         if maneuver_log.synchronization_records:
             # Collect all stomp times across sync records
-            # Convert timedeltas to seconds
             audio_stomps = [
-                r.audio_sync_time.total_seconds()
+                r.audio_sync_time
                 for r in maneuver_log.synchronization_records
                 if r.audio_sync_time is not None
             ]
@@ -1159,45 +1158,45 @@ class KneeProcessingLog:
             for r in maneuver_log.synchronization_records:
                 if r.knee and r.knee.lower() == "left":
                     if r.bio_left_sync_time is not None:
-                        bio_stomps.append(r.bio_left_sync_time.total_seconds())
+                        bio_stomps.append(r.bio_left_sync_time)
                 elif r.knee and r.knee.lower() == "right":
                     if r.bio_right_sync_time is not None:
-                        bio_stomps.append(r.bio_right_sync_time.total_seconds())
+                        bio_stomps.append(r.bio_right_sync_time)
 
             offsets = [
-                r.sync_offset.total_seconds()
+                r.sync_offset
                 for r in maneuver_log.synchronization_records
                 if r.sync_offset is not None
             ]
             aligned_audio = [
-                r.aligned_audio_sync_time.total_seconds()
+                r.aligned_audio_sync_time
                 for r in maneuver_log.synchronization_records
                 if r.aligned_audio_sync_time is not None
             ]
             aligned_bio = [
-                r.aligned_bio_sync_time.total_seconds()
+                r.aligned_biomechanics_sync_time
                 for r in maneuver_log.synchronization_records
-                if r.aligned_bio_sync_time is not None
+                if r.aligned_biomechanics_sync_time is not None
             ]
 
             # Detection method aggregates
             consensus_times = [
-                r.consensus_time.total_seconds()
+                r.consensus_time
                 for r in maneuver_log.synchronization_records
                 if r.consensus_time is not None
             ]
             rms_times = [
-                r.rms_time.total_seconds()
+                r.rms_time
                 for r in maneuver_log.synchronization_records
                 if r.rms_time is not None
             ]
             onset_times = [
-                r.onset_time.total_seconds()
+                r.onset_time
                 for r in maneuver_log.synchronization_records
                 if r.onset_time is not None
             ]
             freq_times = [
-                r.freq_time.total_seconds()
+                r.freq_time
                 for r in maneuver_log.synchronization_records
                 if r.freq_time is not None
             ]
