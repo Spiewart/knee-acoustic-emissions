@@ -391,17 +391,70 @@ The script can be run on a single file, a `Synced` directory, or an entire parti
 Testing
 -------
 
+### Running Tests
+
 Run the full suite (from repo root with venv active):
 
 ```bash
 pytest tests/ -v
 ```
 
-All 230+ tests should pass. If you've made changes, ensure tests pass before committing:
+All 610+ tests should pass. If you've made changes, ensure tests pass before committing:
 
 ```bash
 pytest tests/ -v --tb=short
 ```
+
+### Writing Tests: MANDATORY Use of Consolidated Fixtures
+
+**⚠️ CRITICAL: DO NOT create test data manually in individual test files!**
+
+This project uses **consolidated fixture factories** in `tests/conftest.py` as the single source of truth for all test data creation. This pattern is mandatory for maintainability.
+
+#### Available Fixture Factories
+
+All factories are defined in [`tests/conftest.py`](tests/conftest.py) and automatically available to all tests via pytest's fixture discovery:
+
+```python
+def test_example(synchronization_factory):
+    """Use factory fixtures - DO NOT create test data manually!"""
+    
+    # ✅ CORRECT: Use factory with custom overrides
+    sync = synchronization_factory(
+        audio_sync_time=5.0,
+        sync_duration=120.0,
+        knee="left"
+    )
+    
+    # ❌ INCORRECT: Do not create Synchronization directly in tests
+    # sync = Synchronization(study="AOA", study_id=1001, ...)  # NO!
+```
+
+**Factory Reference**:
+- `synchronization_factory(**overrides)` - Creates `Synchronization` records
+- `synchronization_metadata_factory(**overrides)` - Creates `SynchronizationMetadata` records
+- `audio_processing_factory(**overrides)` - Creates `AudioProcessing` records
+- `movement_cycle_factory(**overrides)` - Creates `MovementCycle` records
+
+**Why This Matters**:
+- ✅ Single source of truth: Update field defaults in ONE place
+- ✅ Type safety: Factories always create valid instances with correct field types
+- ✅ Maintainability: When metadata changes (e.g., timedelta → float), update factories once, not 50+ test files
+- ❌ Duplication = Technical Debt: Creating test data manually leads to brittle tests and maintenance burden
+
+**Time Field Format**:
+All time fields use **float (seconds)**, NOT `timedelta`:
+```python
+# ✅ CORRECT
+sync = synchronization_factory(audio_sync_time=5.0, sync_duration=120.0)
+
+# ❌ INCORRECT
+sync = synchronization_factory(
+    audio_sync_time=timedelta(seconds=5.0)  # NO!
+)
+```
+
+See [`tests/conftest.py`](tests/conftest.py#L649-L872) for complete factory definitions and default values.
 
 Using as a Library
 ------------------

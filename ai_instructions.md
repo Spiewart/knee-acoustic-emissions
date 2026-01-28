@@ -99,6 +99,138 @@ excel_dict = audio.to_dict()
 
 **Purpose**: Base classes for file-level metadata used during synchronization workflows.
 
+---
+
+## Testing Guidelines: Consolidated Fixture Pattern
+
+**⚠️ CRITICAL RULE: ALWAYS use consolidated fixture factories from `tests/conftest.py` for test data creation.**
+
+### Mandatory Testing Pattern
+
+**DO NOT create test data manually in individual test files.** This project uses centralized fixture factories to ensure consistency and maintainability.
+
+#### ✅ CORRECT: Use Factory Fixtures
+
+```python
+def test_synchronization_processing(synchronization_factory):
+    """Factory fixtures are automatically available via pytest."""
+    
+    # Use factory with custom overrides
+    sync = synchronization_factory(
+        audio_sync_time=5.0,
+        bio_left_sync_time=10.0,
+        sync_duration=120.0,
+        knee="left",
+        processing_status="success"
+    )
+    
+    # Test with the factory-created instance
+    assert sync.audio_sync_time == 5.0
+    assert sync.knee == "left"
+
+
+def test_with_minimal_overrides(synchronization_factory):
+    """Factories provide sensible defaults."""
+    
+    # Only override what you need to test
+    sync = synchronization_factory(sync_file_name="test.pkl")
+    
+    # All other fields have working defaults
+    assert sync.sync_file_name == "test.pkl"
+    assert sync.study == "AOA"  # Default value
+```
+
+#### ❌ INCORRECT: Manual Data Creation
+
+```python
+# ❌ DO NOT DO THIS - Creates maintenance burden
+def test_bad_pattern():
+    from datetime import datetime
+    from src.metadata import Synchronization
+    
+    # This is WRONG - duplicates factory defaults
+    sync = Synchronization(
+        study="AOA",
+        study_id=1001,
+        linked_biomechanics=True,
+        # ... 50+ lines of boilerplate
+    )
+```
+
+### Available Factory Fixtures
+
+Defined in [`tests/conftest.py`](tests/conftest.py#L649-L872):
+
+| Factory | Creates | Use For |
+|---------|---------|---------|
+| `synchronization_factory` | `Synchronization` | Testing sync records, Excel I/O, processing logs |
+| `synchronization_metadata_factory` | `SynchronizationMetadata` | Testing metadata validation, field requirements |
+| `audio_processing_factory` | `AudioProcessing` | Testing audio processing, QC workflows |
+| `movement_cycle_factory` | `MovementCycle` | Testing cycle extraction, cycle-level metadata |
+
+### Time Field Format (Post Phase-5)
+
+**All time fields use float (seconds), NOT timedelta:**
+
+```python
+# ✅ CORRECT: Time fields are floats
+sync = synchronization_factory(
+    audio_sync_time=5.0,        # Float seconds
+    sync_duration=120.0,         # Float seconds
+    consensus_time=5.2           # Float seconds
+)
+
+# ❌ INCORRECT: Do not use timedelta
+from datetime import timedelta
+sync = synchronization_factory(
+    audio_sync_time=timedelta(seconds=5.0)  # WRONG!
+)
+```
+
+### When Adding New Metadata Fields
+
+When you add fields to metadata classes:
+
+1. **Update the factory in `conftest.py`** with a sensible default
+2. **Update existing tests** to use the new factory (if defaults changed)
+3. **DO NOT** create new helper functions in individual test files
+
+```python
+# Example: Adding a new field to Synchronization
+# 1. Update src/metadata.py
+@dataclass
+class Synchronization(SynchronizationMetadata):
+    new_field: Optional[float] = None
+
+# 2. Update the factory in tests/conftest.py
+@pytest.fixture
+def synchronization_factory():
+    def _create(**overrides):
+        defaults = {
+            # ... existing defaults
+            "new_field": 0.0,  # Add sensible default
+        }
+        defaults.update(overrides)
+        return Synchronization(**defaults)
+    return _create
+
+# 3. Tests automatically get the new field with working defaults
+```
+
+### Why This Pattern Is Mandatory
+
+**Maintainability**: When we converted time fields from `timedelta` to `float`, we only had to update 4 factory functions instead of 42+ scattered helper functions. This saved hours of work and prevented bugs.
+
+**Consistency**: All tests use the same default values, making test behavior predictable.
+
+**Type Safety**: Factories ensure correct field types (e.g., float not timedelta).
+
+**Single Source of Truth**: One place to update when metadata schema changes.
+
+### File Metadata Classes (`src/models.py`)
+
+**Purpose**: Base classes for file-level metadata used during synchronization workflows.
+
 **Location**: `src/models.py`
 
 **Key Classes**:

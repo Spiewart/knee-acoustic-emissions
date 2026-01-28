@@ -1,4 +1,93 @@
-"""Global pytest fixtures for the test suite."""
+"""Global pytest fixtures for the test suite.
+
+⚠️ CRITICAL TESTING GUIDELINE ⚠️
+==================================
+
+DO NOT CREATE TEST DATA MANUALLY IN INDIVIDUAL TEST FILES!
+
+This file contains CONSOLIDATED FIXTURE FACTORIES that are the single source of
+truth for all test data creation. This pattern is MANDATORY for maintainability.
+
+Why Consolidated Fixtures Matter
+---------------------------------
+
+1. **Single Source of Truth**: When metadata fields change (e.g., timedelta → float),
+   update defaults in ONE place instead of 42+ scattered helper functions.
+
+2. **Type Safety**: Factories always create valid instances with correct field types.
+   No more ValidationError surprises from outdated test helpers.
+
+3. **Maintainability**: Adding a new field? Update 4 factories, not 50+ test files.
+
+4. **Consistency**: All tests use the same default values, making behavior predictable.
+
+Historical Context: Phase 5 Metadata Refactoring
+-------------------------------------------------
+
+During Phase 5, we converted all time fields from `timedelta` to `float` (seconds).
+Before consolidation: Had to update 42 separate helper functions across 15+ test files.
+After consolidation: Only updated 4 factory functions in this file.
+Time saved: ~8 hours. Bugs prevented: Many.
+
+How to Use Factory Fixtures
+----------------------------
+
+Factories are automatically available to all tests via pytest's fixture discovery:
+
+    def test_example(synchronization_factory):
+        '''Factory fixtures are auto-injected by pytest.'''
+        
+        # ✅ CORRECT: Use factory with custom overrides
+        sync = synchronization_factory(
+            audio_sync_time=5.0,
+            sync_duration=120.0,
+            knee="left"
+        )
+        
+        # Factories provide sensible defaults for all required fields
+        assert sync.study == "AOA"  # Default value
+        assert sync.audio_sync_time == 5.0  # Your override
+
+    # ❌ INCORRECT: Do not create instances manually
+    def test_bad_pattern():
+        from src.metadata import Synchronization
+        sync = Synchronization(...)  # NO! Use the factory!
+
+Available Factories
+-------------------
+
+- synchronization_factory(**overrides) → Synchronization
+- synchronization_metadata_factory(**overrides) → SynchronizationMetadata
+- audio_processing_factory(**overrides) → AudioProcessing
+- movement_cycle_factory(**overrides) → MovementCycle
+
+See individual factory docstrings below for default values and usage examples.
+
+Time Field Format (Post Phase-5)
+---------------------------------
+
+ALL time fields use float (seconds), NOT timedelta:
+
+    # ✅ CORRECT
+    sync = synchronization_factory(audio_sync_time=5.0)
+
+    # ❌ INCORRECT
+    from datetime import timedelta
+    sync = synchronization_factory(audio_sync_time=timedelta(seconds=5.0))
+
+When Adding New Metadata Fields
+--------------------------------
+
+1. Update the metadata class in src/metadata.py
+2. Update the corresponding factory in THIS FILE with a sensible default
+3. Update tests to use the new factory (if defaults changed)
+4. DO NOT create new helper functions in individual test files!
+
+For detailed guidelines, see:
+- README.md "Testing" section
+- ai_instructions.md "Testing Guidelines" section
+
+"""
 
 import json
 import pickle
