@@ -2264,7 +2264,7 @@ def create_cycles_record_from_data(
         data.update({
             "sync_file_name": sync_file_name,
             "processing_date": datetime.now(),
-            "sync_duration": timedelta(0),
+            "sync_duration": 0.0,
             "qc_acoustic_threshold": acoustic_threshold,
         })
 

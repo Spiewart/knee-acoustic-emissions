@@ -111,8 +111,8 @@ def test_create_sync_record_populates_new_fields_from_detection_results():
         'freq_time': 2.0,
         'freq_energy': 300.0,
         'audio_stomp_method': 'biomechanics-guided',
-        'selected_audio_sync_time': 2.5,
-        'contra_selected_audio_sync_time': 3.8,
+        'selected_time': 2.5,
+        'contra_selected_time': 3.8,
     }
 
     record = create_sync_record_from_data(

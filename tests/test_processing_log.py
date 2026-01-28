@@ -269,7 +269,7 @@ class TestSynchronization:
         data = record.to_dict()
 
         assert data["Sync File"] == "test_sync"
-        assert data["Status"] == "success"
+        assert data["Processing Status"] == "success"
         assert "Audio QC Version" in data
         assert data["Audio QC Version"] == 1
 
@@ -652,14 +652,14 @@ class TestHelperFunctions:
 
         assert record.processing_status == "success"
         assert record.sync_file_name == "left_walk_medium_pass1"
-        assert record.audio_sync_time.total_seconds() == 10.5
-        assert record.bio_left_sync_time.total_seconds() == 5.2
+        assert record.audio_sync_time == 10.5
+        assert record.bio_left_sync_time == 5.2
         assert record.knee == "left"
         assert record.pass_number == 1
         assert record.speed == "medium"
-        # Synchronization has sync_duration (timedelta), not duration_seconds
+        # Synchronization has sync_duration (float in seconds), not duration_seconds
         assert record.sync_duration is not None
-        assert record.sync_duration.total_seconds() > 0
+        assert record.sync_duration > 0
 
     def test_create_cycles_record_from_data(self, tmp_path):
         """Test creating cycles record from cycle extraction results."""

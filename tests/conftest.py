@@ -636,3 +636,221 @@ def fake_participant_directory(tmp_path_factory):
         },
         "biomechanics": biomechanics_info,
     }
+
+
+# ===== Metadata Factory Fixtures =====
+# Centralized test data creation to reduce duplication across test suite
+
+
+@pytest.fixture
+def synchronization_factory():
+    """Factory for creating Synchronization test records with sensible defaults.
+    
+    Usage:
+        sync = synchronization_factory(audio_sync_time=5.0, knee="left")
+    """
+    from datetime import datetime
+    from src.metadata import Synchronization
+    
+    def _create(**overrides):
+        defaults = {
+            # StudyMetadata
+            "study": "AOA",
+            "study_id": 1001,
+            # BiomechanicsMetadata
+            "linked_biomechanics": True,
+            "biomechanics_file": "test_biomech.xlsx",
+            "biomechanics_type": "Gonio",
+            "biomechanics_sample_rate": 100.0,
+            # AcousticsFile
+            "audio_file_name": "test_audio.bin",
+            "device_serial": "TEST001",
+            "firmware_version": 1,
+            "file_time": datetime(2024, 1, 1, 10, 0, 0),
+            "file_size_mb": 100.0,
+            "recording_date": datetime(2024, 1, 1),
+            "recording_time": datetime(2024, 1, 1, 10, 0, 0),
+            "knee": "left",
+            "maneuver": "walk",
+            "num_channels": 4,
+            "sample_rate": 46875.0,
+            "mic_1_position": "IPM",
+            "mic_2_position": "IPL",
+            "mic_3_position": "SPM",
+            "mic_4_position": "SPL",
+            # SynchronizationMetadata (all times in seconds as float)
+            "audio_sync_time": 5.0,
+            "bio_left_sync_time": 10.0,
+            "sync_offset": 5.0,
+            "aligned_audio_sync_time": 10.0,
+            "aligned_biomechanics_sync_time": 10.0,
+            "sync_method": "consensus",
+            "consensus_time": 5.0,
+            "rms_time": 5.0,
+            "onset_time": 5.0,
+            "freq_time": 5.0,
+            # Synchronization-specific
+            "sync_file_name": "test_sync.pkl",
+            "processing_date": datetime(2024, 1, 1, 12, 0, 0),
+            "processing_status": "success",
+            "sync_duration": 120.0,
+            "total_cycles_extracted": 0,
+            "clean_cycles": 0,
+            "outlier_cycles": 0,
+            "mean_cycle_duration_s": 0.0,
+            "median_cycle_duration_s": 0.0,
+            "min_cycle_duration_s": 0.0,
+            "max_cycle_duration_s": 0.0,
+            "mean_acoustic_auc": 0.0,
+        }
+        defaults.update(overrides)
+        return Synchronization(**defaults)
+    
+    return _create
+
+
+@pytest.fixture
+def synchronization_metadata_factory():
+    """Factory for creating SynchronizationMetadata test records.
+    
+    Usage:
+        sync_meta = synchronization_metadata_factory(audio_sync_time=10.0)
+    """
+    from datetime import datetime
+    from src.metadata import SynchronizationMetadata
+    
+    def _create(**overrides):
+        defaults = {
+            "study": "AOA",
+            "study_id": 1001,
+            "linked_biomechanics": True,
+            "biomechanics_file": "test.xlsx",
+            "biomechanics_type": "Gonio",
+            "biomechanics_sample_rate": 100.0,
+            "audio_file_name": "test_audio.wav",
+            "device_serial": "TEST001",
+            "firmware_version": 1,
+            "file_time": datetime.now(),
+            "file_size_mb": 10.0,
+            "recording_date": datetime.now(),
+            "recording_time": datetime.now(),
+            "knee": "left",
+            "maneuver": "walk",
+            "num_channels": 4,
+            "sample_rate": 46875.0,
+            "mic_1_position": "IPM",
+            "mic_2_position": "IPL",
+            "mic_3_position": "SPM",
+            "mic_4_position": "SPL",
+            # All time fields in seconds (float)
+            "audio_sync_time": 0.0,
+            "bio_left_sync_time": 0.0,
+            "sync_offset": 0.0,
+            "aligned_audio_sync_time": 0.0,
+            "aligned_biomechanics_sync_time": 0.0,
+            "sync_method": "consensus",
+            "consensus_time": 0.0,
+            "rms_time": 0.0,
+            "onset_time": 0.0,
+            "freq_time": 0.0,
+        }
+        defaults.update(overrides)
+        return SynchronizationMetadata(**defaults)
+    
+    return _create
+
+
+@pytest.fixture
+def audio_processing_factory():
+    """Factory for creating AudioProcessing test records.
+    
+    Usage:
+        audio = audio_processing_factory(processing_status="success")
+    """
+    from datetime import datetime
+    from src.metadata import AudioProcessing
+    
+    def _create(**overrides):
+        defaults = {
+            "study": "AOA",
+            "study_id": 1001,
+            "audio_file_name": "test_audio.bin",
+            "device_serial": "TEST001",
+            "firmware_version": 1,
+            "file_time": datetime(2024, 1, 1, 10, 0, 0),
+            "file_size_mb": 100.0,
+            "recording_date": datetime(2024, 1, 1),
+            "recording_time": datetime(2024, 1, 1, 10, 0, 0),
+            "knee": "left",
+            "maneuver": "walk",
+            "num_channels": 4,
+            "sample_rate": 46875.0,
+            "mic_1_position": "IPM",
+            "mic_2_position": "IPL",
+            "mic_3_position": "SPM",
+            "mic_4_position": "SPL",
+            "processing_date": datetime(2024, 1, 1, 12, 0, 0),
+            "processing_status": "success",
+            "duration_seconds": 120.0,
+        }
+        defaults.update(overrides)
+        return AudioProcessing(**defaults)
+    
+    return _create
+
+
+@pytest.fixture
+def movement_cycle_factory():
+    """Factory for creating MovementCycle test records.
+    
+    Usage:
+        cycle = movement_cycle_factory(cycle_number=1, cycle_duration_s=1.2)
+    """
+    from datetime import datetime
+    from src.metadata import MovementCycle
+    
+    def _create(**overrides):
+        defaults = {
+            # StudyMetadata
+            "study": "AOA",
+            "study_id": 1001,
+            # BiomechanicsMetadata
+            "linked_biomechanics": True,
+            "biomechanics_file": "test_biomech.xlsx",
+            "biomechanics_type": "Gonio",
+            "biomechanics_sample_rate": 100.0,
+            # AcousticsFile
+            "audio_file_name": "test_audio.bin",
+            "device_serial": "TEST001",
+            "firmware_version": 1,
+            "file_time": datetime(2024, 1, 1, 10, 0, 0),
+            "file_size_mb": 100.0,
+            "recording_date": datetime(2024, 1, 1),
+            "recording_time": datetime(2024, 1, 1, 10, 0, 0),
+            "knee": "left",
+            "maneuver": "walk",
+            "num_channels": 4,
+            "sample_rate": 46875.0,
+            "mic_1_position": "IPM",
+            "mic_2_position": "IPL",
+            "mic_3_position": "SPM",
+            "mic_4_position": "SPL",
+            # SynchronizationMetadata (times in seconds)
+            "audio_sync_time": 5.0,
+            "sync_offset": 5.0,
+            "sync_method": "consensus",
+            # AudioProcessing
+            "processing_date": datetime(2024, 1, 1, 12, 0, 0),
+            "processing_status": "success",
+            "duration_seconds": 120.0,
+            # MovementCycle-specific
+            "cycle_file": "test_cycle_01.pkl",
+            "cycle_number": 1,
+            "cycle_start_time": 0.0,
+            "cycle_end_time": 1.2,
+            "cycle_duration_s": 1.2,
+        }
+        defaults.update(overrides)
+        return MovementCycle(**defaults)
+    
+    return _create
