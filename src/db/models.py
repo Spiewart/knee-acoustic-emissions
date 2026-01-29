@@ -102,6 +102,9 @@ class AudioProcessingRecord(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     participant_id: Mapped[int] = mapped_column(Integer, ForeignKey("participants.id"), nullable=False)
 
+    # Recording-time FK: which biomechanics (if any) was recorded with this audio
+    biomechanics_import_id = mapped_column(Integer, ForeignKey("biomechanics_imports.id"), nullable=True)
+
     # File identification
     audio_file_name: Mapped[str] = mapped_column(String(255), nullable=False)
     device_serial: Mapped[str] = mapped_column(String(50), nullable=False)
@@ -197,6 +200,9 @@ class AudioProcessingRecord(Base):
 
     # Relationships
     participant: Mapped["ParticipantRecord"] = relationship("ParticipantRecord", back_populates="audio_processing")
+    biomechanics_import: Mapped["BiomechanicsImportRecord"] = relationship(
+        "BiomechanicsImportRecord", back_populates="audio_processing", foreign_keys=[biomechanics_import_id]
+    )
     synchronizations: Mapped[List["SynchronizationRecord"]] = relationship(
         "SynchronizationRecord", back_populates="audio_processing", cascade="all, delete-orphan"
     )
@@ -222,6 +228,9 @@ class BiomechanicsImportRecord(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     participant_id: Mapped[int] = mapped_column(Integer, ForeignKey("participants.id"), nullable=False)
+
+    # Recording-time FK: which audio (if any) was recorded with this biomechanics
+    audio_processing_id = mapped_column(Integer, ForeignKey("audio_processing.id"), nullable=True)
 
     # File identification
     biomechanics_file: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -262,6 +271,9 @@ class BiomechanicsImportRecord(Base):
 
     # Relationships
     participant: Mapped["ParticipantRecord"] = relationship("ParticipantRecord", back_populates="biomechanics_imports")
+    audio_processing: Mapped["AudioProcessingRecord"] = relationship(
+        "AudioProcessingRecord", back_populates="biomechanics_import", foreign_keys=[audio_processing_id]
+    )
     synchronizations: Mapped[List["SynchronizationRecord"]] = relationship(
         "SynchronizationRecord", back_populates="biomechanics_import", cascade="all, delete-orphan"
     )

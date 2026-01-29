@@ -15,7 +15,7 @@ from sqlalchemy.orm import sessionmaker
 
 from src.db import Base, ParticipantRecord, StudyRecord, init_db
 from src.db.repository import Repository
-from src.metadata import AudioProcessing, Synchronization
+from src.metadata import AudioProcessing, BiomechanicsImport, MovementCycle, Synchronization
 
 # Load environment variables from .env.local
 load_dotenv(Path(__file__).parent.parent / ".env.local")
@@ -78,33 +78,77 @@ def create_test_synchronization(**kwargs):
     defaults = {
         "study": "AOA",
         "study_id": 1012,
-        "linked_biomechanics": True,  # Required by Synchronization
-        "audio_file_name": "test_sync.bin",
-        "device_serial": "SN12346",
-        "firmware_version": 1,
-        "file_time": datetime(2024, 1, 2, 10, 0, 0),
-        "file_size_mb": 150.0,
-        "recording_date": datetime(2024, 1, 2),
-        "recording_time": datetime(2024, 1, 2, 10, 0, 0),
-        "knee": "right",
-        "maneuver": "walk",
         "pass_number": 1,  # Required for walk
-        "speed": "normal",  # Required for walk
-        "num_channels": 4,
-        "mic_1_position": "IPM",
-        "mic_2_position": "IPL",
-        "mic_3_position": "SPM",
-        "mic_4_position": "SPL",
-        "biomechanics_file": "test_biomech.txt",
-        "biomechanics_type": "Motion Analysis",
-        "biomechanics_sync_method": "stomp",
-        "biomechanics_sample_rate": 100.0,
+        "speed": "medium",  # Required for walk (removed "normal")
+        "audio_processing_id": None,  # Will be set by caller
+        "biomechanics_import_id": None,  # Will be set by caller
+        "audio_sync_time": 5.0,
+        "bio_left_sync_time": 10.0,
+        "bio_right_sync_time": None,
+        "sync_offset": 5.0,
+        "aligned_audio_sync_time": 10.0,
+        "aligned_biomechanics_sync_time": 10.0,
+        "sync_method": "consensus",
+        "consensus_methods": "rms,onset,freq",
+        "consensus_time": 5.0,
+        "rms_time": 5.0,
+        "onset_time": 5.1,
+        "freq_time": 4.9,
         "sync_file_name": "test_sync.pkl",
+        "sync_duration": 120.0,
+        "sync_qc_fail": False,
         "processing_date": datetime(2024, 1, 2, 12, 0, 0),
-        "sync_qc_fail": False,  # Add missing field
     }
     defaults.update(kwargs)
     return Synchronization(**defaults)
+
+
+def create_test_biomechanics_import(**kwargs):
+    """Helper to create BiomechanicsImport with all required fields."""
+    defaults = {
+        "study": "AOA",
+        "study_id": 1013,
+        "biomechanics_file": "test_biomech.xlsx",
+        "biomechanics_type": "Motion Analysis",
+        "knee": "left",
+        "maneuver": "walk",
+        "pass_number": 1,
+        "speed": "medium",
+        "biomechanics_sync_method": "stomp",
+        "biomechanics_sample_rate": 100.0,
+        "num_sub_recordings": 1,
+        "duration_seconds": 120.0,
+        "num_data_points": 12000,
+        "num_passes": 1,
+        "biomech_qc_version": "1.0",
+        "biomechanics_qc_fail": False,
+        "processing_date": datetime(2024, 1, 2, 12, 0, 0),
+    }
+    defaults.update(kwargs)
+    return BiomechanicsImport(**defaults)
+
+
+def create_test_movement_cycle(**kwargs):
+    """Helper to create MovementCycle with all required fields."""
+    defaults = {
+        "study": "AOA",
+        "study_id": 1014,
+        "cycle_file": "test_cycle.pkl",
+        "cycle_index": 0,
+        "is_outlier": False,
+        "start_time_s": 5.0,
+        "end_time_s": 7.5,
+        "duration_s": 2.5,
+        "audio_start_time": datetime(2024, 1, 2, 10, 0, 5),
+        "audio_end_time": datetime(2024, 1, 2, 10, 0, 7, 500000),
+        "bio_start_time": None,
+        "bio_end_time": None,
+        "biomechanics_qc_fail": False,
+        "sync_qc_fail": False,
+        "processing_date": datetime(2024, 1, 2, 12, 0, 0),
+    }
+    defaults.update(kwargs)
+    return MovementCycle(**defaults)
 
 
 
@@ -260,19 +304,47 @@ class TestRepository:
         assert participant1.id == participant2.id
 
     def test_save_audio_processing(self, repository):
-        """Test saving audio processing record."""
+        """Test saving audio processing record (without biomechanics FK)."""
         audio = create_test_audio_processing()
 
+        # Save without FK reference (recording alone)
         record = repository.save_audio_processing(audio)
         assert record.id is not None
         assert record.audio_file_name == "test_audio.bin"
         assert record.knee == "left"
         assert record.maneuver == "walk"
+        assert record.biomechanics_import_id is None
+
+    def test_save_audio_processing_with_biomechanics_fk(self, repository):
+        """Test saving audio processing record with biomechanics FK."""
+        # First save biomechanics import
+        biomech = create_test_biomechanics_import(knee="left", maneuver="walk")
+        biomech_record = repository.save_biomechanics_import(biomech)
+
+        # Now save audio with FK reference
+        audio = create_test_audio_processing()
+        record = repository.save_audio_processing(
+            audio,
+            biomechanics_import_id=biomech_record.id
+        )
+
+        assert record.id is not None
+        assert record.audio_file_name == "test_audio.bin"
+        assert record.biomechanics_import_id == biomech_record.id
 
     def test_save_synchronization(self, repository):
-        """Test saving synchronization record."""
+        """Test saving synchronization record with FK references."""
+        # First save audio and biomechanics records
+        audio = create_test_audio_processing(maneuver="walk")
+        audio_record = repository.save_audio_processing(audio)
+
+        biomech = create_test_biomechanics_import(maneuver="walk")
+        biomech_record = repository.save_biomechanics_import(biomech)
+
+        # Now save sync with FK references
         sync = create_test_synchronization(
-            audio_file_name="test_sync_audio.bin",
+            pass_number=1,
+            speed="medium",
             audio_sync_time=5.0,
             bio_left_sync_time=10.0,
             sync_offset=5.0,
@@ -286,9 +358,14 @@ class TestRepository:
             sync_duration=120.0,
         )
 
-        record = repository.save_synchronization(sync)
+        record = repository.save_synchronization(
+            sync,
+            audio_processing_id=audio_record.id,
+            biomechanics_import_id=biomech_record.id
+        )
         assert record.id is not None
-        assert record.audio_file_name == "test_sync_audio.bin"
+        assert record.audio_processing_id == audio_record.id
+        assert record.biomechanics_import_id == biomech_record.id
         assert record.sync_method == "consensus"
         assert record.sync_offset == 5.0
 
@@ -322,3 +399,83 @@ class TestRepository:
         left_records = repository.get_audio_processing_records(knee="left")
         assert len(left_records) == 1
         assert left_records[0].knee == "left"
+    def test_save_biomechanics_import(self, repository):
+        """Test saving biomechanics import record."""
+        biomech = create_test_biomechanics_import()
+        record = repository.save_biomechanics_import(biomech)
+
+        assert record.id is not None
+        assert record.biomechanics_file == "test_biomech.xlsx"
+        assert record.biomechanics_type == "Motion Analysis"
+        assert record.knee == "left"
+        assert record.maneuver == "walk"
+        assert record.audio_processing_id is None
+
+    def test_save_biomechanics_import_with_audio_fk(self, repository):
+        """Test saving biomechanics import with audio FK."""
+        # First save audio
+        audio = create_test_audio_processing(maneuver="walk")
+        audio_record = repository.save_audio_processing(audio)
+
+        # Now save biomech with FK reference
+        biomech = create_test_biomechanics_import(maneuver="walk")
+        record = repository.save_biomechanics_import(
+            biomech,
+            audio_processing_id=audio_record.id
+        )
+
+        assert record.id is not None
+        assert record.biomechanics_file == "test_biomech.xlsx"
+        assert record.audio_processing_id == audio_record.id
+
+    def test_save_movement_cycle(self, repository):
+        """Test saving movement cycle record with FKs."""
+        # First save audio record
+        audio = create_test_audio_processing()
+        audio_record = repository.save_audio_processing(audio)
+
+        # Now save cycle with audio FK
+        cycle = create_test_movement_cycle()
+        record = repository.save_movement_cycle(
+            cycle,
+            audio_processing_id=audio_record.id
+        )
+
+        assert record.id is not None
+        assert record.audio_processing_id == audio_record.id
+        assert record.cycle_file == "test_cycle.pkl"
+        assert record.cycle_index == 0
+        assert record.biomechanics_import_id is None
+        assert record.synchronization_id is None
+
+    def test_save_movement_cycle_with_all_fks(self, repository):
+        """Test saving movement cycle with all FK references."""
+        # Create and save audio
+        audio = create_test_audio_processing(maneuver="walk")
+        audio_record = repository.save_audio_processing(audio)
+
+        # Create and save biomechanics
+        biomech = create_test_biomechanics_import(maneuver="walk")
+        biomech_record = repository.save_biomechanics_import(biomech)
+
+        # Create and save synchronization
+        sync = create_test_synchronization()
+        sync_record = repository.save_synchronization(
+            sync,
+            audio_processing_id=audio_record.id,
+            biomechanics_import_id=biomech_record.id
+        )
+
+        # Now save cycle with all FKs
+        cycle = create_test_movement_cycle()
+        record = repository.save_movement_cycle(
+            cycle,
+            audio_processing_id=audio_record.id,
+            biomechanics_import_id=biomech_record.id,
+            synchronization_id=sync_record.id
+        )
+
+        assert record.id is not None
+        assert record.audio_processing_id == audio_record.id
+        assert record.biomechanics_import_id == biomech_record.id
+        assert record.synchronization_id == sync_record.id

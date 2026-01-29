@@ -13,7 +13,6 @@ from sqlalchemy.orm import Session, joinedload
 from src.db.models import (
     AudioProcessingRecord,
     BiomechanicsImportRecord,
-    MovementCycleDetailRecord,
     MovementCycleRecord,
     ParticipantRecord,
     StudyRecord,
