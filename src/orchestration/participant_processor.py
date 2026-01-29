@@ -1,0 +1,1061 @@
+"""Object-oriented participant processing with clear state management."""
+
+import json
+import logging
+import re
+from dataclasses import dataclass, field
+from datetime import datetime
+from pathlib import Path
+from typing import Literal, Optional, cast
+
+import pandas as pd
+
+from src.biomechanics.importers import import_biomechanics_recordings
+from src.metadata import AudioProcessing, BiomechanicsImport, Synchronization
+from src.orchestration.processing_log import (
+    KneeProcessingLog,
+    ManeuverProcessingLog,
+    _infer_biomechanics_type_from_study,
+    create_audio_record_from_data,
+    create_biomechanics_record_from_data,
+    create_cycles_record_from_data,
+    create_sync_record_from_data,
+)
+from src.synchronization.sync import load_audio_data
+
+# Maneuver folder naming variants
+_MANEUVER_ALIAS_MAP: dict[str, set[str]] = {
+    "walk": {"walking", "walk"},
+    "sit_to_stand": {
+        "sit-stand",
+        "sit-to-stand",
+        "sit_to_stand",
+        "sitstand",
+        "sit to stand",
+        "sittostand",
+    },
+    "flexion_extension": {
+        "flexion-extension",
+        "flexion_extension",
+        "flexion extension",
+        "flexionextension",
+    },
+}
+
+
+def _normalize_folder_name(name: str) -> str:
+    """Normalize maneuver folder names to compare variants."""
+    name = name.lower()
+    name = name.replace("_", "-").replace(" ", "-")
+    name = re.sub(r"-+", "-", name)
+    return name
+
+
+@dataclass
+class AudioData:
+    """Encapsulates audio processing state for a maneuver."""
+    pkl_path: Path
+    df: Optional[pd.DataFrame] = None
+    metadata: Optional[dict] = None
+    record: Optional[AudioProcessing] = None
+
+
+@dataclass
+class BiomechanicsData:
+    """Encapsulates biomechanics processing state for a maneuver."""
+    file_path: Path
+    recordings: list = field(default_factory=list)
+    record: Optional[BiomechanicsImport] = None
+
+
+@dataclass
+class SyncData:
+    """Encapsulates a single synchronized pass."""
+    output_path: Path
+    df: pd.DataFrame
+    stomp_times: tuple  # (audio_stomp, bio_left, bio_right, detection_results)
+    record: Optional[Synchronization] = None
+    pass_number: Optional[int] = None  # For walk maneuvers
+    speed: Optional[str] = None  # For walk maneuvers
+
+
+@dataclass
+class CycleData:
+    """Encapsulates cycle QC results for a sync file."""
+    synced_file_path: Path
+    output_dir: Optional[Path] = None
+    record: Optional[Synchronization] = None  # Synchronization record with cycle details
+
+
+
+class ManeuverProcessor:
+    """Processes a single maneuver (walk/sit-to-stand/flexion-extension) for a knee."""
+
+    def __init__(
+        self,
+        maneuver_dir: Path,
+        maneuver_key: Literal["walk", "sit_to_stand", "flexion_extension"],
+        knee_side: Literal["Left", "Right"],
+        study_id: str,
+        biomechanics_file: Path,
+        biomechanics_type: Optional[str] = None,
+    ):
+        self.maneuver_dir = maneuver_dir
+        self.maneuver_key = maneuver_key
+        self.knee_side = knee_side
+        self.study_id = study_id
+        self.biomechanics_file = biomechanics_file
+        self.biomechanics_type = biomechanics_type
+
+        # Processing state
+        self.audio: Optional[AudioData] = None
+        self.biomechanics: Optional[BiomechanicsData] = None
+        self.synced_data: list[SyncData] = []
+        self.cycle_data: list[CycleData] = []
+        self.log: Optional[ManeuverProcessingLog] = None
+
+    def process_bin_stage(self) -> bool:
+        """Read .bin file, run QC, add frequency, and produce *_with_freq.pkl.
+
+        Optimization: If *_with_freq.pkl already exists and is valid, reuse it.
+        This significantly speeds up re-runs on the same data.
+        """
+        try:
+            logging.info(f"Processing {self.knee_side} {self.maneuver_key} bin stage")
+
+            # Find .bin file
+            bin_path = self._find_bin_file()
+            if not bin_path or not bin_path.exists():
+                logging.error(f".bin file not found in {self.maneuver_dir}")
+                return False
+
+            # Create outputs directory
+            audio_base_name = bin_path.stem
+            outputs_dir = self.maneuver_dir / f"{audio_base_name}_outputs"
+            outputs_dir.mkdir(exist_ok=True)
+
+            # Check if *_with_freq.pkl already exists (optimization for re-runs)
+            audio_pkl_path = outputs_dir / f"{audio_base_name}_with_freq.pkl"
+            if audio_pkl_path.exists():
+                logging.debug(f"Using existing frequency-augmented pickle: {audio_pkl_path}")
+                try:
+                    audio_df = load_audio_data(audio_pkl_path)
+                    audio_metadata = self._load_audio_metadata(audio_pkl_path)
+
+                    # Create audio record (minimal, since data was already processed)
+                    self.audio = AudioData(
+                        pkl_path=audio_pkl_path,
+                        df=audio_df,
+                        metadata=audio_metadata,
+                    )
+
+                    # Ensure maneuver is in metadata
+                    if audio_metadata is None:
+                        audio_metadata = {}
+                    audio_metadata["maneuver"] = self.maneuver_key
+
+                    self.audio.record = create_audio_record_from_data(
+                        audio_file_name=audio_pkl_path.stem,
+                        audio_df=audio_df,
+                        audio_bin_path=bin_path,
+                        audio_pkl_path=audio_pkl_path,
+                        metadata=audio_metadata,
+                        biomechanics_type=None,
+                    )
+
+                    return True
+                except Exception as e:
+                    logging.debug(f"Could not load existing pickle, will re-process: {e}")
+                    # Fall through to re-processing
+
+            # Read .bin file (creates base pkl and meta.json)
+            from src.audio.readers import read_audio_board_file
+            audio_df = read_audio_board_file(str(bin_path), str(outputs_dir))
+
+            # Check that base pkl was created
+            base_pkl = outputs_dir / f"{audio_base_name}.pkl"
+            meta_json = outputs_dir / f"{audio_base_name}_meta.json"
+            if not base_pkl.exists():
+                logging.error(f"Base pickle not created after reading {bin_path}")
+                return False
+
+            # Run raw audio QC
+            from src.audio.raw_qc import (
+                merge_bad_intervals,
+                run_raw_audio_qc,
+                run_raw_audio_qc_per_mic,
+            )
+            dropout_intervals, artifact_intervals = run_raw_audio_qc(audio_df)
+            bad_intervals = merge_bad_intervals(dropout_intervals, artifact_intervals)
+            per_mic_bad_intervals = run_raw_audio_qc_per_mic(audio_df)
+
+            # Add instantaneous frequency
+            from src.audio.instantaneous_frequency import add_instantaneous_frequency
+            metadata = {}
+            if meta_json.exists():
+                try:
+                    with open(meta_json, "r") as f:
+                        metadata = json.load(f)
+                except Exception as e:
+                    logging.warning(f"Failed to load metadata from {meta_json}: {e}")
+
+            fs = metadata.get("fs", 46875.0)  # Default sample rate
+            audio_df = add_instantaneous_frequency(audio_df, fs)
+
+            # Save frequency-augmented pickle
+            audio_pkl_path = outputs_dir / f"{audio_base_name}_with_freq.pkl"
+            audio_df.to_pickle(audio_pkl_path)
+
+            # Load metadata if available
+            audio_metadata = self._load_audio_metadata(audio_pkl_path)
+
+            # Format QC data for audio record
+            # Convert intervals to lists for Pydantic validation
+            qc_data = {
+                "qc_fail_segments": list(bad_intervals) if bad_intervals else [],
+                "qc_signal_dropout": bool(dropout_intervals),
+                "qc_signal_dropout_segments": list(dropout_intervals) if dropout_intervals else [],
+                "qc_artifact": bool(artifact_intervals),
+                "qc_artifact_segments": list(artifact_intervals) if artifact_intervals else [],
+            }
+
+            # Add per-mic QC results
+            for ch_num in range(1, 5):
+                ch_name = f"ch{ch_num}"
+                if ch_name in per_mic_bad_intervals and per_mic_bad_intervals[ch_name]:
+                    qc_data[f"qc_signal_dropout_ch{ch_num}"] = True
+                    qc_data[f"qc_signal_dropout_segments_ch{ch_num}"] = list(per_mic_bad_intervals[ch_name])
+
+            self.audio = AudioData(
+                pkl_path=audio_pkl_path,
+                df=audio_df,
+                metadata=audio_metadata,
+            )
+
+            # Ensure maneuver is in metadata
+            if audio_metadata is None:
+                audio_metadata = {}
+            audio_metadata["maneuver"] = self.maneuver_key
+
+            # Create audio record with QC data
+            self.audio.record = create_audio_record_from_data(
+                audio_file_name=audio_pkl_path.stem,
+                audio_df=audio_df,
+                audio_bin_path=bin_path,
+                audio_pkl_path=audio_pkl_path,
+                metadata=audio_metadata,
+                biomechanics_type=None,  # Not yet linked
+                qc_data=qc_data,
+            )
+
+            return True
+        except Exception as e:
+            logging.error(f"Bin stage failed for {self.knee_side} {self.maneuver_key}: {e}", exc_info=True)
+            return False
+
+    def process_sync_stage(self) -> bool:
+        """Synchronize audio with biomechanics."""
+        # Load audio state if not already loaded (handles resuming from sync)
+        if not self.audio or self.audio.df is None:
+            if not self._load_existing_audio_state():
+                logging.error("Audio state must be available to run sync stage")
+                return False
+
+        try:
+            logging.info(f"Processing {self.knee_side} {self.maneuver_key} sync stage")
+
+            # Load biomechanics
+            self.biomechanics = self._load_biomechanics()
+            if not self.biomechanics.recordings:
+                logging.warning(f"No biomechanics recordings found for {self.knee_side} {self.maneuver_key}")
+                return True  # Not a failure, just no biomechanics
+
+            # Sync each recording
+            for recording in self.biomechanics.recordings:
+                sync_result = self._sync_recording(recording)
+                if sync_result:
+                    self.synced_data.append(sync_result)
+
+            # Update audio record with biomechanics info
+            if self.audio.record and self.biomechanics.recordings:
+                self.audio.record.linked_biomechanics = True
+                self.audio.record.biomechanics_file = str(self.biomechanics_file)
+                self.audio.record.biomechanics_type = self.biomechanics_type
+                self.audio.record.log_updated = datetime.now()
+                if self.biomechanics.recordings:
+                    first_rec = self.biomechanics.recordings[0]
+                    # Try to infer sample rate from the biomechanics data
+                    try:
+                        # Check if data is a BiomechanicsData object with a TIME column
+                        if hasattr(first_rec, "data") and first_rec.data is not None:
+                            data_obj = first_rec.data
+                            # BiomechanicsData is a dataclass with a 'data' DataFrame attribute
+                            if hasattr(data_obj, "data"):
+                                time_col = data_obj.data.get("TIME", None)
+                            else:
+                                # data_obj is a DataFrame
+                                time_col = data_obj.get("TIME", None) if hasattr(data_obj, "get") else None
+
+                            if time_col is not None and len(time_col) > 1:
+                                time_diffs = time_col.diff().dropna()
+                                if len(time_diffs) > 0:
+                                    avg_diff_sec = time_diffs.mean().total_seconds()
+                                    if avg_diff_sec > 0:
+                                        self.audio.record.biomechanics_sample_rate = 1.0 / avg_diff_sec
+                        elif hasattr(first_rec, "sample_rate"):
+                            self.audio.record.biomechanics_sample_rate = float(first_rec.sample_rate)
+                    except Exception as e:
+                        logging.debug(f"Could not determine biomechanics sample rate: {e}")
+                # Set sync method based on biomechanics type
+                if self.biomechanics_type == "Gonio":
+                    self.audio.record.biomechanics_sync_method = "flick"
+                else:
+                    self.audio.record.biomechanics_sync_method = "stomp"
+
+            # Create biomechanics record
+            self.biomechanics.record = create_biomechanics_record_from_data(
+                biomechanics_file=self.biomechanics_file,
+                recordings=self.biomechanics.recordings,
+                sheet_name=f"{self.maneuver_key}_data",
+                maneuver=self.maneuver_key,
+                biomechanics_type=self.biomechanics_type,
+            )
+
+            # Create Synchronization records from SyncData objects
+            for sync_data in self.synced_data:
+                # Always create/update sync record during sync stage to ensure
+                # detection_results (including method_agreement_span) are current
+                # Unpack stomp_times tuple: (audio_stomp, bio_left, bio_right, detection_results)
+                audio_stomp, bio_left, bio_right, detection_results = sync_data.stomp_times
+
+                # Prepare kwargs for create_sync_record_from_data
+                sync_kwargs = {
+                    "sync_file_name": sync_data.output_path.stem,
+                    "synced_df": sync_data.df,
+                    "audio_stomp_time": audio_stomp,
+                    "bio_left_stomp_time": bio_left,
+                    "bio_right_stomp_time": bio_right,
+                    "knee_side": self.knee_side,
+                    "pass_number": sync_data.pass_number,
+                    "speed": sync_data.speed,
+                    "detection_results": detection_results,
+                    "audio_record": self.audio.record if self.audio else None,
+                    "biomech_record": self.biomechanics.record,
+                    "metadata": {},
+                }
+                # Ensure biomechanics_type is set (either from participant or inferred from study)
+                biomechanics_type = self.biomechanics_type if self.biomechanics_type is not None else _infer_biomechanics_type_from_study(self.study_id)
+                sync_kwargs["biomechanics_type"] = biomechanics_type
+
+                sync_data.record = create_sync_record_from_data(**sync_kwargs)
+
+            return True
+        except Exception as e:
+            logging.error(f"Sync stage failed for {self.knee_side} {self.maneuver_key}: {e}")
+            return False
+
+    def process_cycles_stage(self) -> bool:
+        """Run movement cycle extraction and QC on all synced files.
+
+        Extracts movement cycles from synchronized data, applies quality control
+        checks (biomechanics ROM, acoustic energy, audio QC integration), and
+        generates cycle-level records with per-cycle details.
+
+        If resuming from cycles stage (synced_data is empty), loads synced files
+        from disk and processes them.
+
+        Returns:
+            True if successful, False otherwise
+        """
+        # Load synced files from disk if needed (handles resuming from cycles)
+        if not self.synced_data:
+            if not self._load_existing_synced_data():
+                logging.warning(f"No synced data to run cycles on for {self.knee_side} {self.maneuver_key}")
+                return True  # Not a failure
+
+        try:
+            from src.orchestration.processing_log import create_cycles_record_from_data
+            from src.synchronization.quality_control import perform_sync_qc
+
+            logging.info(f"Processing {self.knee_side} {self.maneuver_key} cycles stage")
+
+            # Process each synced file
+            for sync_data in self.synced_data:
+                try:
+                    # Determine maneuver and speed from sync_data
+                    maneuver = self.maneuver_key
+
+                    # Extract speed from output path if available (for walking)
+                    speed = None
+                    if maneuver == "walk":
+                        # Try to infer from filename: left_walk_Pass001_slow_Synced.pkl
+                        filename = sync_data.output_path.stem
+                        for s in ["slow", "medium", "fast"]:
+                            if s in filename.lower():
+                                speed = s
+                                break
+
+                    # Determine output directory for cycle files
+                    output_dir = sync_data.output_path.parent
+
+                    # Run complete QC pipeline (extraction + QC)
+                    clean_cycles, outlier_cycles, qc_output_dir = perform_sync_qc(
+                        synced_pkl_path=sync_data.output_path,
+                        output_dir=output_dir,
+                        maneuver=maneuver,
+                        speed=speed,
+                        acoustic_threshold=100.0,  # Default threshold
+                        create_plots=True,
+                        bad_audio_segments=None,  # Will load from processing log
+                    )
+
+                    logging.info(
+                        f"Extracted {len(clean_cycles)} clean and {len(outlier_cycles)} outlier cycles "
+                        f"from {sync_data.output_path.name}"
+                    )
+
+                    # Create cycles record with cycle details
+                    cycles_record = create_cycles_record_from_data(
+                        sync_file_name=sync_data.output_path.stem,
+                        clean_cycles=clean_cycles,
+                        outlier_cycles=outlier_cycles,
+                        output_dir=qc_output_dir,
+                        plots_created=True,
+                        error=None,
+                        audio_record=self.audio.record if self.audio else None,
+                        biomech_record=self.biomechanics.record if self.biomechanics else None,
+                        sync_record=sync_data.record,
+                        metadata={},
+                        study="AOA",  # TODO: Get from context
+                        study_id=int(self.study_id),
+                    )
+
+                    # Store cycle record in CycleData
+                    cycle_data = CycleData(
+                        synced_file_path=sync_data.output_path,
+                        output_dir=qc_output_dir,
+                        record=cycles_record,
+                    )
+                    self.cycle_data.append(cycle_data)
+
+                except Exception as e:
+                    logging.error(f"Failed to process cycles for {sync_data.output_path}: {e}", exc_info=True)
+                    # Continue processing other files
+                    continue
+
+            return True
+        except Exception as e:
+            logging.error(f"Cycles stage failed for {self.knee_side} {self.maneuver_key}: {e}", exc_info=True)
+            return False
+
+    def _load_existing_synced_data(self) -> bool:
+        """Load existing synced files when resuming from cycles stage.
+
+        Returns:
+            True if synced files were found and loaded, False otherwise
+        """
+        try:
+            synced_dir = self.maneuver_dir / "Synced"
+            if not synced_dir.exists():
+                return False
+
+            # Find all synced pickle files
+            synced_files = list(synced_dir.glob("*.pkl"))
+            if not synced_files:
+                return False
+
+            # Load each synced file
+            for synced_file in synced_files:
+                try:
+                    df = pd.read_pickle(synced_file)
+                    sync_data = SyncData(
+                        output_path=synced_file,
+                        df=df,
+                        stomp_times=(0.0, 0.0, 0.0, {}),  # Placeholder
+                    )
+                    self.synced_data.append(sync_data)
+                except Exception as e:
+                    logging.warning(f"Failed to load synced file {synced_file}: {e}")
+
+            if self.synced_data:
+                logging.info(f"Loaded {len(self.synced_data)} synced file(s) from {synced_dir}")
+                return True
+
+            return False
+        except Exception as e:
+            logging.error(f"Failed to load existing synced data: {e}")
+            return False
+
+    def save_logs(self) -> bool:
+        """Update and save processing logs."""
+        try:
+            # Get or create maneuver log
+            self.log = ManeuverProcessingLog.get_or_create(
+                study_id=self.study_id,
+                knee_side=self.knee_side,
+                maneuver=self.maneuver_key,
+                maneuver_directory=self.maneuver_dir,
+            )
+
+            # Update audio record
+            if self.audio and self.audio.record:
+                self.log.update_audio_record(self.audio.record)
+
+            # Update biomechanics record
+            if self.biomechanics and self.biomechanics.record:
+                self.log.update_biomechanics_record(self.biomechanics.record)
+
+            # Update synchronization records
+            for sync in self.synced_data:
+                if sync.record:
+                    self.log.add_synchronization_record(sync.record)
+
+            # Update movement cycles records
+            for cycle in self.cycle_data:
+                if cycle.record:
+                    self.log.add_movement_cycles_record(cycle.record)
+
+            # Save to Excel
+            self.log.save_to_excel()
+            return True
+        except Exception as e:
+            logging.error(f"Failed to save logs: {e}")
+            return False
+
+    def _load_existing_audio_state(self) -> bool:
+        """Load existing audio state when resuming from a later stage.
+
+        This handles the case where bin stage has already been completed
+        and we're resuming from sync or cycles. Loads the audio pickle
+        and metadata from disk.
+
+        Returns:
+            True if audio state was successfully loaded, False otherwise
+        """
+        try:
+            audio_pkl_path = self._find_audio_pickle()
+            if not audio_pkl_path or not audio_pkl_path.exists():
+                logging.warning(f"No existing audio pickle found in {self.maneuver_dir}")
+                return False
+
+            # Load audio data
+            audio_df = load_audio_data(audio_pkl_path)
+
+            # Load metadata if available
+            audio_metadata = self._load_audio_metadata(audio_pkl_path)
+
+            # Create AudioData with loaded state
+            self.audio = AudioData(
+                pkl_path=audio_pkl_path,
+                df=audio_df,
+                metadata=audio_metadata,
+            )
+
+            # Ensure maneuver is in metadata
+            if audio_metadata is None:
+                audio_metadata = {}
+            audio_metadata["maneuver"] = self.maneuver_key
+
+            # Create audio record
+            self.audio.record = create_audio_record_from_data(
+                audio_file_name=audio_pkl_path.stem,
+                audio_df=audio_df,
+                audio_bin_path=self._find_bin_file(),
+                audio_pkl_path=audio_pkl_path,
+                metadata=audio_metadata,
+                biomechanics_type=None,  # Will be linked during sync
+            )
+
+            logging.info(f"Loaded existing audio state for {self.knee_side} {self.maneuver_key}")
+            return True
+        except Exception as e:
+            logging.error(f"Failed to load existing audio state: {e}")
+            return False
+
+    def _find_audio_pickle(self) -> Optional[Path]:
+        """Find the audio pickle file."""
+        # Look in outputs subdirectories first
+        for pkl in self.maneuver_dir.glob("*_outputs/*_with_freq.pkl"):
+            return pkl
+        # Fall back to direct search in maneuver dir
+        for pkl in self.maneuver_dir.glob("*_with_freq.pkl"):
+            return pkl
+        return None
+
+    def _find_bin_file(self) -> Optional[Path]:
+        """Find the .bin audio file."""
+        for bin_file in self.maneuver_dir.glob("*.bin"):
+            return bin_file
+        return None
+
+    def _load_audio_metadata(self, pkl_path: Path) -> Optional[dict]:
+        """Load audio metadata from JSON if available."""
+        meta_path = pkl_path.parent / f"{pkl_path.stem.replace('_with_freq', '')}_meta.json"
+        if meta_path.exists():
+            try:
+                with open(meta_path) as f:
+                    return json.load(f)
+            except Exception as e:
+                logging.warning(f"Failed to load audio metadata: {e}")
+        return None
+
+    def _load_biomechanics(self) -> BiomechanicsData:
+        """Load biomechanics recordings."""
+        recordings = []
+        try:
+            if self.maneuver_key == "walk":
+                for speed in ["slow", "medium", "fast"]:
+                    speed_recordings = import_biomechanics_recordings(
+                        biomechanics_file=self.biomechanics_file,
+                        maneuver=self.maneuver_key,
+                        speed=speed,
+                    )
+                    recordings.extend(speed_recordings)
+            else:
+                recordings = import_biomechanics_recordings(
+                    biomechanics_file=self.biomechanics_file,
+                    maneuver=self.maneuver_key,
+                )
+        except Exception as e:
+            logging.warning(f"Failed to load biomechanics recordings: {e}")
+
+        return BiomechanicsData(file_path=self.biomechanics_file, recordings=recordings)
+
+    def _load_event_data(self) -> Optional[pd.DataFrame]:
+        """Load event metadata from biomechanics file.
+
+        Returns:
+            DataFrame with event metadata, or None if loading fails
+        """
+        try:
+            from src.orchestration.participant import _load_event_data
+            return _load_event_data(
+                biomechanics_file=self.biomechanics_file,
+                maneuver_key=self.maneuver_key,
+            )
+        except Exception as e:
+            logging.warning(f"Failed to load event metadata: {e}")
+            return None
+
+    def _sync_recording(self, recording) -> Optional[SyncData]:
+        """Synchronize a single recording with audio using stomp detection.
+
+        Performs multi-method stomp detection (RMS, onset, frequency) on audio,
+        retrieves biomechanics stomp times from event metadata, and synchronizes
+        the data streams by aligning their stomp times.
+
+        Args:
+            recording: BiomechanicsRecording object with biomechanics data and metadata
+
+        Returns:
+            SyncData object containing synchronized DataFrame and stomp times, or None on failure
+        """
+        try:
+            from src.orchestration.participant import (
+                _get_foot_from_knee_side,
+                _trim_and_rename_biomechanics_columns,
+            )
+            from src.synchronization.sync import (
+                get_audio_stomp_time,
+                get_bio_end_time,
+                get_bio_start_time,
+                get_left_stomp_time,
+                get_right_stomp_time,
+                get_stomp_time,
+                plot_stomp_detection,
+                sync_audio_with_biomechanics,
+            )
+
+            if not self.audio or self.audio.df is None:
+                logging.warning("No audio data available for syncing")
+                return None
+
+            audio_df = self.audio.df
+            bio_df = recording.data
+
+            # Load event metadata from biomechanics file
+            event_meta_data = self._load_event_data()
+            if event_meta_data is None:
+                logging.warning(f"No event metadata available for {self.maneuver_key}")
+                return None
+
+            # Get both stomp times from biomechanics (for dual-knee disambiguation)
+            right_stomp_time = get_right_stomp_time(event_meta_data)
+            left_stomp_time = get_left_stomp_time(event_meta_data)
+
+            # Get recorded knee
+            recorded_knee = "left" if self.knee_side == "Left" else "right"
+
+            # Get audio stomp time with multi-method detection and consensus
+            try:
+                study_name = self.biomechanics_file.stem.split("_")[0]
+            except Exception:
+                study_name = None
+
+            audio_stomp_time, detection_results = get_audio_stomp_time(
+                audio_df,
+                recorded_knee=recorded_knee,
+                right_stomp_time=right_stomp_time,
+                left_stomp_time=left_stomp_time,
+                return_details=True,
+                biomechanics_type=self.biomechanics_type,
+                study_name=study_name,
+            )
+
+            # Get biomechanics stomp time for the recorded knee
+            bio_stomp_time = get_stomp_time(
+                bio_meta=event_meta_data,
+                foot=_get_foot_from_knee_side(self.knee_side),
+            )
+
+            # Get pass number and speed from recording
+            pass_number = getattr(recording, 'pass_number', None)
+            speed = getattr(recording, 'speed', None)
+
+            # Normalize speed (medium -> normal for event metadata lookups)
+            normalized_speed = None
+            if speed is not None:
+                event_speed_map = {
+                    "slow": "slow",
+                    "medium": "normal",
+                    "normal": "normal",
+                    "fast": "fast",
+                }
+                normalized_speed = event_speed_map.get(speed, speed)
+
+            # Get maneuver timing for clipping
+            if self.maneuver_key == "walk":
+                bio_start_time = get_bio_start_time(
+                    event_metadata=event_meta_data,
+                    maneuver=self.maneuver_key,
+                    speed=normalized_speed,
+                    pass_number=pass_number,
+                )
+                bio_end_time = get_bio_end_time(
+                    event_metadata=event_meta_data,
+                    maneuver=self.maneuver_key,
+                    speed=normalized_speed,
+                    pass_number=pass_number,
+                )
+            else:
+                bio_start_time = get_bio_start_time(
+                    event_metadata=event_meta_data,
+                    maneuver=self.maneuver_key,
+                    speed=None,
+                    pass_number=None,
+                )
+                bio_end_time = get_bio_end_time(
+                    event_metadata=event_meta_data,
+                    maneuver=self.maneuver_key,
+                    speed=None,
+                    pass_number=None,
+                )
+
+            # Synchronize audio with biomechanics
+            synced_df = sync_audio_with_biomechanics(
+                audio_stomp_time=audio_stomp_time,
+                bio_stomp_time=bio_stomp_time,
+                audio_df=audio_df,
+                bio_df=bio_df,
+                bio_start_time=bio_start_time,
+                bio_end_time=bio_end_time,
+                maneuver_key=self.maneuver_key,
+                knee_side=self.knee_side,
+                pass_number=pass_number,
+                speed=speed,
+            )
+
+            # Trim and rename biomechanics columns for knee laterality
+            trimmed_df = _trim_and_rename_biomechanics_columns(synced_df, self.knee_side)
+
+            # Generate output path
+            output_path = self._generate_sync_output_path(recording)
+
+            # Save synchronized data to disk
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            trimmed_df.to_pickle(output_path)
+            logging.debug(f"Saved synchronized data to {output_path}")
+
+            # Generate stomp visualization
+            try:
+                plot_stomp_detection(
+                    audio_df, bio_df, trimmed_df,
+                    audio_stomp_time, left_stomp_time, right_stomp_time,
+                    output_path, detection_results
+                )
+                logging.debug(f"Saved stomp detection visualization for {output_path.stem}")
+            except Exception as e:
+                logging.debug(f"Could not generate stomp visualization: {e}")
+
+            # Return SyncData with actual stomp times and detection results
+            stomp_times = (audio_stomp_time, left_stomp_time, right_stomp_time, detection_results)
+
+            return SyncData(
+                output_path=output_path,
+                df=trimmed_df,
+                stomp_times=stomp_times,
+                pass_number=pass_number,
+                speed=speed,
+            )
+
+        except Exception as e:
+            logging.error(f"Failed to sync recording: {e}", exc_info=True)
+            return None
+
+    def _generate_sync_output_path(self, recording) -> Path:
+        """Generate output path for synchronized data."""
+        synced_dir = self.maneuver_dir / "synced"
+        synced_dir.mkdir(exist_ok=True)
+
+        # Generate filename based on recording metadata
+        speed = getattr(recording, "speed", None)
+        pass_num = getattr(recording, "pass_number", None)
+
+        if speed and pass_num:
+            filename = f"{self.knee_side}_{self.maneuver_key}_Pass{pass_num:04d}_{speed}.pkl"
+        else:
+            filename = f"{self.knee_side}_{self.maneuver_key}.pkl"
+
+        return synced_dir / filename
+
+
+class KneeProcessor:
+    """Processes all maneuvers for a single knee."""
+
+    def __init__(
+        self,
+        knee_dir: Path,
+        knee_side: Literal["Left", "Right"],
+        study_id: str,
+        biomechanics_file: Path,
+        biomechanics_type: Optional[str] = None,
+    ):
+        self.knee_dir = knee_dir
+        self.knee_side = knee_side
+        self.study_id = study_id
+        self.biomechanics_file = biomechanics_file
+        self.biomechanics_type = biomechanics_type
+
+        self.maneuver_processors: dict[str, ManeuverProcessor] = {}
+        self.knee_log: Optional[KneeProcessingLog] = None
+
+    def process(
+        self,
+        entrypoint: Literal["bin", "sync", "cycles"] = "sync",
+        maneuver: Optional[str] = None,
+    ) -> bool:
+        """Process all maneuvers for this knee."""
+        try:
+            # Normalize maneuver if provided (convert CLI shorthand like "fe" to internal format)
+            if maneuver:
+                from src.orchestration.participant import _normalize_maneuver
+                maneuver = _normalize_maneuver(maneuver)
+            maneuvers_to_process = [maneuver] if maneuver else ["walk", "sit_to_stand", "flexion_extension"]
+
+            for maneuver_key in maneuvers_to_process:
+                maneuver_dir = self._find_maneuver_dir(maneuver_key)
+                if not maneuver_dir:
+                    logging.warning(f"Maneuver {maneuver_key} not found for {self.knee_side}")
+                    continue
+
+                processor = ManeuverProcessor(
+                    maneuver_dir=maneuver_dir,
+                    maneuver_key=cast(Literal["walk", "sit_to_stand", "flexion_extension"], maneuver_key),
+                    knee_side=self.knee_side,
+                    study_id=self.study_id,
+                    biomechanics_file=self.biomechanics_file,
+                    biomechanics_type=self.biomechanics_type,
+                )
+
+                if not self._run_processor(processor, entrypoint):
+                    return False
+
+                self.maneuver_processors[maneuver_key] = processor
+
+            return self._save_knee_log()
+        except Exception as e:
+            logging.error(f"Knee processing failed: {e}")
+            return False
+
+    def _run_processor(self, proc: ManeuverProcessor, entrypoint: str) -> bool:
+        """Run stages from entrypoint onwards."""
+        stages_map = {
+            "bin": [proc.process_bin_stage, proc.process_sync_stage, proc.process_cycles_stage],
+            "sync": [proc.process_sync_stage, proc.process_cycles_stage],
+            "cycles": [proc.process_cycles_stage],
+        }
+
+        for stage_func in stages_map[entrypoint]:
+            if not stage_func():
+                return False
+
+        return proc.save_logs()
+
+    def _find_maneuver_dir(self, maneuver_key: str) -> Optional[Path]:
+        """Find the directory for a maneuver using alias matching.
+
+        Handles naming variations like "Sit-Stand", "Sit_Stand", "sit-to-stand", etc.
+        """
+        aliases = _MANEUVER_ALIAS_MAP.get(maneuver_key, set())
+        try:
+            for child in self.knee_dir.iterdir():
+                if not child.is_dir():
+                    continue
+                norm = _normalize_folder_name(child.name)
+                if norm in aliases:
+                    return child
+        except (OSError, PermissionError):
+            pass
+        return None
+
+    def _save_knee_log(self) -> bool:
+        """Save knee-level aggregated log."""
+        try:
+            self.knee_log = KneeProcessingLog.get_or_create(
+                study_id=self.study_id,
+                knee_side=self.knee_side,
+                knee_directory=self.knee_dir,
+            )
+
+            for maneuver_key, proc in self.maneuver_processors.items():
+                if proc.log:
+                    self.knee_log.update_maneuver_summary(
+                        cast(Literal["walk", "sit_to_stand", "flexion_extension"], maneuver_key),
+                        proc.log
+                    )
+
+            self.knee_log.save_to_excel()
+            return True
+        except Exception as e:
+            logging.error(f"Failed to save knee log: {e}")
+            return False
+
+
+class ParticipantProcessor:
+    """Orchestrates processing of a complete participant directory."""
+
+    def __init__(
+        self,
+        participant_dir: Path,
+        biomechanics_type: Optional[str] = None,
+    ):
+        self.participant_dir = participant_dir
+        self.study_id = participant_dir.name.lstrip("#")
+        self.biomechanics_type = biomechanics_type
+        self.biomechanics_file = self._find_biomechanics_file()
+
+        self.knee_processors: dict[str, KneeProcessor] = {}
+
+    def process(
+        self,
+        entrypoint: Literal["bin", "sync", "cycles"] = "sync",
+        knee: Optional[str] = None,
+        maneuver: Optional[str] = None,
+    ) -> bool:
+        """Process participant."""
+        try:
+            logging.info(f"Processing participant {self.study_id}")
+
+            # Validate directory structure based on entrypoint
+            self._validate_directory_structure(entrypoint, knee, maneuver)
+
+            knees_to_process = [knee] if knee else ["Left", "Right"]
+
+            for knee_side in knees_to_process:
+                knee_dir = self.participant_dir / f"{knee_side} Knee"
+                if not knee_dir.exists():
+                    logging.warning(f"{knee_side} Knee directory not found")
+                    continue
+
+                processor = KneeProcessor(
+                    knee_dir=knee_dir,
+                    knee_side=cast(Literal["Left", "Right"], knee_side),
+                    study_id=self.study_id,
+                    biomechanics_file=self.biomechanics_file,
+                    biomechanics_type=self.biomechanics_type,
+                )
+
+                if not processor.process(entrypoint, maneuver):
+                    return False
+
+                self.knee_processors[knee_side] = processor
+
+            return True
+        except Exception as e:
+            logging.error(f"Participant processing failed: {e}")
+            return False
+
+    def _validate_directory_structure(
+        self,
+        entrypoint: Literal["bin", "sync", "cycles"],
+        knee: Optional[str] = None,
+        maneuver: Optional[str] = None,
+    ) -> None:
+        """Validate directory structure based on entrypoint.
+
+        Raises FileNotFoundError if required directories or files are missing.
+        """
+        # Always require Motion Capture folder with biomechanics file
+        if not self.biomechanics_file.exists():
+            raise FileNotFoundError(
+                f"Biomechanics Excel file not found: {self.biomechanics_file}"
+            )
+
+        # Validate knee directories
+        knees_to_check = [knee] if knee else ["Left", "Right"]
+        for knee_side in knees_to_check:
+            knee_dir = self.participant_dir / f"{knee_side} Knee"
+            if not knee_dir.exists():
+                raise FileNotFoundError(
+                    f"Required knee directory not found: {knee_dir}"
+                )
+
+            # Validate maneuver directories based on entrypoint
+            if entrypoint == "bin":
+                # For bin stage, just check that maneuver directories exist
+                self._validate_maneuver_dirs(knee_dir, knee_side, entrypoint, maneuver)
+            elif entrypoint in ("sync", "cycles"):
+                # For sync/cycles, maneuver directories should exist but processed files
+                # may or may not exist (they get loaded if available)
+                pass
+
+    def _find_biomechanics_file(self) -> Path:
+        """Find the biomechanics Excel file."""
+        motion_capture_dir = self.participant_dir / "Motion Capture"
+        if not motion_capture_dir.exists():
+            raise FileNotFoundError(f"Motion Capture directory not found in {self.participant_dir}")
+
+        excel_files = list(motion_capture_dir.glob(f"AOA{self.study_id}_Biomechanics_Full_Set.xlsx"))
+        if excel_files:
+            return excel_files[0]
+
+        raise FileNotFoundError(f"Biomechanics Excel file not found in {motion_capture_dir}")
+
+    def _validate_maneuver_dirs(
+        self,
+        knee_dir: Path,
+        knee_side: str,
+        entrypoint: str,
+        maneuver: Optional[str] = None,
+    ) -> None:
+        """Validate that required maneuver directories exist.
+
+        Raises FileNotFoundError if required maneuver directories are missing.
+        """
+        maneuvers_to_check = [maneuver] if maneuver else ["walk", "sit_to_stand", "flexion_extension"]
+
+        for maneuver_key in maneuvers_to_check:
+            # Use KneeProcessor's find method for flexible folder name matching
+            processor = KneeProcessor(
+                knee_dir=knee_dir,
+                knee_side=cast(Literal["Left", "Right"], knee_side),
+                study_id=self.study_id,
+                biomechanics_file=self.biomechanics_file,
+            )
+            maneuver_dir = processor._find_maneuver_dir(maneuver_key)
+
+            if maneuver_dir is None:
+                raise FileNotFoundError(
+                    f"Required maneuver directory for '{maneuver_key}' "
+                    f"not found in {knee_dir}"
+                )

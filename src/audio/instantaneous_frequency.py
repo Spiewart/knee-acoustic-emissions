@@ -86,16 +86,15 @@ def add_instantaneous_frequency(
         inst_freq = dphase_dt / (2.0 * np.pi)
         df[col_freq] = inst_freq
 
-        finite = inst_freq[np.isfinite(inst_freq)]
-        if finite.size > 0:
-            logging.info(
-                "%s: min=%.3f Hz, max=%.3f Hz, mean=%.3f Hz",
-                col_freq,
-                finite.min(),
-                finite.max(),
-                finite.mean(),
-            )
-        else:
-            logging.info("%s: no finite values", col_freq)
+        # Suppress verbose frequency statistics logging
+        # finite = inst_freq[np.isfinite(inst_freq)]
+        # if finite.size > 0:
+        #     logging.debug(
+        #         "%s: min=%.3f Hz, max=%.3f Hz, mean=%.3f Hz",
+        #         col_freq,
+        #         finite.min(),
+        #         finite.max(),
+        #         finite.mean(),
+        #     )
 
     return df

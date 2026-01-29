@@ -145,7 +145,7 @@ def test_full_stomp_detection_without_biomechanics():
     )
 
 
-def create_dual_stomp_audio(sr=10000, duration=5.0, stomp_time_1=1.0, stomp_time_2=3.0):
+def create_dual_stomp_audio(sr=10000, duration=5.0, stomp_time_1=1.0, stomp_time_2=3.0, recorded_knee=None):
     """Create synthetic audio with two distinct stomp events.
 
     Args:
@@ -153,6 +153,7 @@ def create_dual_stomp_audio(sr=10000, duration=5.0, stomp_time_1=1.0, stomp_time
         duration: Total duration in seconds
         stomp_time_1: Time of the first stomp event in seconds
         stomp_time_2: Time of the second stomp event in seconds
+        recorded_knee: If "left" or "right", makes that stomp louder (microphone placement effect)
 
     Returns:
         DataFrame with synthetic audio containing two stomps
@@ -182,8 +183,21 @@ def create_dual_stomp_audio(sr=10000, duration=5.0, stomp_time_1=1.0, stomp_time
         )
 
         # Apply both stomp envelopes
-        audio[:, ch] += stomp_signal * stomp_envelope_1 * 0.8
-        audio[:, ch] += stomp_signal * stomp_envelope_2 * 0.8
+        # If recorded_knee specified, make that stomp louder (microphone proximity effect)
+        if recorded_knee == "left":
+            # Stomp 1 (at 1.0s) is left, stomp 2 (at 3.0s) is right
+            # Left stomp should be louder since microphone is on left knee
+            audio[:, ch] += stomp_signal * stomp_envelope_1 * 0.8  # Recorded (louder)
+            audio[:, ch] += stomp_signal * stomp_envelope_2 * 0.5  # Contralateral (quieter)
+        elif recorded_knee == "right":
+            # Stomp 1 (at 1.0s) is left, stomp 2 (at 3.0s) is right
+            # Right stomp should be louder since microphone is on right knee
+            audio[:, ch] += stomp_signal * stomp_envelope_1 * 0.5  # Contralateral (quieter)
+            audio[:, ch] += stomp_signal * stomp_envelope_2 * 0.8  # Recorded (louder)
+        else:
+            # Default: equal amplitude
+            audio[:, ch] += stomp_signal * stomp_envelope_1 * 0.8
+            audio[:, ch] += stomp_signal * stomp_envelope_2 * 0.8
 
     # Create DataFrame
     df = pd.DataFrame({
@@ -200,7 +214,8 @@ def create_dual_stomp_audio(sr=10000, duration=5.0, stomp_time_1=1.0, stomp_time
 def test_stomp_detection_with_left_knee_biomechanics():
     """Test stomp detection with left knee biomechanics guidance."""
     # Create synthetic audio with two stomps (left at 1.0s, right at 3.0s)
-    audio_df = create_dual_stomp_audio(stomp_time_1=1.0, stomp_time_2=3.0)
+    # Left stomp is louder since microphone is on left knee
+    audio_df = create_dual_stomp_audio(stomp_time_1=1.0, stomp_time_2=3.0, recorded_knee="left")
 
     # Simulate biomechanics stomp times
     left_stomp_bio = timedelta(seconds=1.0)
@@ -223,7 +238,8 @@ def test_stomp_detection_with_left_knee_biomechanics():
 def test_stomp_detection_with_right_knee_biomechanics():
     """Test stomp detection with right knee biomechanics guidance."""
     # Create synthetic audio with two stomps (left at 1.0s, right at 3.0s)
-    audio_df = create_dual_stomp_audio(stomp_time_1=1.0, stomp_time_2=3.0)
+    # Right stomp is louder since microphone is on right knee
+    audio_df = create_dual_stomp_audio(stomp_time_1=1.0, stomp_time_2=3.0, recorded_knee="right")
 
     # Simulate biomechanics stomp times
     left_stomp_bio = timedelta(seconds=1.0)

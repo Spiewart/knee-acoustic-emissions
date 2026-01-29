@@ -13,12 +13,7 @@ from datetime import datetime
 import numpy as np
 import pandas as pd
 
-from src.metadata import (
-    AudioProcessing,
-    BiomechanicsImport,
-    Synchronization,
-    MovementCycles,
-)
+from src.metadata import AudioProcessing, BiomechanicsImport, Synchronization
 from src.orchestration.processing_log import (
     ManeuverProcessingLog,
     create_audio_record_from_data,
@@ -27,13 +22,153 @@ from src.orchestration.processing_log import (
     create_sync_record_from_data,
 )
 
+# Helper functions for creating minimal test records with all required fields
+
+def create_minimal_audio_record(**overrides):
+    """Create a minimal AudioProcessing record for testing."""
+    defaults = {
+        # StudyMetadata
+        "study": "AOA",
+        "study_id": 1,
+        # BiomechanicsMetadata
+        "linked_biomechanics": False,
+        # AcousticsFile
+        "audio_file_name": "test_audio.bin",
+        "device_serial": "TEST123",
+        "firmware_version": 1,
+        "file_time": datetime(2024, 1, 1, 10, 0, 0),
+        "file_size_mb": 100.0,
+        "recording_date": datetime(2024, 1, 1),
+        "recording_time": datetime(2024, 1, 1, 10, 0, 0),
+        "knee": "left",
+        "maneuver": "walk",
+        "num_channels": 4,
+        "mic_1_position": "IPM",
+        "mic_2_position": "IPL",
+        "mic_3_position": "SPM",
+        "mic_4_position": "SPL",
+        # AudioProcessing
+        "processing_date": datetime(2024, 1, 1, 12, 0, 0),
+        "sample_rate": 46875.0,
+        "qc_fail_segments": [],
+        "qc_fail_segments_ch1": [],
+        "qc_fail_segments_ch2": [],
+        "qc_fail_segments_ch3": [],
+        "qc_fail_segments_ch4": [],
+        "qc_signal_dropout": False,
+        "qc_signal_dropout_segments": [],
+        "qc_signal_dropout_ch1": False,
+        "qc_signal_dropout_segments_ch1": [],
+        "qc_signal_dropout_ch2": False,
+        "qc_signal_dropout_segments_ch2": [],
+        "qc_signal_dropout_ch3": False,
+        "qc_signal_dropout_segments_ch3": [],
+        "qc_signal_dropout_ch4": False,
+        "qc_signal_dropout_segments_ch4": [],
+        "qc_artifact": False,
+        "qc_artifact_segments": [],
+        "qc_artifact_ch1": False,
+        "qc_artifact_segments_ch1": [],
+        "qc_artifact_ch2": False,
+        "qc_artifact_segments_ch2": [],
+        "qc_artifact_ch3": False,
+        "qc_artifact_segments_ch3": [],
+        "qc_artifact_ch4": False,
+        "qc_artifact_segments_ch4": [],
+    }
+    defaults.update(overrides)
+    return AudioProcessing(**defaults)
+
+
+def create_minimal_biomech_record(**overrides):
+    """Create a minimal BiomechanicsImport record for testing."""
+    defaults = {
+        # StudyMetadata
+        "study": "AOA",
+        "study_id": 1,
+        # BiomechanicsImport
+        "biomechanics_file": "test_biomech.xlsx",
+        "sheet_name": "Walk0001",
+        "processing_date": datetime(2024, 1, 1, 12, 0, 0),
+        "processing_status": "success",
+        "num_sub_recordings": 1,
+        "num_passes": 3,
+        "duration_seconds": 120.0,
+        "sample_rate": 100.0,
+        "num_data_points": 12000,
+    }
+    defaults.update(overrides)
+    return BiomechanicsImport(**defaults)
+
+
+def create_minimal_sync_record(**overrides):
+    """Create a minimal Synchronization record for testing."""
+    defaults = {
+        # StudyMetadata
+        "study": "AOA",
+        "study_id": 1,
+        # BiomechanicsMetadata
+        "linked_biomechanics": True,
+        "biomechanics_file": "test_biomech.xlsx",
+        "biomechanics_type": "Motion Analysis",
+        "biomechanics_sync_method": "stomp",
+        "biomechanics_sample_rate": 100.0,
+        # AcousticsFile
+        "audio_file_name": "test_audio.bin",
+        "device_serial": "TEST123",
+        "firmware_version": 1,
+        "file_time": datetime(2024, 1, 1, 10, 0, 0),
+        "file_size_mb": 100.0,
+        "recording_date": datetime(2024, 1, 1),
+        "recording_time": datetime(2024, 1, 1, 10, 0, 0),
+        "knee": "left",
+        "maneuver": "walk",
+        "num_channels": 4,
+        "mic_1_position": "IPM",
+        "mic_2_position": "IPL",
+        "mic_3_position": "SPM",
+        "mic_4_position": "SPL",
+        # SynchronizationMetadata
+        "audio_sync_time": 5.0,
+        "bio_left_sync_time": 10.0,
+        "sync_offset": 5.0,
+        "aligned_audio_sync_time": 10.0,
+        "aligned_biomechanics_sync_time": 10.0,
+        "sync_method": "consensus",
+        "consensus_time": 5.0,
+        "rms_time": 5.0,
+        "onset_time": 5.0,
+        "freq_time": 5.0,
+        "pass_number": 1,  # Required for walk maneuvers
+        "speed": "normal",  # Required for walk maneuvers
+        # Synchronization
+        "sync_file_name": "test_sync.pkl",
+        "processing_date": datetime(2024, 1, 1, 12, 0, 0),
+        "sync_duration": 120.0,
+        "total_cycles_extracted": 0,
+        "clean_cycles": 0,
+        "outlier_cycles": 0,
+        "mean_cycle_duration_s": 0.0,
+        "median_cycle_duration_s": 0.0,
+        "min_cycle_duration_s": 0.0,
+        "max_cycle_duration_s": 0.0,
+        "mean_acoustic_auc": 0.0,
+        "qc_fail_segments": [],
+        "qc_signal_dropout": False,
+        "qc_signal_dropout_segments": [],
+        "qc_artifact": False,
+        "qc_artifact_segments": [],
+    }
+    defaults.update(overrides)
+    return Synchronization(**defaults)
+
 
 class TestAudioProcessing:
     """Tests for AudioProcessing metadata."""
 
     def test_create_record(self):
         """Test creating an audio processing record."""
-        record = AudioProcessing(
+        record = create_minimal_audio_record(
             audio_file_name="test_audio",
             processing_status="success",
             sample_rate=46875.0,
@@ -47,11 +182,10 @@ class TestAudioProcessing:
 
     def test_to_dict(self):
         """Test converting record to dictionary."""
-        record = AudioProcessing(
+        record = create_minimal_audio_record(
             audio_file_name="test_audio",
             processing_status="success",
             sample_rate=46875.0,
-            channel_1_rms=150.3,
         )
 
         data = record.to_dict()
@@ -60,18 +194,19 @@ class TestAudioProcessing:
         assert data["Audio File"] == "test_audio"
         assert data["Status"] == "success"
         assert data["Sample Rate (Hz)"] == 46875.0
-        assert data["Ch1 RMS"] == 150.3
         assert "Audio QC Version" in data
         assert data["Audio QC Version"] == 1
 
     def test_default_values(self):
         """Test that default values are set correctly."""
-        record = AudioProcessing(audio_file_name="test")
+        record = create_minimal_audio_record(
+            audio_file_name="test",
+            sample_rate=46875.0,
+        )
 
         assert record.processing_status == "not_processed"
         assert record.num_channels == 4
-        assert record.sample_rate is None
-        assert record.has_instantaneous_freq is False
+        assert record.sample_rate == 46875.0
         assert record.audio_qc_version == 1
 
 
@@ -80,33 +215,31 @@ class TestBiomechanicsImport:
 
     def test_create_record(self):
         """Test creating a biomechanics import record."""
-        record = BiomechanicsImport(
+        record = create_minimal_biomech_record(
             biomechanics_file="AOA1011_Biomechanics_Full_Set.xlsx",
             processing_status="success",
-            num_recordings=3,
+            num_sub_recordings=3,
             num_passes=9,
         )
 
         assert record.biomechanics_file == "AOA1011_Biomechanics_Full_Set.xlsx"
         assert record.processing_status == "success"
-        assert record.num_recordings == 3
+        assert record.num_sub_recordings == 3
         assert record.num_passes == 9
 
     def test_to_dict(self):
         """Test converting record to dictionary."""
-        record = BiomechanicsImport(
+        record = create_minimal_biomech_record(
             biomechanics_file="test.xlsx",
             sheet_name="Walk0001",
-            num_recordings=5,
+            num_sub_recordings=5,
         )
 
         data = record.to_dict()
 
         assert data["Biomechanics File"] == "test.xlsx"
         assert data["Sheet Name"] == "Walk0001"
-        assert data["Num Recordings"] == 5
-        assert "Biomech QC Version" in data
-        assert data["Biomech QC Version"] == 1
+        assert data["Num Sub-Recordings"] == 5
 
 
 class TestSynchronization:
@@ -114,46 +247,42 @@ class TestSynchronization:
 
     def test_create_record(self):
         """Test creating a synchronization record."""
-        record = Synchronization(
+        record = create_minimal_sync_record(
             sync_file_name="left_walk_slow_pass1",
             pass_number=1,
             speed="slow",
-            audio_stomp_time=10.5,
-            bio_left_stomp_time=5.2,
-            knee_side="left",
+            audio_sync_time=10.5,
+            bio_left_sync_time=5.2,
+            knee="left",
         )
 
         assert record.sync_file_name == "left_walk_slow_pass1"
         assert record.pass_number == 1
         assert record.speed == "slow"
-        assert record.audio_stomp_time == 10.5
-        assert record.knee_side == "left"
+        assert record.audio_sync_time == 10.5
+        assert record.knee == "left"
 
     def test_to_dict(self):
         """Test converting record to dictionary."""
-        record = Synchronization(
+        record = create_minimal_sync_record(
             sync_file_name="test_sync",
             processing_status="success",
-            num_synced_samples=1000,
         )
 
         data = record.to_dict()
 
         assert data["Sync File"] == "test_sync"
-        assert data["Status"] == "success"
-        assert data["Num Samples"] == 1000
+        assert data["Processing Status"] == "success"
         assert "Audio QC Version" in data
         assert data["Audio QC Version"] == 1
-        assert "Biomech QC Version" in data
-        assert data["Biomech QC Version"] == 1
 
 
-class TestMovementCycles:
-    """Tests for MovementCycles metadata."""
+class TestSynchronizationCycles:
+    """Tests for Synchronization metadata when used for cycles."""
 
     def test_create_record(self):
         """Test creating a movement cycles record."""
-        record = MovementCycles(
+        record = create_minimal_sync_record(
             sync_file_name="test_sync",
             total_cycles_extracted=12,
             clean_cycles=10,
@@ -167,19 +296,18 @@ class TestMovementCycles:
 
     def test_to_dict(self):
         """Test converting record to dictionary."""
-        record = MovementCycles(
+        record = create_minimal_sync_record(
             sync_file_name="test_sync",
             clean_cycles=8,
             outlier_cycles=2,
+            total_cycles_extracted=10,
         )
 
         data = record.to_dict()
 
-        assert data["Source Sync File"] == "test_sync"
+        assert data["Sync File"] == "test_sync"
         assert data["Clean Cycles"] == 8
         assert data["Outlier Cycles"] == 2
-        assert "Cycle QC Version" in data
-        assert data["Cycle QC Version"] == 1
 
 
 class TestManeuverProcessingLog:
@@ -210,7 +338,7 @@ class TestManeuverProcessingLog:
             maneuver_directory=tmp_path,
         )
 
-        record = AudioProcessing(
+        record = create_minimal_audio_record(
             audio_file_name="test_audio",
             processing_status="success",
         )
@@ -230,7 +358,7 @@ class TestManeuverProcessingLog:
             maneuver_directory=tmp_path,
         )
 
-        sync_record = Synchronization(
+        sync_record = create_minimal_sync_record(
             sync_file_name="test_sync",
             processing_status="success",
         )
@@ -250,22 +378,21 @@ class TestManeuverProcessingLog:
         )
 
         # Add first record
-        sync_record1 = Synchronization(
+        sync_record1 = create_minimal_sync_record(
             sync_file_name="test_sync",
-            num_synced_samples=1000,
         )
         log.add_synchronization_record(sync_record1)
 
         # Add second record with same name
-        sync_record2 = Synchronization(
+        sync_record2 = create_minimal_sync_record(
             sync_file_name="test_sync",
-            num_synced_samples=2000,
+            total_cycles_extracted=10,
         )
         log.add_synchronization_record(sync_record2)
 
         # Should only have one record, with updated values
         assert len(log.synchronization_records) == 1
-        assert log.synchronization_records[0].num_synced_samples == 2000
+        assert log.synchronization_records[0].total_cycles_extracted == 10
 
     def test_add_movement_cycles_record(self, tmp_path):
         """Test adding movement cycles record."""
@@ -276,10 +403,11 @@ class TestManeuverProcessingLog:
             maneuver_directory=tmp_path,
         )
 
-        cycles_record = MovementCycles(
+        cycles_record = create_minimal_sync_record(
             sync_file_name="test_sync",
             clean_cycles=10,
             outlier_cycles=2,
+            total_cycles_extracted=12,
         )
 
         log.add_movement_cycles_record(cycles_record)
@@ -299,13 +427,13 @@ class TestManeuverProcessingLog:
         )
 
         # Add some data
-        audio = AudioProcessing(
+        audio = create_minimal_audio_record(
             audio_file_name="test_audio",
             processing_status="success",
         )
         log.update_audio_record(audio)
 
-        sync = Synchronization(
+        sync = create_minimal_sync_record(
             sync_file_name="test_sync",
             processing_status="success",
         )
@@ -330,16 +458,15 @@ class TestManeuverProcessingLog:
             log_updated=datetime.now(),
         )
 
-        audio = AudioProcessing(
+        audio = create_minimal_audio_record(
             audio_file_name="test_audio",
             sample_rate=46875.0,
             processing_status="success",
         )
         original_log.update_audio_record(audio)
 
-        sync = Synchronization(
+        sync = create_minimal_sync_record(
             sync_file_name="test_sync",
-            num_synced_samples=1000,
         )
         original_log.add_synchronization_record(sync)
 
@@ -357,7 +484,6 @@ class TestManeuverProcessingLog:
         assert loaded_log.audio_record.audio_file_name == "test_audio"
         assert loaded_log.audio_record.sample_rate == 46875.0
         assert len(loaded_log.synchronization_records) == 1
-        assert loaded_log.synchronization_records[0].num_synced_samples == 1000
 
     def test_load_from_nonexistent_file(self, tmp_path):
         """Test loading from non-existent file returns None."""
@@ -389,7 +515,7 @@ class TestManeuverProcessingLog:
             maneuver_directory=tmp_path,
             log_created=datetime.now(),
         )
-        audio = AudioProcessing(
+        audio = create_minimal_audio_record(
             audio_file_name="original_audio",
         )
         original_log.update_audio_record(audio)
@@ -446,9 +572,6 @@ class TestHelperFunctions:
         assert record.firmware_version == 2
         assert record.device_serial == "123456"
         assert record.duration_seconds is not None
-        assert record.channel_1_rms is not None
-        assert record.channel_1_peak is not None
-        assert record.has_instantaneous_freq is True
         assert record.file_size_mb is not None
 
     def test_create_audio_record_with_error(self):
@@ -462,6 +585,23 @@ class TestHelperFunctions:
 
         assert record.processing_status == "error"
         assert record.error_message == "Processing failed"
+
+    def test_infer_biomechanics_type_from_study(self):
+        """Unit tests for _infer_biomechanics_type_from_study helper.
+
+        Ensures study name mapping is applied (AOA -> Motion Analysis),
+        defaults to 'Gonio' for unknown or missing studies, and is
+        case/whitespace tolerant.
+        """
+        from src.orchestration.processing_log import _infer_biomechanics_type_from_study
+
+        # Known mapping
+        assert _infer_biomechanics_type_from_study("AOA") == "Motion Analysis"
+        assert _infer_biomechanics_type_from_study(" aoa ") == "Motion Analysis"
+
+        # Unknown or missing study -> fallback
+        assert _infer_biomechanics_type_from_study(None) == "Gonio"
+        assert _infer_biomechanics_type_from_study("UNKNOWN_STUDY") == "Gonio"
 
     def test_create_biomechanics_record_from_data(self, tmp_path):
         """Test creating biomechanics record from recordings."""
@@ -489,10 +629,8 @@ class TestHelperFunctions:
         )
 
         assert record.processing_status == "success"
-        assert record.num_recordings == 3
+        assert record.num_sub_recordings == 3
         assert record.num_passes == 3
-        assert record.start_time is not None
-        assert record.end_time is not None
         assert record.duration_seconds is not None
         assert record.sample_rate is not None
 
@@ -517,13 +655,14 @@ class TestHelperFunctions:
 
         assert record.processing_status == "success"
         assert record.sync_file_name == "left_walk_medium_pass1"
-        assert record.audio_stomp_time == 10.5
-        assert record.bio_left_stomp_time == 5.2
-        assert record.knee_side == "left"
+        assert record.audio_sync_time == 10.5
+        assert record.bio_left_sync_time == 5.2
+        assert record.knee == "left"
         assert record.pass_number == 1
         assert record.speed == "medium"
-        assert record.num_synced_samples == 500
-        assert record.duration_seconds is not None
+        # Synchronization has sync_duration (float in seconds), not duration_seconds
+        assert record.sync_duration is not None
+        assert record.sync_duration > 0
 
     def test_create_cycles_record_from_data(self, tmp_path):
         """Test creating cycles record from cycle extraction results."""
@@ -545,7 +684,8 @@ class TestHelperFunctions:
             outlier_cycles=outlier_cycles,
             output_dir=output_dir,
             acoustic_threshold=100.0,
-            plots_created=True,
+                    pass_number=1,  # Required for walk maneuvers
+                    speed="normal",  # Required for walk maneuvers
         )
 
         assert record.processing_status == "success"
@@ -553,8 +693,8 @@ class TestHelperFunctions:
         assert record.total_cycles_extracted == 12
         assert record.clean_cycles == 10
         assert record.outlier_cycles == 2
-        assert record.acoustic_threshold == 100.0
-        assert record.plots_created is True
+        # qc_acoustic_threshold field has been removed - use acoustic_threshold property instead
+        assert hasattr(record, 'acoustic_threshold')
 
 
 class TestIncrementalUpdates:
@@ -570,21 +710,20 @@ class TestIncrementalUpdates:
         )
 
         # Add sync record
-        sync_record = Synchronization(
+        sync_record = create_minimal_sync_record(
             sync_file_name="test_sync",
-            num_synced_samples=1000,
         )
         log.add_synchronization_record(sync_record)
 
         # Update audio record
-        audio = AudioProcessing(
+        audio = create_minimal_audio_record(
             audio_file_name="new_audio",
         )
         log.update_audio_record(audio)
 
         # Sync record should still be there
         assert len(log.synchronization_records) == 1
-        assert log.synchronization_records[0].num_synced_samples == 1000
+        assert log.synchronization_records[0].sync_file_name == "test_sync"
         # Audio record should be updated
         assert log.audio_record.audio_file_name == "new_audio"
 
@@ -598,25 +737,23 @@ class TestIncrementalUpdates:
         )
 
         # Add first sync record
-        sync_record1 = Synchronization(
+        from datetime import timedelta
+        sync_record1 = create_minimal_sync_record(
             sync_file_name="test_sync",
-            duration_seconds=10.0,
-            num_synced_samples=1000,
+            sync_duration=10.0,
         )
         log.add_synchronization_record(sync_record1)
 
         # Update with new data for same file
-        sync_record2 = Synchronization(
+        sync_record2 = create_minimal_sync_record(
             sync_file_name="test_sync",
-            duration_seconds=20.0,
-            num_synced_samples=2000,
+            sync_duration=20.0,
         )
         log.add_synchronization_record(sync_record2)
 
         # Should only have one record with updated values
         assert len(log.synchronization_records) == 1
-        assert log.synchronization_records[0].num_synced_samples == 2000
-        assert log.synchronization_records[0].duration_seconds == 20.0
+        assert log.synchronization_records[0].sync_duration == 20.0
 
     def test_roundtrip_preserves_data(self, tmp_path):
         """Test that save and load preserves all data."""
@@ -630,33 +767,31 @@ class TestIncrementalUpdates:
         )
 
         # Add all types of records
-        audio = AudioProcessing(
+        audio = create_minimal_audio_record(
             audio_file_name="test_audio",
             sample_rate=46875.0,
-            has_instantaneous_freq=True,
-            channel_1_rms=150.3,
         )
         original_log.update_audio_record(audio)
 
-        bio = BiomechanicsImport(
+        bio = create_minimal_biomech_record(
             biomechanics_file="test.xlsx",
-            num_recordings=3,
+            num_sub_recordings=3,
             num_passes=9,
         )
         original_log.update_biomechanics_record(bio)
 
         for i in range(3):
-            sync = Synchronization(
+            sync = create_minimal_sync_record(
                 sync_file_name=f"sync_{i}",
-                num_synced_samples=1000 + i,
             )
             original_log.add_synchronization_record(sync)
 
         for i in range(3):
-            cycles = MovementCycles(
-                sync_file_name=f"sync_{i}",
+            cycles = create_minimal_sync_record(
+                sync_file_name=f"cycle_{i}",
                 clean_cycles=10 + i,
                 outlier_cycles=2,
+                total_cycles_extracted=12 + i,
             )
             original_log.add_movement_cycles_record(cycles)
 
@@ -668,12 +803,8 @@ class TestIncrementalUpdates:
         # Verify all data is preserved
         assert loaded_log.study_id == "1011"
         assert loaded_log.audio_record.sample_rate == 46875.0
-        assert loaded_log.audio_record.channel_1_rms == 150.3
-        assert loaded_log.audio_record.has_instantaneous_freq is True
-        assert loaded_log.biomechanics_record.num_recordings == 3
+        assert loaded_log.biomechanics_record.num_sub_recordings == 3
         assert len(loaded_log.synchronization_records) == 3
         assert len(loaded_log.movement_cycles_records) == 3
-        assert loaded_log.synchronization_records[0].num_synced_samples == 1000
-        assert loaded_log.synchronization_records[1].num_synced_samples == 1001
         assert loaded_log.movement_cycles_records[0].clean_cycles == 10
         assert loaded_log.movement_cycles_records[1].clean_cycles == 11

@@ -28,6 +28,8 @@ except ImportError:
 def get_biomechanics_metadata(
     directory: Path,
     sheet_name: str,
+    biomechanics_type: Optional[str] = None,
+    study_name: Optional[str] = None,
 ) -> pd.DataFrame:
     """Load biomechanics metadata from a pickled DataFrame in the given directory."""
 
@@ -48,6 +50,8 @@ def get_biomechanics_metadata(
 def get_event_metadata(
     bio_meta: pd.DataFrame,
     event_name: str,
+    biomechanics_type: Optional[str] = None,
+    study_name: Optional[str] = None,
 ) -> pd.DataFrame:
     """Extract event metadata for a specific event from biomechanics metadata.
 
@@ -67,6 +71,8 @@ def get_event_metadata(
 def get_stomp_time(
     bio_meta: pd.DataFrame,
     foot: str,
+    biomechanics_type: Optional[str] = None,
+    study_name: Optional[str] = None,
 ) -> timedelta:
     """Extract the timestamp of the foot stomp event from biomechanics metadata.
     foot: 'left' or 'right'"""
@@ -85,6 +91,8 @@ def get_stomp_time(
 
 def get_right_stomp_time(
     bio_meta: pd.DataFrame,
+    biomechanics_type: Optional[str] = None,
+    study_name: Optional[str] = None,
 ) -> timedelta:
     """Extract the timestamp of the right foot stomp event from biomechanics metadata.
     Sync Right is a item in the first row Event Info. The second column Time (sec)
@@ -95,6 +103,8 @@ def get_right_stomp_time(
 
 def get_left_stomp_time(
     bio_meta: pd.DataFrame,
+    biomechanics_type: Optional[str] = None,
+    study_name: Optional[str] = None,
 ) -> timedelta:
     """Extract the timestamp of the left foot stomp event from biomechanics metadata."""
 
@@ -156,6 +166,9 @@ def _detect_stomp_by_rms_energy(
     """Detect stomp using rolling RMS (root mean square) energy.
 
     Identifies the highest energy event in the first N seconds of recording.
+
+    # TODO: update this method to pick the FIRST peak exceeding a threshold,
+    # TODO: rather than the absolute maximum, to better capture initial foot contact.
 
     Args:
         audio_channels: Audio data as numpy array (samples × channels).
@@ -351,6 +364,8 @@ def get_audio_stomp_time(
     right_stomp_time: Optional[timedelta] = None,
     left_stomp_time: Optional[timedelta] = None,
     return_details: bool = False,
+    biomechanics_type: Optional[str] = None,
+    study_name: Optional[str] = None,
 ) -> Union[timedelta, tuple[timedelta, dict]]:
     """Detect the audio stomp time using multi-method approach with optional biomechanics refinement.
 
@@ -407,6 +422,8 @@ def get_audio_stomp_time(
         left_stomp_time: Biomechanics-measured left foot stomp time (timedelta).
                          Required for biomechanics refinement.
         return_details: If True, return tuple `(stomp_time, detection_results_dict)`.
+        biomechanics_type: Optional biomechanics system/type (e.g., "IMU", "Gonio").
+        study_name: Optional study name token (e.g., "AOA").
                        If False, return only `stomp_time` (backward compatible).
 
     Returns:
@@ -1158,8 +1175,12 @@ def plot_stomp_detection(
 ) -> None:
     """Create a visualization of stomp detection with overview and per-channel plots.
 
-    Top row: Full recording RMS analysis, synchronized window, RMS zoom, and timing summary.
-    Bottom row: Per-channel voltage and RMS energy (dual y-axes).
+    Top row:
+      - Left: Full recording RMS energy + knee angle with stomp markers
+      - Middle-Left: Synchronized window with knee angle
+      - Middle-Right: First 30 seconds of raw audio (ch1-4 voltage)
+      - Right: Timing summary
+    Bottom row: Per-channel voltage and RMS energy (dual y-axes) with knee angle overlay.
 
     Saved to the same directory as synchronized data.
 
@@ -1374,35 +1395,29 @@ def plot_stomp_detection(
         lines2, labels2 = ax_left_audio.get_legend_handles_labels()
         ax_left.legend(lines1 + lines2, labels1 + labels2, fontsize=8, loc="upper left")
 
-        # ===== TOP RIGHT PLOT: Zoomed RMS around detected stomp =====
-        # Zoom around selected stomp time
-        zoom_window = 1.5  # seconds around detected stomp
-        zoom_mask = (rms_times >= audio_stomp_s - zoom_window) & (rms_times <= audio_stomp_s + zoom_window)
-        if np.any(zoom_mask):
-            ax_zoom.plot(rms_times[zoom_mask], rms_energies[zoom_mask], 'b-', linewidth=1.5, alpha=0.9, label="RMS Energy (zoom)")
-            ax_zoom.fill_between(rms_times[zoom_mask], 0, rms_energies[zoom_mask], alpha=0.2, color='blue')
-        # Draw selected stomp time as red dashed line
-        ax_zoom.axvline(audio_stomp_s, color="red", linestyle="--", linewidth=2,
-                       label=f"Selected ({audio_stomp_method}) ({audio_stomp_s:.2f}s)")
-        # Add detection method lines if available
-        if detection_results:
-            ax_zoom.axvline(rms_time_s, color="darkred", linestyle="-", linewidth=1.5, alpha=0.6,
-                           label=f"RMS ({rms_time_s:.2f}s)")
-            ax_zoom.axvline(onset_time_s, color="maroon", linestyle=":", linewidth=1.5, alpha=0.6,
-                           label=f"Onset ({onset_time_s:.2f}s)")
-            ax_zoom.axvline(freq_time_s, color="brown", linestyle="-.", linewidth=1.5, alpha=0.6,
-                           label=f"Freq ({freq_time_s:.2f}s)")
-        # Add contralateral peak marker if biomechanics-guided
-        if contra_selected_time_s is not None:
-            ax_zoom.axvline(contra_selected_time_s, color="purple", linestyle="-.", linewidth=2,
-                           label=f"Contra ({contra_selected_time_s:.2f}s)")
-        ax_zoom.axvline(bio_left_s, color="green", linestyle=":", linewidth=2, label=f"Bio Left ({bio_left_s:.2f}s)")
-        ax_zoom.axvline(bio_right_s, color="orange", linestyle=":", linewidth=2, label=f"Bio Right ({bio_right_s:.2f}s)")
-        ax_zoom.set_title("RMS Zoom (±1.5s)", fontsize=12, fontweight="bold")
-        ax_zoom.set_xlabel("Time (seconds)")
-        ax_zoom.set_ylabel("RMS Energy")
+        # ===== TOP RIGHT PLOT: First 30 seconds of raw audio (ch1-4) =====
+        # Plot voltage for all channels over first 30 seconds
+        channel_colors_raw = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728"]  # Blue, orange, green, red
+        first_30s_mask = tt_audio <= min(30.0, tt_audio.max())
+        tt_audio_30s = tt_audio[first_30s_mask]
+
+        # Downsample for plotting if needed
+        raw_downsample = max(1, len(tt_audio_30s) // max_plot_points)
+        tt_audio_30s_plot = tt_audio_30s[::raw_downsample]
+
+        for idx, ch in enumerate(channel_names):
+            if ch in audio_channels.columns:
+                ch_voltage_30s = audio_channels[ch].values[first_30s_mask][::raw_downsample]
+                ax_zoom.plot(tt_audio_30s_plot, ch_voltage_30s,
+                           color=channel_colors_raw[idx], linewidth=0.8, alpha=0.7,
+                           label=ch.upper())
+
+        ax_zoom.set_title("First 30 Seconds - Raw Audio (Untruncated)", fontsize=12, fontweight="bold")
+        ax_zoom.set_xlabel("Time (seconds)", fontsize=11)
+        ax_zoom.set_ylabel("Voltage", fontsize=11)
         ax_zoom.grid(True, alpha=0.3)
-        ax_zoom.legend(fontsize=8, loc="upper left")
+        ax_zoom.legend(fontsize=8, loc="upper right")
+        ax_zoom.set_xlim(0, min(30.0, tt_audio.max()))
 
         # ===== RIGHT PLOT: Synchronized/clipped data =====
         # Use filtered channels if available, otherwise use raw
@@ -1663,7 +1678,7 @@ def plot_stomp_detection(
                     ax_ch_bio.spines['right'].set_position(('outward', 60))
                     ax_ch_bio.plot(tt_knee_zoom, knee_zoom, 'k-', linewidth=1.0, alpha=0.3, label="Knee Angle")
                     ax_ch_bio.set_ylabel("Knee Angle (°)", fontsize=8, color="black", alpha=0.5)
-                    ax_ch_bio.tick_params(axis="y", labelcolor="black", labelsize=7, alpha=0.5)
+                    ax_ch_bio.tick_params(axis="y", labelcolor="black", labelsize=7)
 
             # Formatting
             ax_ch.set_title(f"{ch.upper()}", fontsize=11, fontweight="bold")
