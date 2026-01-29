@@ -491,6 +491,21 @@ Troubleshooting
 - Hilbert instantaneous frequency is sensitive to filtering; adjust `--lowcut/--highcut` as needed.
 - Large spectrograms may need `nperseg`/`noverlap` tweaks to manage memory.
 
+Data Root Configuration
+-----------------------
+
+If your participant folders are not inside the repo, set a default root path:
+
+- Set `AE_DATA_ROOT` in `.env.local` (created from `.env.example` by the setup scripts).
+- If the CLI `PATH` argument is omitted, the tools will use `AE_DATA_ROOT`.
+
+PostgreSQL Transition Plan
+--------------------------
+
+See:
+- [docs/POSTGRES_SETUP.md](docs/POSTGRES_SETUP.md)
+- [docs/POSTGRES_TRANSITION.md](docs/POSTGRES_TRANSITION.md)
+
 ### Updated CLI Usage
 
 #### `ae-process-directory`

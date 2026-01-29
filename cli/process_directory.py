@@ -10,6 +10,7 @@ import argparse
 import logging
 from pathlib import Path
 
+from src.config import get_data_root, load_env_file
 from src.orchestration.participant import (
     find_participant_directories,
     process_participant,
@@ -112,6 +113,9 @@ def main() -> None:
 
     args = parser.parse_args()
 
+    # Load environment defaults (e.g., AE_DATA_ROOT, AE_DATABASE_URL)
+    load_env_file()
+
     # Set up logging
     log_file = Path(args.log) if args.log else None
     log_level = getattr(logging, args.log_level.upper(), logging.INFO)
@@ -129,12 +133,14 @@ def main() -> None:
             logging.error("Failed to sync audio file: %s", args.path)
         return
 
-    # Validate input path
-    if not args.path:
+    # Resolve input path from CLI or environment
+    resolved_path = Path(args.path) if args.path else get_data_root()
+    if resolved_path is None:
         parser.print_help()
+        logging.error("No PATH provided. Set AE_DATA_ROOT or pass PATH.")
         return
 
-    path = Path(args.path)
+    path = resolved_path
     if not path.exists():
         logging.error("Path does not exist: %s", path)
         return

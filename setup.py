@@ -60,6 +60,8 @@ setup(
             "ae-ml-tfmkl=cli.ml_tfmkl:main",
             "ae-ml-pfmkl=cli.ml_pfmkl:main",
             "ae-ml-varusthrust=cli.ml_varusthrust:main",
+            "ae-db-init=cli.db_admin:init",
+            "ae-db-check=cli.db_admin:check",
         ],
     },
     classifiers=[

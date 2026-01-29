@@ -73,6 +73,13 @@ if (-Not $NoDev) {
     Write-Host "NoDev flag specified; skipping dev requirements" -ForegroundColor Yellow
 }
 
+$envExample = Join-Path (Get-Location) '.env.example'
+$envLocal = Join-Path (Get-Location) '.env.local'
+if ((Test-Path $envExample) -and -not (Test-Path $envLocal)) {
+    Copy-Item $envExample $envLocal
+    Write-Host "Created .env.local from .env.example (edit with local paths and DB URL)" -ForegroundColor Green
+}
+
 # Final message with manual activation hint and execution policy tip
 Write-Host "Setup complete." -ForegroundColor Green
 if (Test-Path $activate) {

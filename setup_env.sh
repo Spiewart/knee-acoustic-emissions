@@ -56,4 +56,9 @@ else
   echo "--no-dev set; skipping dev requirements"
 fi
 
+if [ -f ".env.example" ] && [ ! -f ".env.local" ]; then
+  cp .env.example .env.local
+  echo "Created .env.local from .env.example (edit with local paths and DB URL)"
+fi
+
 echo "Setup complete. Activate the venv with: source ${VENV_DIR}/bin/activate"
