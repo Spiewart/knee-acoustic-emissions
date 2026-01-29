@@ -103,13 +103,18 @@ class Repository:
     # ========================================================================
 
     def save_audio_processing(
-        self, audio: AudioProcessing, pkl_file_path: Optional[str] = None
+        self,
+        audio: AudioProcessing,
+        pkl_file_path: Optional[str] = None,
+        biomechanics_import_id: Optional[int] = None,
     ) -> AudioProcessingRecord:
         """Save or update audio processing record.
 
         Args:
-            audio: AudioProcessing Pydantic model
+            audio: AudioProcessing Pydantic model (audio-specific fields only)
             pkl_file_path: Optional path to .pkl file on disk
+            biomechanics_import_id: Optional FK to BiomechanicsImportRecord
+                (the biomechanics recorded at the same time as this audio)
 
         Returns:
             Audio processing record
@@ -131,11 +136,14 @@ class Repository:
         if existing:
             # Update existing record
             self._update_audio_processing_record(existing, audio, pkl_file_path)
+            # Update FK if provided
+            if biomechanics_import_id is not None:
+                existing.biomechanics_import_id = biomechanics_import_id
             record = existing
         else:
             # Create new record
             record = self._create_audio_processing_record(
-                participant.id, audio, pkl_file_path
+                participant.id, audio, pkl_file_path, biomechanics_import_id
             )
             self.session.add(record)
 
@@ -143,9 +151,23 @@ class Repository:
         return record
 
     def _create_audio_processing_record(
-        self, participant_id: int, audio: AudioProcessing, pkl_file_path: Optional[str]
+        self,
+        participant_id: int,
+        audio: AudioProcessing,
+        pkl_file_path: Optional[str],
+        biomechanics_import_id: Optional[int] = None,
     ) -> AudioProcessingRecord:
-        """Create new audio processing record from Pydantic model."""
+        """Create new audio processing record from Pydantic model.
+
+        Args:
+            participant_id: ID of participant
+            audio: AudioProcessing Pydantic model (audio-specific fields only)
+            pkl_file_path: Optional path to .pkl file on disk
+            biomechanics_import_id: Optional FK to BiomechanicsImportRecord (recorded simultaneously)
+
+        Returns:
+            New AudioProcessingRecord
+        """
         return AudioProcessingRecord(
             participant_id=participant_id,
             audio_file_name=audio.audio_file_name,
@@ -157,8 +179,6 @@ class Repository:
             recording_time=audio.recording_time,
             knee=audio.knee,
             maneuver=audio.maneuver,
-            pass_number=getattr(audio, 'pass_number', None),
-            speed=getattr(audio, 'speed', None),
             num_channels=audio.num_channels,
             sample_rate=audio.sample_rate,
             mic_1_position=audio.mic_1_position,
@@ -170,12 +190,6 @@ class Repository:
             mic_3_notes=audio.mic_3_notes,
             mic_4_notes=audio.mic_4_notes,
             notes=audio.notes,
-            linked_biomechanics=audio.linked_biomechanics,
-            biomechanics_file=audio.biomechanics_file,
-            biomechanics_type=audio.biomechanics_type,
-            biomechanics_sync_method=audio.biomechanics_sync_method,
-            biomechanics_sample_rate=audio.biomechanics_sample_rate,
-            biomechanics_notes=audio.biomechanics_notes,
             pkl_file_path=pkl_file_path,
             audio_qc_version=audio.audio_qc_version,
             audio_qc_fail=audio.qc_not_passed,
@@ -197,23 +211,26 @@ class Repository:
         audio: AudioProcessing,
         pkl_file_path: Optional[str],
     ) -> None:
-        """Update existing audio processing record."""
+        """Update existing audio processing record.
+
+        Args:
+            record: Existing AudioProcessingRecord
+            audio: AudioProcessing Pydantic model (audio-specific fields only)
+            pkl_file_path: Optional new path to .pkl file
+        """
         record.file_size_mb = audio.file_size_mb
-        record.pass_number = audio.pass_number
-        record.speed = audio.speed
         record.mic_1_notes = audio.mic_1_notes
         record.mic_2_notes = audio.mic_2_notes
         record.mic_3_notes = audio.mic_3_notes
         record.mic_4_notes = audio.mic_4_notes
         record.notes = audio.notes
-        record.biomechanics_notes = audio.biomechanics_notes
         record.pkl_file_path = pkl_file_path or record.pkl_file_path
         record.audio_qc_version = audio.audio_qc_version
-        record.audio_qc_fail = audio.audio_qc_fail
-        record.audio_qc_fail_ch1 = audio.audio_qc_fail_ch1
-        record.audio_qc_fail_ch2 = audio.audio_qc_fail_ch2
-        record.audio_qc_fail_ch3 = audio.audio_qc_fail_ch3
-        record.audio_qc_fail_ch4 = audio.audio_qc_fail_ch4
+        record.audio_qc_fail = audio.qc_not_passed
+        record.audio_qc_fail_ch1 = audio.qc_not_passed_mic_1
+        record.audio_qc_fail_ch2 = audio.qc_not_passed_mic_2
+        record.audio_qc_fail_ch3 = audio.qc_not_passed_mic_3
+        record.audio_qc_fail_ch4 = audio.qc_not_passed_mic_4
         record.qc_artifact_type = audio.qc_artifact_type
         record.qc_artifact_type_ch1 = audio.qc_artifact_type_ch1
         record.qc_artifact_type_ch2 = audio.qc_artifact_type_ch2
@@ -227,12 +244,16 @@ class Repository:
     # ========================================================================
 
     def save_biomechanics_import(
-        self, biomech: BiomechanicsImport
+        self,
+        biomech: BiomechanicsImport,
+        audio_processing_id: Optional[int] = None,
     ) -> BiomechanicsImportRecord:
         """Save or update biomechanics import record.
 
         Args:
-            biomech: BiomechanicsImport Pydantic model
+            biomech: BiomechanicsImport Pydantic model (biomechanics-specific fields only)
+            audio_processing_id: Optional FK to AudioProcessingRecord
+                (the audio recorded at the same time as this biomechanics)
 
         Returns:
             Biomechanics import record
@@ -256,6 +277,8 @@ class Repository:
             existing.biomechanics_qc_fail = biomech.biomechanics_qc_fail
             existing.biomechanics_qc_notes = biomech.biomechanics_qc_notes
             existing.processing_date = biomech.processing_date
+            if audio_processing_id is not None:
+                existing.audio_processing_id = audio_processing_id
             existing.updated_at = datetime.utcnow()
             record = existing
         else:
@@ -274,6 +297,7 @@ class Repository:
                 biomechanics_qc_fail=biomech.biomechanics_qc_fail,
                 biomechanics_qc_notes=biomech.biomechanics_qc_notes,
                 processing_date=biomech.processing_date,
+                audio_processing_id=audio_processing_id,
             )
             self.session.add(record)
 
@@ -285,12 +309,18 @@ class Repository:
     # ========================================================================
 
     def save_synchronization(
-        self, sync: Synchronization, sync_file_path: Optional[str] = None
+        self,
+        sync: Synchronization,
+        audio_processing_id: int,
+        biomechanics_import_id: int,
+        sync_file_path: Optional[str] = None,
     ) -> SynchronizationRecord:
         """Save or update synchronization record.
 
         Args:
-            sync: Synchronization Pydantic model
+            sync: Synchronization Pydantic model (sync-specific fields only)
+            audio_processing_id: FK to AudioProcessingRecord
+            biomechanics_import_id: FK to BiomechanicsImportRecord
             sync_file_path: Optional path to sync .pkl file on disk
 
         Returns:
@@ -298,14 +328,13 @@ class Repository:
         """
         participant = self.get_or_create_participant(sync.study, sync.study_id)
 
-        # Check if record already exists
+        # Check if record already exists by FK combination
         existing = self.session.execute(
             select(SynchronizationRecord).where(
                 and_(
                     SynchronizationRecord.participant_id == participant.id,
-                    SynchronizationRecord.audio_file_name == sync.audio_file_name,
-                    SynchronizationRecord.knee == sync.knee,
-                    SynchronizationRecord.maneuver == sync.maneuver,
+                    SynchronizationRecord.audio_processing_id == audio_processing_id,
+                    SynchronizationRecord.biomechanics_import_id == biomechanics_import_id,
                 )
             )
         ).scalar_one_or_none()
@@ -317,7 +346,7 @@ class Repository:
         else:
             # Create new record
             record = self._create_synchronization_record(
-                participant.id, sync, sync_file_path
+                participant.id, sync, audio_processing_id, biomechanics_import_id, sync_file_path
             )
             self.session.add(record)
 
@@ -325,33 +354,31 @@ class Repository:
         return record
 
     def _create_synchronization_record(
-        self, participant_id: int, sync: Synchronization, sync_file_path: Optional[str]
+        self,
+        participant_id: int,
+        sync: Synchronization,
+        audio_processing_id: int,
+        biomechanics_import_id: int,
+        sync_file_path: Optional[str],
     ) -> SynchronizationRecord:
-        """Create new synchronization record from Pydantic model."""
+        """Create new synchronization record from Pydantic model.
+
+        Args:
+            participant_id: ID of participant
+            sync: Synchronization Pydantic model (sync-specific fields only)
+            audio_processing_id: FK to AudioProcessingRecord
+            biomechanics_import_id: FK to BiomechanicsImportRecord
+            sync_file_path: Optional path to sync .pkl file
+
+        Returns:
+            New SynchronizationRecord
+        """
         return SynchronizationRecord(
             participant_id=participant_id,
-            audio_file_name=sync.audio_file_name,
-            device_serial=sync.device_serial,
-            firmware_version=sync.firmware_version,
-            file_time=sync.file_time,
-            file_size_mb=sync.file_size_mb,
-            recording_date=sync.recording_date,
-            recording_time=sync.recording_time,
-            knee=sync.knee,
-            maneuver=sync.maneuver,
+            audio_processing_id=audio_processing_id,
+            biomechanics_import_id=biomechanics_import_id,
             pass_number=sync.pass_number,
             speed=sync.speed,
-            num_channels=sync.num_channels,
-            sample_rate=sync.sample_rate,
-            mic_1_position=sync.mic_1_position,
-            mic_2_position=sync.mic_2_position,
-            mic_3_position=sync.mic_3_position,
-            mic_4_position=sync.mic_4_position,
-            linked_biomechanics=sync.linked_biomechanics,
-            biomechanics_file=sync.biomechanics_file,
-            biomechanics_type=sync.biomechanics_type,
-            biomechanics_sync_method=sync.biomechanics_sync_method,
-            biomechanics_sample_rate=sync.biomechanics_sample_rate,
             audio_sync_time=sync.audio_sync_time,
             bio_left_sync_time=sync.bio_left_sync_time,
             bio_right_sync_time=sync.bio_right_sync_time,
@@ -363,6 +390,11 @@ class Repository:
             rms_time=sync.rms_time,
             onset_time=sync.onset_time,
             freq_time=sync.freq_time,
+            selected_audio_sync_time=getattr(sync, 'selected_audio_sync_time', None),
+            contra_selected_audio_sync_time=getattr(sync, 'contra_selected_audio_sync_time', None),
+            audio_visual_sync_time=getattr(sync, 'audio_visual_sync_time', None),
+            audio_visual_sync_time_contralateral=getattr(sync, 'audio_visual_sync_time_contralateral', None),
+            audio_stomp_method=getattr(sync, 'audio_stomp_method', None),
             sync_file_name=sync.sync_file_name,
             sync_file_path=sync_file_path,
             sync_duration=sync.sync_duration,
@@ -376,7 +408,15 @@ class Repository:
         sync: Synchronization,
         sync_file_path: Optional[str],
     ) -> None:
-        """Update existing synchronization record."""
+        """Update existing synchronization record.
+
+        Args:
+            record: Existing SynchronizationRecord
+            sync: Synchronization Pydantic model (sync-specific fields only)
+            sync_file_path: Optional new path to sync .pkl file
+        """
+        record.pass_number = sync.pass_number
+        record.speed = sync.speed
         record.audio_sync_time = sync.audio_sync_time
         record.bio_left_sync_time = sync.bio_left_sync_time
         record.bio_right_sync_time = sync.bio_right_sync_time
@@ -388,6 +428,16 @@ class Repository:
         record.rms_time = sync.rms_time
         record.onset_time = sync.onset_time
         record.freq_time = sync.freq_time
+        if hasattr(sync, 'selected_audio_sync_time'):
+            record.selected_audio_sync_time = sync.selected_audio_sync_time
+        if hasattr(sync, 'contra_selected_audio_sync_time'):
+            record.contra_selected_audio_sync_time = sync.contra_selected_audio_sync_time
+        if hasattr(sync, 'audio_visual_sync_time'):
+            record.audio_visual_sync_time = sync.audio_visual_sync_time
+        if hasattr(sync, 'audio_visual_sync_time_contralateral'):
+            record.audio_visual_sync_time_contralateral = sync.audio_visual_sync_time_contralateral
+        if hasattr(sync, 'audio_stomp_method'):
+            record.audio_stomp_method = sync.audio_stomp_method
         record.sync_file_name = sync.sync_file_name
         record.sync_file_path = sync_file_path or record.sync_file_path
         record.sync_duration = sync.sync_duration
@@ -400,12 +450,20 @@ class Repository:
     # ========================================================================
 
     def save_movement_cycle(
-        self, cycle: MovementCycle, cycles_file_path: Optional[str] = None
+        self,
+        cycle: MovementCycle,
+        audio_processing_id: int,
+        biomechanics_import_id: Optional[int] = None,
+        synchronization_id: Optional[int] = None,
+        cycles_file_path: Optional[str] = None,
     ) -> MovementCycleRecord:
         """Save or update movement cycle record.
 
         Args:
-            cycle: MovementCycle Pydantic model
+            cycle: MovementCycle Pydantic model (cycle-specific fields only)
+            audio_processing_id: FK to AudioProcessingRecord (required)
+            biomechanics_import_id: Optional FK to BiomechanicsImportRecord
+            synchronization_id: Optional FK to SynchronizationRecord
             cycles_file_path: Optional path to cycles .pkl file on disk
 
         Returns:
@@ -413,26 +471,32 @@ class Repository:
         """
         participant = self.get_or_create_participant(cycle.study, cycle.study_id)
 
-        # Check if record already exists
+        # Check if record already exists by unique constraint
         existing = self.session.execute(
             select(MovementCycleRecord).where(
                 and_(
                     MovementCycleRecord.participant_id == participant.id,
-                    MovementCycleRecord.audio_file_name == cycle.audio_file_name,
-                    MovementCycleRecord.knee == cycle.knee,
-                    MovementCycleRecord.maneuver == cycle.maneuver,
+                    MovementCycleRecord.audio_processing_id == audio_processing_id,
+                    MovementCycleRecord.cycle_index == cycle.cycle_index,
                 )
             )
         ).scalar_one_or_none()
 
         if existing:
             # Update existing record
-            self._update_movement_cycle_record(existing, cycle, cycles_file_path)
+            self._update_movement_cycle_record(
+                existing, cycle, biomechanics_import_id, synchronization_id, cycles_file_path
+            )
             record = existing
         else:
             # Create new record
             record = self._create_movement_cycle_record(
-                participant.id, cycle, cycles_file_path
+                participant.id,
+                cycle,
+                audio_processing_id,
+                biomechanics_import_id,
+                synchronization_id,
+                cycles_file_path,
             )
             self.session.add(record)
 
@@ -440,56 +504,80 @@ class Repository:
         return record
 
     def _create_movement_cycle_record(
-        self, participant_id: int, cycle: MovementCycle, cycles_file_path: Optional[str]
+        self,
+        participant_id: int,
+        cycle: MovementCycle,
+        audio_processing_id: int,
+        biomechanics_import_id: Optional[int],
+        synchronization_id: Optional[int],
+        cycles_file_path: Optional[str],
     ) -> MovementCycleRecord:
-        """Create new movement cycle record from Pydantic model."""
+        """Create new movement cycle record from Pydantic model.
+
+        Args:
+            participant_id: ID of participant
+            cycle: MovementCycle Pydantic model (cycle-specific fields only)
+            audio_processing_id: FK to AudioProcessingRecord
+            biomechanics_import_id: Optional FK to BiomechanicsImportRecord
+            synchronization_id: Optional FK to SynchronizationRecord
+            cycles_file_path: Optional path to cycles .pkl file
+
+        Returns:
+            New MovementCycleRecord
+        """
         return MovementCycleRecord(
             participant_id=participant_id,
-            audio_file_name=cycle.audio_file_name,
-            device_serial=cycle.device_serial,
-            firmware_version=cycle.firmware_version,
-            file_time=cycle.file_time,
-            file_size_mb=cycle.file_size_mb,
-            recording_date=cycle.recording_date,
-            recording_time=cycle.recording_time,
-            knee=cycle.knee,
-            maneuver=cycle.maneuver,
-            pass_number=cycle.pass_number,
-            speed=cycle.speed,
-            num_channels=cycle.num_channels,
-            sample_rate=cycle.sample_rate,
-            mic_1_position=cycle.mic_1_position,
-            mic_2_position=cycle.mic_2_position,
-            mic_3_position=cycle.mic_3_position,
-            mic_4_position=cycle.mic_4_position,
-            linked_biomechanics=cycle.linked_biomechanics,
-            biomechanics_file=cycle.biomechanics_file,
-            biomechanics_type=cycle.biomechanics_type,
-            biomechanics_sync_method=cycle.biomechanics_sync_method,
-            biomechanics_sample_rate=cycle.biomechanics_sample_rate,
-            num_cycles=cycle.num_cycles,
-            cycles_file_name=cycle.cycles_file_name,
-            cycles_file_path=cycles_file_path,
-            cycle_qc_version=cycle.cycle_qc_version,
+            audio_processing_id=audio_processing_id,
+            biomechanics_import_id=biomechanics_import_id,
+            synchronization_id=synchronization_id,
+            cycle_file=cycle.cycle_file,
+            cycle_index=cycle.cycle_index,
+            is_outlier=cycle.is_outlier,
+            start_time_s=cycle.start_time_s,
+            end_time_s=cycle.end_time_s,
+            duration_s=cycle.duration_s,
+            audio_start_time=cycle.audio_start_time,
+            audio_end_time=cycle.audio_end_time,
+            bio_start_time=cycle.bio_start_time,
+            bio_end_time=cycle.bio_end_time,
             biomechanics_qc_fail=cycle.biomechanics_qc_fail,
             sync_qc_fail=cycle.sync_qc_fail,
-            processing_date=cycle.processing_date,
+            cycle_file_path=cycles_file_path,
         )
 
     def _update_movement_cycle_record(
         self,
         record: MovementCycleRecord,
         cycle: MovementCycle,
+        biomechanics_import_id: Optional[int],
+        synchronization_id: Optional[int],
         cycles_file_path: Optional[str],
     ) -> None:
-        """Update existing movement cycle record."""
-        record.num_cycles = cycle.num_cycles
-        record.cycles_file_name = cycle.cycles_file_name
-        record.cycles_file_path = cycles_file_path or record.cycles_file_path
-        record.cycle_qc_version = cycle.cycle_qc_version
+        """Update existing movement cycle record.
+
+        Args:
+            record: Existing MovementCycleRecord
+            cycle: MovementCycle Pydantic model (cycle-specific fields only)
+            biomechanics_import_id: Optional FK to BiomechanicsImportRecord
+            synchronization_id: Optional FK to SynchronizationRecord
+            cycles_file_path: Optional new path to cycles .pkl file
+        """
+        record.is_outlier = cycle.is_outlier
+        record.start_time_s = cycle.start_time_s
+        record.end_time_s = cycle.end_time_s
+        record.duration_s = cycle.duration_s
+        record.audio_start_time = cycle.audio_start_time
+        record.audio_end_time = cycle.audio_end_time
+        record.bio_start_time = cycle.bio_start_time
+        record.bio_end_time = cycle.bio_end_time
         record.biomechanics_qc_fail = cycle.biomechanics_qc_fail
         record.sync_qc_fail = cycle.sync_qc_fail
-        record.processing_date = cycle.processing_date
+        if cycles_file_path:
+            record.cycle_file_path = cycles_file_path
+        if biomechanics_import_id is not None:
+            record.biomechanics_import_id = biomechanics_import_id
+        if synchronization_id is not None:
+            record.synchronization_id = synchronization_id
         record.updated_at = datetime.utcnow()
 
     # ========================================================================
