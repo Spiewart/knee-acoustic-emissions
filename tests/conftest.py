@@ -36,14 +36,14 @@ Factories are automatically available to all tests via pytest's fixture discover
 
     def test_example(synchronization_factory):
         '''Factory fixtures are auto-injected by pytest.'''
-        
+
         # ✅ CORRECT: Use factory with custom overrides
         sync = synchronization_factory(
             audio_sync_time=5.0,
             sync_duration=120.0,
             knee="left"
         )
-        
+
         # Factories provide sensible defaults for all required fields
         assert sync.study == "AOA"  # Default value
         assert sync.audio_sync_time == 5.0  # Your override
@@ -734,13 +734,14 @@ def fake_participant_directory(tmp_path_factory):
 @pytest.fixture
 def synchronization_factory():
     """Factory for creating Synchronization test records with sensible defaults.
-    
+
     Usage:
         sync = synchronization_factory(audio_sync_time=5.0, knee="left")
     """
     from datetime import datetime
+
     from src.metadata import Synchronization
-    
+
     def _create(**overrides):
         defaults = {
             # StudyMetadata
@@ -749,7 +750,8 @@ def synchronization_factory():
             # BiomechanicsMetadata
             "linked_biomechanics": True,
             "biomechanics_file": "test_biomech.xlsx",
-            "biomechanics_type": "Gonio",
+            "biomechanics_type": "Motion Analysis",
+            "biomechanics_sync_method": "stomp",
             "biomechanics_sample_rate": 100.0,
             # AcousticsFile
             "audio_file_name": "test_audio.bin",
@@ -778,6 +780,8 @@ def synchronization_factory():
             "rms_time": 5.0,
             "onset_time": 5.0,
             "freq_time": 5.0,
+            "pass_number": 1,  # Required for walk maneuvers
+            "speed": "normal",  # Required for walk maneuvers
             # Synchronization-specific
             "sync_file_name": "test_sync.pkl",
             "processing_date": datetime(2024, 1, 1, 12, 0, 0),
@@ -793,27 +797,29 @@ def synchronization_factory():
         }
         defaults.update(overrides)
         return Synchronization(**defaults)
-    
+
     return _create
 
 
 @pytest.fixture
 def synchronization_metadata_factory():
     """Factory for creating SynchronizationMetadata test records.
-    
+
     Usage:
         sync_meta = synchronization_metadata_factory(audio_sync_time=10.0)
     """
     from datetime import datetime
+
     from src.metadata import SynchronizationMetadata
-    
+
     def _create(**overrides):
         defaults = {
             "study": "AOA",
             "study_id": 1001,
             "linked_biomechanics": True,
             "biomechanics_file": "test.xlsx",
-            "biomechanics_type": "Gonio",
+            "biomechanics_type": "Motion Analysis",
+            "biomechanics_sync_method": "stomp",
             "biomechanics_sample_rate": 100.0,
             "audio_file_name": "test_audio.wav",
             "device_serial": "TEST001",
@@ -844,20 +850,21 @@ def synchronization_metadata_factory():
         }
         defaults.update(overrides)
         return SynchronizationMetadata(**defaults)
-    
+
     return _create
 
 
 @pytest.fixture
 def audio_processing_factory():
     """Factory for creating AudioProcessing test records.
-    
+
     Usage:
         audio = audio_processing_factory(processing_status="success")
     """
     from datetime import datetime
+
     from src.metadata import AudioProcessing
-    
+
     def _create(**overrides):
         defaults = {
             "study": "AOA",
@@ -883,20 +890,21 @@ def audio_processing_factory():
         }
         defaults.update(overrides)
         return AudioProcessing(**defaults)
-    
+
     return _create
 
 
 @pytest.fixture
 def movement_cycle_factory():
     """Factory for creating MovementCycle test records.
-    
+
     Usage:
         cycle = movement_cycle_factory(cycle_number=1, cycle_duration_s=1.2)
     """
     from datetime import datetime
+
     from src.metadata import MovementCycle
-    
+
     def _create(**overrides):
         defaults = {
             # StudyMetadata
@@ -940,5 +948,5 @@ def movement_cycle_factory():
         }
         defaults.update(overrides)
         return MovementCycle(**defaults)
-    
+
     return _create

@@ -418,14 +418,14 @@ All factories are defined in [`tests/conftest.py`](tests/conftest.py) and automa
 ```python
 def test_example(synchronization_factory):
     """Use factory fixtures - DO NOT create test data manually!"""
-    
+
     # ✅ CORRECT: Use factory with custom overrides
     sync = synchronization_factory(
         audio_sync_time=5.0,
         sync_duration=120.0,
         knee="left"
     )
-    
+
     # ❌ INCORRECT: Do not create Synchronization directly in tests
     # sync = Synchronization(study="AOA", study_id=1001, ...)  # NO!
 ```

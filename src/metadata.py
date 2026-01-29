@@ -274,13 +274,12 @@ class SynchronizationMetadata(AcousticsFile):
 
     Inherits from AcousticsFile (audio file details).
     Contains sync event times, detection method details, and walk-specific metadata.
-    
-    Note: While pass_number and speed logically belong in WalkMetadata, they are
-    defined here for practical dataclass field ordering reasons. These fields follow
-    WalkMetadata semantics: optional for non-walk maneuvers, required for walk."""
+
+    Note: pass_number and speed are conditionally required ONLY for walk maneuvers.
+    For non-walk maneuvers, they are optional."""
 
     # ===== Walk-specific metadata =====
-    # Optional for non-walk maneuvers, required for walk
+    # Optional generally; required for walk maneuvers (enforced by validator)
     pass_number: Optional[int] = None
     speed: Optional[Literal["slow", "normal", "fast", "medium", "comfortable"]] = None
 
@@ -324,10 +323,30 @@ class SynchronizationMetadata(AcousticsFile):
 
     @field_validator("pass_number")
     @classmethod
-    def validate_pass_number(cls, value: Optional[int]) -> Optional[int]:
-        """Validate pass number is non-negative if provided."""
-        if value is not None and value < 0:
-            raise ValueError("pass_number must be non-negative")
+    def validate_pass_number(cls, value: Optional[int], info) -> Optional[int]:
+        """Validate pass number: required and positive for walk, must be None for non-walk."""
+        maneuver = info.data.get("maneuver")
+        if maneuver == "walk":
+            if value is None:
+                raise ValueError("pass_number is required for walk maneuvers")
+            if value <= 0:
+                raise ValueError("pass_number must be positive (>0)")
+        else:
+            if value is not None:
+                raise ValueError("pass_number must be None for non-walk maneuvers")
+        return value
+
+    @field_validator("speed")
+    @classmethod
+    def validate_speed(cls, value: Optional[str], info) -> Optional[str]:
+        """Validate speed: required for walk, must be None for non-walk."""
+        maneuver = info.data.get("maneuver")
+        if maneuver == "walk":
+            if value is None:
+                raise ValueError("speed is required for walk maneuvers")
+        else:
+            if value is not None:
+                raise ValueError("speed must be None for non-walk maneuvers")
         return value
 
     @field_validator("consensus_methods")
@@ -344,6 +363,9 @@ class SynchronizationMetadata(AcousticsFile):
         result = super().to_dict()
 
         result.update({
+            "Pass": self.pass_number,
+            "Pass Number": self.pass_number,
+            "Speed": self.speed,
             "Audio Sync Time (s)": self.audio_sync_time,
             "Sync Offset (s)": self.sync_offset,
             "Aligned Audio Sync Time (s)": self.aligned_audio_sync_time,
@@ -471,40 +493,40 @@ class AudioProcessing(AcousticsFile):
             "Error": self.error_message,
             "Duration (s)": self.duration_seconds,
             "Audio QC Version": self.audio_qc_version,
-            # QC fail segments
-            "QC Fail Segments": str(self.qc_fail_segments),
-            "QC Fail Segments Ch1": str(self.qc_fail_segments_ch1),
-            "QC Fail Segments Ch2": str(self.qc_fail_segments_ch2),
-            "QC Fail Segments Ch3": str(self.qc_fail_segments_ch3),
-            "QC Fail Segments Ch4": str(self.qc_fail_segments_ch4),
-            # Signal dropout
-            "QC Signal Dropout": self.qc_signal_dropout,
-            "QC Signal Dropout Segments": str(self.qc_signal_dropout_segments),
-            "QC Signal Dropout Ch1": self.qc_signal_dropout_ch1,
-            "QC Signal Dropout Segments Ch1": str(self.qc_signal_dropout_segments_ch1),
-            "QC Signal Dropout Ch2": self.qc_signal_dropout_ch2,
-            "QC Signal Dropout Segments Ch2": str(self.qc_signal_dropout_segments_ch2),
-            "QC Signal Dropout Ch3": self.qc_signal_dropout_ch3,
-            "QC Signal Dropout Segments Ch3": str(self.qc_signal_dropout_segments_ch3),
-            "QC Signal Dropout Ch4": self.qc_signal_dropout_ch4,
-            "QC Signal Dropout Segments Ch4": str(self.qc_signal_dropout_segments_ch4),
-            # Artifacts
-            "QC Artifact": self.qc_artifact,
-            "QC Artifact Type": self.qc_artifact_type,
-            "QC Artifact Segments": str(self.qc_artifact_segments),
-            "QC Artifact Ch1": self.qc_artifact_ch1,
-            "QC Artifact Type Ch1": self.qc_artifact_type_ch1,
-            "QC Artifact Segments Ch1": str(self.qc_artifact_segments_ch1),
-            "QC Artifact Ch2": self.qc_artifact_ch2,
-            "QC Artifact Type Ch2": self.qc_artifact_type_ch2,
-            "QC Artifact Segments Ch2": str(self.qc_artifact_segments_ch2),
-            "QC Artifact Ch3": self.qc_artifact_ch3,
-            "QC Artifact Type Ch3": self.qc_artifact_type_ch3,
-            "QC Artifact Segments Ch3": str(self.qc_artifact_segments_ch3),
-            "QC Artifact Ch4": self.qc_artifact_ch4,
-            "QC Artifact Type Ch4": self.qc_artifact_type_ch4,
-            "QC Artifact Segments Ch4": str(self.qc_artifact_segments_ch4),
-            # Boolean QC status indicators
+            # Audio QC fail segments
+            "Audio QC Fail Segments": str(self.qc_fail_segments),
+            "Audio QC Fail Segments Ch1": str(self.qc_fail_segments_ch1),
+            "Audio QC Fail Segments Ch2": str(self.qc_fail_segments_ch2),
+            "Audio QC Fail Segments Ch3": str(self.qc_fail_segments_ch3),
+            "Audio QC Fail Segments Ch4": str(self.qc_fail_segments_ch4),
+            # Audio Signal dropout
+            "Audio Signal Dropout": self.qc_signal_dropout,
+            "Audio Signal Dropout Segments": str(self.qc_signal_dropout_segments),
+            "Audio Signal Dropout Ch1": self.qc_signal_dropout_ch1,
+            "Audio Signal Dropout Segments Ch1": str(self.qc_signal_dropout_segments_ch1),
+            "Audio Signal Dropout Ch2": self.qc_signal_dropout_ch2,
+            "Audio Signal Dropout Segments Ch2": str(self.qc_signal_dropout_segments_ch2),
+            "Audio Signal Dropout Ch3": self.qc_signal_dropout_ch3,
+            "Audio Signal Dropout Segments Ch3": str(self.qc_signal_dropout_segments_ch3),
+            "Audio Signal Dropout Ch4": self.qc_signal_dropout_ch4,
+            "Audio Signal Dropout Segments Ch4": str(self.qc_signal_dropout_segments_ch4),
+            # Audio Artifacts
+            "Audio Artifact": self.qc_artifact,
+            "Audio Artifact Type": self.qc_artifact_type,
+            "Audio Artifact Segments": str(self.qc_artifact_segments),
+            "Audio Artifact Ch1": self.qc_artifact_ch1,
+            "Audio Artifact Type Ch1": self.qc_artifact_type_ch1,
+            "Audio Artifact Segments Ch1": str(self.qc_artifact_segments_ch1),
+            "Audio Artifact Ch2": self.qc_artifact_ch2,
+            "Audio Artifact Type Ch2": self.qc_artifact_type_ch2,
+            "Audio Artifact Segments Ch2": str(self.qc_artifact_segments_ch2),
+            "Audio Artifact Ch3": self.qc_artifact_ch3,
+            "Audio Artifact Type Ch3": self.qc_artifact_type_ch3,
+            "Audio Artifact Segments Ch3": str(self.qc_artifact_segments_ch3),
+            "Audio Artifact Ch4": self.qc_artifact_ch4,
+            "Audio Artifact Type Ch4": self.qc_artifact_type_ch4,
+            "Audio Artifact Segments Ch4": str(self.qc_artifact_segments_ch4),
+            # Boolean Audio QC status indicators
             "QC_not_passed": self.qc_not_passed,
             "QC_not_passed_mic_1": self.qc_not_passed_mic_1,
             "QC_not_passed_mic_2": self.qc_not_passed_mic_2,
@@ -630,7 +652,7 @@ class Synchronization(SynchronizationMetadata):
     Inherits from SynchronizationMetadata (which inherits from AcousticsFile and WalkMetadata).
     Contains synchronization process metadata, aggregate statistics across all cycles,
     but NOT per-cycle details (those are stored in MovementCycle records).
-    
+
     Note: This class requires linked_biomechanics to be True (biomechanics data must be present).
     """
 
@@ -676,8 +698,8 @@ class Synchronization(SynchronizationMetadata):
 
     @property
     def acoustic_threshold(self) -> Optional[float]:
-        """Alias for qc_acoustic_threshold for convenience."""
-        return self.qc_acoustic_threshold
+        """Returns None - qc_acoustic_threshold field was removed."""
+        return None
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for Excel export."""
@@ -710,10 +732,10 @@ class MovementCycle(SynchronizationMetadata, AudioProcessing):
     Inherits from:
     - SynchronizationMetadata: sync times and sync method data
     - AudioProcessing: all audio QC fields (qc_artifact, qc_signal_dropout, etc.)
-    
+
     Represents a single extracted movement cycle with all upstream processing context via inheritance.
     Fields use snake_case for direct mapping to database columns and Excel headers.
-    
+
     Note: This class automatically inherits:
     - All sync times and methods from SynchronizationMetadata
     - All audio QC fields from AudioProcessing
@@ -764,7 +786,7 @@ class MovementCycle(SynchronizationMetadata, AudioProcessing):
     @model_validator(mode="after")
     def validate_biomechanics_timestamps(self):
         """Validate bio_start_time and bio_end_time are provided when linked_biomechanics is True.
-        
+
         If biomechanics data is linked to this cycle, both timestamps must be provided.
         """
         if self.linked_biomechanics is True:

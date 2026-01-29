@@ -110,7 +110,8 @@ def create_minimal_sync_record(**overrides):
         # BiomechanicsMetadata
         "linked_biomechanics": True,
         "biomechanics_file": "test_biomech.xlsx",
-        "biomechanics_type": "Gonio",
+        "biomechanics_type": "Motion Analysis",
+        "biomechanics_sync_method": "stomp",
         "biomechanics_sample_rate": 100.0,
         # AcousticsFile
         "audio_file_name": "test_audio.bin",
@@ -138,6 +139,8 @@ def create_minimal_sync_record(**overrides):
         "rms_time": 5.0,
         "onset_time": 5.0,
         "freq_time": 5.0,
+        "pass_number": 1,  # Required for walk maneuvers
+        "speed": "normal",  # Required for walk maneuvers
         # Synchronization
         "sync_file_name": "test_sync.pkl",
         "processing_date": datetime(2024, 1, 1, 12, 0, 0),
@@ -681,6 +684,8 @@ class TestHelperFunctions:
             outlier_cycles=outlier_cycles,
             output_dir=output_dir,
             acoustic_threshold=100.0,
+                    pass_number=1,  # Required for walk maneuvers
+                    speed="normal",  # Required for walk maneuvers
         )
 
         assert record.processing_status == "success"

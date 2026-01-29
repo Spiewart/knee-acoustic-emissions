@@ -114,7 +114,7 @@ excel_dict = audio.to_dict()
 ```python
 def test_synchronization_processing(synchronization_factory):
     """Factory fixtures are automatically available via pytest."""
-    
+
     # Use factory with custom overrides
     sync = synchronization_factory(
         audio_sync_time=5.0,
@@ -123,7 +123,7 @@ def test_synchronization_processing(synchronization_factory):
         knee="left",
         processing_status="success"
     )
-    
+
     # Test with the factory-created instance
     assert sync.audio_sync_time == 5.0
     assert sync.knee == "left"
@@ -131,10 +131,10 @@ def test_synchronization_processing(synchronization_factory):
 
 def test_with_minimal_overrides(synchronization_factory):
     """Factories provide sensible defaults."""
-    
+
     # Only override what you need to test
     sync = synchronization_factory(sync_file_name="test.pkl")
-    
+
     # All other fields have working defaults
     assert sync.sync_file_name == "test.pkl"
     assert sync.study == "AOA"  # Default value
@@ -147,7 +147,7 @@ def test_with_minimal_overrides(synchronization_factory):
 def test_bad_pattern():
     from datetime import datetime
     from src.metadata import Synchronization
-    
+
     # This is WRONG - duplicates factory defaults
     sync = Synchronization(
         study="AOA",

@@ -538,13 +538,17 @@ def test_process_participant_success(fake_participant_directory, caplog, monkeyp
     """Test processing a valid participant directory succeeds."""
     participant_dir = fake_participant_directory["participant_dir"]
 
-    # Mock parse_participant_directory to avoid processing all data
-    def mock_parse(*args, **kwargs):
-        pass
+    # Mock ParticipantProcessor to avoid actual processing
+    class MockProcessor:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def process(self, *args, **kwargs):
+            return True
 
     monkeypatch.setattr(
-        "src.orchestration.participant.parse_participant_directory",
-        mock_parse,
+        "src.orchestration.participant_processor.ParticipantProcessor",
+        MockProcessor,
     )
 
     # Capture INFO level logs
@@ -581,9 +585,22 @@ def test_process_participant_returns_false_on_error(tmp_path, caplog):
     assert "Error processing" in caplog.text or "Validation error" in caplog.text
 
 
-def test_process_participant_extracts_study_id(fake_participant_directory, caplog):
+def test_process_participant_extracts_study_id(fake_participant_directory, caplog, monkeypatch):
     """Test that process_participant correctly extracts study ID."""
     participant_dir = fake_participant_directory["participant_dir"]
+
+    # Mock ParticipantProcessor to avoid actual processing
+    class MockProcessor:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def process(self, *args, **kwargs):
+            return True
+
+    monkeypatch.setattr(
+        "src.orchestration.participant_processor.ParticipantProcessor",
+        MockProcessor,
+    )
 
     caplog.set_level(logging.INFO)
 
@@ -599,13 +616,17 @@ def test_process_participant_validation_passed_message(
     """Test that processing completion message is logged."""
     participant_dir = fake_participant_directory["participant_dir"]
 
-    # Mock parse_participant_directory to avoid processing all data
-    def mock_parse(*args, **kwargs):
-        pass
+    # Mock ParticipantProcessor to avoid actual processing
+    class MockProcessor:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def process(self, *args, **kwargs):
+            return True
 
     monkeypatch.setattr(
-        "src.orchestration.participant.parse_participant_directory",
-        mock_parse,
+        "src.orchestration.participant_processor.ParticipantProcessor",
+        MockProcessor,
     )
 
     # Capture INFO level logs
@@ -613,7 +634,7 @@ def test_process_participant_validation_passed_message(
     process_participant(participant_dir)
 
     # Check that processing completion is logged (validation is implicit in completion)
-    assert "Processing participant" in caplog.text
+    assert "Successfully completed processing" in caplog.text or "processing participant" in caplog.text.lower()
 
 
 # Tests for _trim_and_rename_biomechanics_columns

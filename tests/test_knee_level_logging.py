@@ -117,6 +117,8 @@ def _create_test_synchronization(**kwargs):
         "min_cycle_duration_s": 1.0,
         "max_cycle_duration_s": 1.5,
         "mean_acoustic_auc": 0.8,
+        "pass_number": 1,
+        "speed": "normal",
     }
     defaults.update(kwargs)
     return Synchronization(**defaults)
@@ -174,7 +176,7 @@ def sample_maneuver_log(tmp_path):
         sync = _create_test_synchronization(
             audio_file_name="test_audio.bin",
             sync_file_name=f"sync_pass_{i}",
-            pass_number=i,
+            pass_number=i+1,
             speed="slow" if i == 0 else "medium" if i == 1 else "fast",
             processing_status="success",
             audio_sync_time=5.0 + i,
@@ -192,7 +194,7 @@ def sample_maneuver_log(tmp_path):
         cycles = _create_test_synchronization(
             audio_file_name="test_audio.bin",
             sync_file_name=f"sync_pass_{i}",
-            pass_number=i,
+            pass_number=i+1,
             speed="slow" if i == 0 else "medium" if i == 1 else "fast",
             processing_status="success",
             sync_duration=120.0,

@@ -99,6 +99,8 @@ def test_stomp_offset_with_timedelta_input():
     record = create_sync_record_from_data(
         sync_file_name="test_sync",
         synced_df=synced_df,
+        pass_number=1,
+        speed="normal",
         audio_stomp_time=pd.Timedelta(seconds=5.0),
         bio_left_stomp_time=pd.Timedelta(seconds=10.0),
         bio_right_stomp_time=pd.Timedelta(seconds=12.0),
@@ -120,6 +122,8 @@ def test_sync_record_to_dict_includes_new_fields():
     record = create_sync_record_from_data(
         sync_file_name="test_sync",
         synced_df=synced_df,
+        pass_number=1,
+        speed="normal",
         audio_stomp_time=5.0,
         bio_left_stomp_time=10.0,
         bio_right_stomp_time=12.0,
@@ -149,6 +153,8 @@ def test_stomp_offset_none_when_missing_data():
     record = create_sync_record_from_data(
         sync_file_name="test_sync",
         synced_df=synced_df,
+        pass_number=1,
+        speed="normal",
         audio_stomp_time=None,
         bio_left_stomp_time=10.0,
         bio_right_stomp_time=12.0,
@@ -172,6 +178,8 @@ def test_stomp_offset_none_when_knee_side_missing():
     record = create_sync_record_from_data(
         sync_file_name="test_sync",
         synced_df=synced_df,
+        pass_number=1,
+        speed="normal",
         audio_stomp_time=5.0,
         bio_left_stomp_time=10.0,
         bio_right_stomp_time=12.0,

@@ -2221,12 +2221,14 @@ def main() -> None:
     # Process each participant
     success_count = 0
     failure_count = 0
+    failed_participants: list[str] = []
 
     for participant_dir in participants:
         if process_participant(participant_dir, knee=args.knee, maneuver=args.maneuver):
             success_count += 1
         else:
             failure_count += 1
+            failed_participants.append(participant_dir.name)
 
     # Summary
     logging.info(
@@ -2237,7 +2239,8 @@ def main() -> None:
 
     if failure_count > 0:
         logging.warning(
-            "Some participants failed processing; check logs for details"
+            "Some participants failed processing: %s",
+            ", ".join(failed_participants),
         )
 
 

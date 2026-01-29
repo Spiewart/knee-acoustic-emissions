@@ -297,7 +297,7 @@ class TestSynchronizationValidators:
 class TestMovementCycleValidators:
     def test_is_outlier_flag_manually_set_by_processing(self):
         """Verify is_outlier must be manually set by processing, not auto-calculated.
-        
+
         The is_outlier flag represents processing-level determination of whether a cycle
         is an outlier, and should be explicitly set by the processing pipeline based on
         QC flags and other criteria, not automatically derived from QC fields.

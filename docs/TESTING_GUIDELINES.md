@@ -13,14 +13,14 @@ This project uses **consolidated fixture factories** in `tests/conftest.py` as t
 ```python
 def test_synchronization(synchronization_factory):
     """Always use factory fixtures."""
-    
+
     # Create test data with factory
     sync = synchronization_factory(
         audio_sync_time=5.0,
         knee="left",
         processing_status="success"
     )
-    
+
     # Test your logic
     assert sync.audio_sync_time == 5.0
 ```
@@ -30,7 +30,7 @@ def test_synchronization(synchronization_factory):
 ```python
 def test_bad_pattern():
     """DO NOT DO THIS!"""
-    
+
     # ❌ Creating test data manually
     from src.metadata import Synchronization
     sync = Synchronization(
@@ -73,7 +73,7 @@ Creates `Synchronization` instances with sensible defaults.
 def test_sync_workflow(synchronization_factory):
     # Minimal override
     sync = synchronization_factory(sync_file_name="test.pkl")
-    
+
     # Multiple overrides
     sync = synchronization_factory(
         audio_sync_time=5.0,
@@ -172,16 +172,16 @@ When you add fields to metadata classes, follow this workflow:
 @dataclass
 class Synchronization(SynchronizationMetadata):
     """Add your new field."""
-    
+
     new_qc_parameter: Optional[float] = None
-    
+
     @field_validator("new_qc_parameter")
     @classmethod
     def validate_new_parameter(cls, value):
         if value is not None and value < 0:
             raise ValueError("must be non-negative")
         return value
-    
+
     def to_dict(self) -> Dict[str, Any]:
         result = super().to_dict()
         result["New QC Parameter"] = self.new_qc_parameter
@@ -222,7 +222,7 @@ def test_with_new_field(synchronization_factory):
     # Works immediately with factory default
     sync = synchronization_factory()
     assert sync.new_qc_parameter == 0.0
-    
+
     # Override when needed
     sync = synchronization_factory(new_qc_parameter=5.0)
     assert sync.new_qc_parameter == 5.0
@@ -237,7 +237,7 @@ def test_with_new_field(synchronization_factory):
 ```python
 def test_validation_error(synchronization_factory):
     """Test that invalid data raises errors."""
-    
+
     with pytest.raises(ValidationError):
         synchronization_factory(
             audio_sync_time=-1.0  # Invalid: negative time
@@ -249,10 +249,10 @@ def test_validation_error(synchronization_factory):
 ```python
 def test_minimal_sync(synchronization_factory):
     """Factory provides all required fields."""
-    
+
     # Only override what you're testing
     sync = synchronization_factory(processing_status="error")
-    
+
     # All other fields have working defaults
     assert sync.processing_status == "error"
     assert sync.study == "AOA"  # Default
@@ -263,12 +263,12 @@ def test_minimal_sync(synchronization_factory):
 ```python
 def test_multiple_records(synchronization_factory):
     """Create multiple test instances easily."""
-    
+
     syncs = [
         synchronization_factory(pass_number=i, speed=speed)
         for i, speed in enumerate(["slow", "medium", "fast"], 1)
     ]
-    
+
     assert len(syncs) == 3
     assert syncs[0].speed == "slow"
 ```
@@ -279,18 +279,18 @@ def test_multiple_records(synchronization_factory):
 
 Before Phase 5, time fields used `timedelta` objects. Each test file had its own helper function creating test data with `timedelta(seconds=X)`.
 
-**Files with duplicate helpers**: 15+  
-**Total helper functions**: 42+  
+**Files with duplicate helpers**: 15+
+**Total helper functions**: 42+
 **Lines of duplicated code**: ~2000
 
 ### The Change
 
 Phase 5 converted all time fields from `timedelta` to `float` (seconds).
 
-**Without consolidation**: Would need to update 42 helper functions across 15+ files.  
+**Without consolidation**: Would need to update 42 helper functions across 15+ files.
 **With consolidation**: Only updated 4 factories in `conftest.py`.
 
-**Time saved**: ~8 hours  
+**Time saved**: ~8 hours
 **Bugs prevented**: Many (inconsistent conversions, missed `.total_seconds()` calls)
 
 ### The Lesson
@@ -316,14 +316,14 @@ If you need a new factory or are unsure how to use existing ones:
 
 ## Summary
 
-✅ **DO**: Use `synchronization_factory()` and related fixtures  
-✅ **DO**: Override only what you need to test  
-✅ **DO**: Update factories when adding metadata fields  
-✅ **DO**: Use float (seconds) for all time fields  
+✅ **DO**: Use `synchronization_factory()` and related fixtures
+✅ **DO**: Override only what you need to test
+✅ **DO**: Update factories when adding metadata fields
+✅ **DO**: Use float (seconds) for all time fields
 
-❌ **DON'T**: Create `Synchronization()` directly in tests  
-❌ **DON'T**: Make new helper functions in test files  
-❌ **DON'T**: Use `timedelta` for time fields  
-❌ **DON'T**: Duplicate default values across tests  
+❌ **DON'T**: Create `Synchronization()` directly in tests
+❌ **DON'T**: Make new helper functions in test files
+❌ **DON'T**: Use `timedelta` for time fields
+❌ **DON'T**: Duplicate default values across tests
 
 **Remember**: Consolidated fixtures = Maintainable tests = Happy developers! 🎉

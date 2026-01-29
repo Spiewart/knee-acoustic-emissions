@@ -27,6 +27,8 @@ def _create_test_record(**kwargs):
         "recording_time": datetime.now(),
         "knee": "left",
         "maneuver": "walk",
+        "pass_number": 1,
+        "speed": "normal",
         "sample_rate": 46875.0,
         "num_channels": 4,
         "mic_1_position": "IPM",
@@ -118,6 +120,8 @@ def test_create_sync_record_populates_new_fields_from_detection_results():
     record = create_sync_record_from_data(
         sync_file_name="test_sync.pkl",
         synced_df=synced_df,
+        pass_number=1,
+        speed="normal",
         audio_stomp_time=2.0,
         detection_results=detection_results,
     )
@@ -161,6 +165,8 @@ def test_create_sync_record_consensus_without_biomech_guided():
     record = create_sync_record_from_data(
         sync_file_name="test_sync.pkl",
         synced_df=synced_df,
+        pass_number=1,
+        speed="normal",
         audio_stomp_time=2.0,
         detection_results=detection_results,
     )
@@ -198,6 +204,8 @@ def test_synchronization_consensus_method_agreement_span_calculation():
     record = create_sync_record_from_data(
         sync_file_name="test_sync.pkl",
         synced_df=synced_df,
+        pass_number=1,
+        speed="normal",
         audio_stomp_time=2.0,
         detection_results=detection_results,
     )
@@ -231,6 +239,8 @@ def test_synchronization_agreement_span_with_partial_consensus():
     record = create_sync_record_from_data(
         sync_file_name="test_sync.pkl",
         synced_df=synced_df,
+        pass_number=1,
+        speed="normal",
         audio_stomp_time=2.0,
         detection_results=detection_results,
     )
@@ -240,4 +250,3 @@ def test_synchronization_agreement_span_with_partial_consensus():
     # Freq time is still recorded but not in consensus_methods
     assert record.freq_time == 5.0
     assert record.consensus_methods == "rms, onset"
-

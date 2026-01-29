@@ -121,7 +121,8 @@ def test_basic_functionality():
                 study_id=1011,
                 linked_biomechanics=True,
                 biomechanics_file="test.xlsx",
-                biomechanics_type="Gonio",
+                biomechanics_type="Motion Analysis",
+                biomechanics_sync_method="stomp",
                 biomechanics_sample_rate=100.0,
                 audio_file_name="test_audio",
                 device_serial="12345",
@@ -132,6 +133,8 @@ def test_basic_functionality():
                 recording_time=now,
                 knee='right',
                 maneuver='fe',
+                pass_number=None,
+                speed=None,
                 sample_rate=46875.0,
                 num_channels=4,
                 mic_1_position='IPM',
@@ -171,7 +174,8 @@ def test_basic_functionality():
                 study_id=1011,
                 linked_biomechanics=True,
                 biomechanics_file="test.xlsx",
-                biomechanics_type="Gonio",
+                biomechanics_type="Motion Analysis",
+                biomechanics_sync_method="stomp",
                 biomechanics_sample_rate=100.0,
                 audio_file_name="test_audio",
                 device_serial="12345",
@@ -182,6 +186,8 @@ def test_basic_functionality():
                 recording_time=now,
                 knee='right',
                 maneuver='fe',
+                pass_number=None,  # Must be None for non-walk maneuvers
+                speed=None,  # Must be None for non-walk maneuvers
                 sample_rate=46875.0,
                 num_channels=4,
                 mic_1_position='IPM',
@@ -234,7 +240,8 @@ def test_basic_functionality():
             study_id=1011,
             linked_biomechanics=True,
             biomechanics_file="test.xlsx",
-            biomechanics_type="Gonio",
+            biomechanics_type="Motion Analysis",
+            biomechanics_sync_method="stomp",
             biomechanics_sample_rate=100.0,
             audio_file_name="test_audio",
             device_serial="12345",
@@ -245,6 +252,8 @@ def test_basic_functionality():
             recording_time=now,
             knee='right',
             maneuver='fe',
+            pass_number=None,
+            speed=None,
             sample_rate=46875.0,
             num_channels=4,
             mic_1_position='IPM',
@@ -276,7 +285,7 @@ def test_basic_functionality():
         )
         loaded_log.add_synchronization_record(sync_record_update)
         assert len(loaded_log.synchronization_records) == 3  # Still 3
-        assert loaded_log.synchronization_records[0].sync_duration.total_seconds() == 20.0
+        assert loaded_log.synchronization_records[0].sync_duration == 20.0
 
         print("✅ All basic tests passed!")
 
@@ -337,6 +346,8 @@ def test_helper_functions():
         sync_record = create_sync_record_from_data(
             sync_file_name="test_sync",
             synced_df=synced_df,
+            pass_number=1,
+            speed="normal",
             audio_stomp_time=10.5,
             bio_right_stomp_time=5.2,
             knee_side="right",
