@@ -19,13 +19,13 @@ class TestPersistentParticipantProcessor:
         """Test processor can be initialized without database."""
         participant_dir = Path("/tmp/test_participant")
         mock_processor_class.return_value = MagicMock()
-        
+
         processor = PersistentParticipantProcessor(
             participant_dir=participant_dir,
             biomechanics_type="Motion Analysis",
             db_session=None,
         )
-        
+
         assert processor.participant_dir == participant_dir
         assert processor.biomechanics_type == "Motion Analysis"
         assert processor.processor is not None
@@ -39,13 +39,13 @@ class TestPersistentParticipantProcessor:
         participant_dir = Path("/tmp/test_participant")
         mock_session = MagicMock()
         mock_processor_class.return_value = MagicMock()
-        
+
         processor = PersistentParticipantProcessor(
             participant_dir=participant_dir,
             biomechanics_type="Motion Analysis",
             db_session=mock_session,
         )
-        
+
         assert processor.participant_dir == participant_dir
         assert processor.persistence.enabled
         assert processor.tracker is not None
@@ -57,15 +57,15 @@ class TestPersistentParticipantProcessor:
         mock_core = MagicMock()
         mock_core.process.return_value = True
         mock_processor_class.return_value = mock_core
-        
+
         processor = PersistentParticipantProcessor(
             participant_dir=participant_dir,
             db_session=None,
         )
-        
+
         # Call process
         result = processor.process(entrypoint="sync", knee="left", maneuver="walk")
-        
+
         # Verify delegation
         mock_core.process.assert_called_once_with(
             entrypoint="sync",
@@ -81,14 +81,14 @@ class TestPersistentParticipantProcessor:
         mock_core = MagicMock()
         mock_core.process.return_value = False
         mock_processor_class.return_value = mock_core
-        
+
         processor = PersistentParticipantProcessor(
             participant_dir=participant_dir,
             db_session=None,
         )
-        
+
         result = processor.process()
-        
+
         assert result is False
 
     @patch("src.orchestration.persistent_processor.ParticipantProcessor")
@@ -99,17 +99,17 @@ class TestPersistentParticipantProcessor:
         mock_core = MagicMock()
         mock_core.process.return_value = True
         mock_processor_class.return_value = mock_core
-        
+
         processor = PersistentParticipantProcessor(
             participant_dir=participant_dir,
             db_session=mock_session,
         )
-        
+
         # Mock persistence method
         processor._persist_processor_results = MagicMock()
-        
+
         result = processor.process()
-        
+
         assert result is True
         processor._persist_processor_results.assert_called_once()
 
@@ -120,17 +120,17 @@ class TestPersistentParticipantProcessor:
         mock_core = MagicMock()
         mock_core.process.return_value = True
         mock_processor_class.return_value = mock_core
-        
+
         processor = PersistentParticipantProcessor(
             participant_dir=participant_dir,
             db_session=None,
         )
-        
+
         # Mock persistence method
         processor._persist_processor_results = MagicMock()
-        
+
         result = processor.process()
-        
+
         assert result is True
         processor._persist_processor_results.assert_not_called()
 
@@ -141,14 +141,14 @@ class TestPersistentParticipantProcessor:
         mock_core = MagicMock()
         mock_core.process.side_effect = ValueError("Test error")
         mock_processor_class.return_value = mock_core
-        
+
         processor = PersistentParticipantProcessor(
             participant_dir=participant_dir,
             db_session=None,
         )
-        
+
         result = processor.process()
-        
+
         assert result is False
 
 
@@ -160,9 +160,9 @@ class TestCreatePersistentProcessor:
         """Test factory creates processor without database when url not provided."""
         participant_dir = Path("/tmp/test_participant")
         mock_processor_class.return_value = MagicMock()
-        
+
         processor = create_persistent_processor(participant_dir)
-        
+
         assert processor is not None
         assert not processor.persistence.enabled
 
@@ -174,12 +174,12 @@ class TestCreatePersistentProcessor:
         mock_session = MagicMock()
         mock_create_session.return_value = mock_session
         mock_processor_class.return_value = MagicMock()
-        
+
         processor = create_persistent_processor(
             participant_dir,
             db_url="postgresql://localhost/test"
         )
-        
+
         assert processor is not None
         assert processor.persistence.enabled
         mock_create_session.assert_called_once_with("postgresql://localhost/test")
@@ -191,12 +191,12 @@ class TestCreatePersistentProcessor:
         participant_dir = Path("/tmp/test_participant")
         mock_create_session.side_effect = Exception("Connection failed")
         mock_processor_class.return_value = MagicMock()
-        
+
         processor = create_persistent_processor(
             participant_dir,
             db_url="postgresql://localhost/test"
         )
-        
+
         assert processor is not None
         assert not processor.persistence.enabled
 
@@ -205,12 +205,12 @@ class TestCreatePersistentProcessor:
         """Test factory accepts biomechanics_type parameter."""
         participant_dir = Path("/tmp/test_participant")
         mock_processor_class.return_value = MagicMock()
-        
+
         processor = create_persistent_processor(
             participant_dir,
             biomechanics_type="Motion Analysis"
         )
-        
+
         assert processor.biomechanics_type == "Motion Analysis"
 
 
@@ -224,11 +224,11 @@ class TestIntegrationWithRealParticipantDirectory:
         root = os.getenv("AE_DATA_ROOT")
         if not root:
             pytest.skip("AE_DATA_ROOT not set")
-        
+
         participant_dir = Path(root) / "#1011"
         if not participant_dir.exists():
             pytest.skip(f"Sample participant directory not found: {participant_dir}")
-        
+
         return participant_dir
 
     def test_processor_initialization_with_real_directory(self, sample_participant_dir):
@@ -237,14 +237,14 @@ class TestIntegrationWithRealParticipantDirectory:
             participant_dir=sample_participant_dir,
             db_session=None,
         )
-        
+
         assert processor.participant_dir == sample_participant_dir
         assert processor.processor is not None
 
     def test_factory_initialization_with_real_directory(self, sample_participant_dir):
         """Test factory can create processor with real participant directory."""
         processor = create_persistent_processor(sample_participant_dir)
-        
+
         assert processor is not None
         assert processor.participant_dir == sample_participant_dir
 

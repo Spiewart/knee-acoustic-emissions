@@ -1,18 +1,41 @@
-"""Tests for QC metadata validation and Excel persistence.
-
-Tests that QC_not_passed boolean fields are correctly auto-populated from
-qc_fail_segments and persist through Excel save/load cycles.
-"""
+"""QC metadata reporting tests."""
 
 from datetime import datetime
-from pathlib import Path
-from unittest.mock import Mock, patch
 
 import pandas as pd
 import pytest
 
 from src.metadata import AudioProcessing
+from src.reports.report_generator import ReportGenerator
 
+
+def test_qc_fields_present_in_audio_sheet(
+    db_session,
+    repository,
+    audio_processing_factory,
+    tmp_path,
+):
+    audio = audio_processing_factory(
+        study="AOA",
+        study_id=7001,
+        audio_file_name="AOA7001_audio",
+        qc_signal_dropout=True,
+        qc_artifact=True,
+        qc_fail_segments=[(0.1, 0.2)],
+    )
+    audio_record = repository.save_audio_processing(audio)
+
+    report = ReportGenerator(db_session)
+    output_path = report.save_to_excel(
+        tmp_path / "qc_audio.xlsx",
+        participant_id=audio_record.participant_id,
+        maneuver="walk",
+        knee="left",
+    )
+
+    audio_sheet = pd.read_excel(output_path, sheet_name="Audio")
+    assert "QC Signal Dropout" in audio_sheet.columns
+    assert "QC Artifact" in audio_sheet.columns
 
 class TestQCNotPassedValidator:
     """Test the populate_qc_not_passed_fields validator."""
@@ -429,3 +452,243 @@ class TestQCStatusIntegrationWithProcessing:
         assert audio.qc_not_passed_mic_2 is False
         assert audio.qc_not_passed_mic_3 is False
         assert audio.qc_not_passed_mic_4 is False
+
+class TestDetailedQCFieldsExport:
+    """Test that detailed QC fields are exported and persist through Excel cycles."""
+
+    def _create_audio_with_qc_fields(self) -> AudioProcessing:
+        """Helper to create AudioProcessing with all QC fields populated."""
+        return AudioProcessing(
+            study="AOA",
+            study_id=1016,
+            audio_file_name="test.bin",
+            device_serial="123",
+            firmware_version=1,
+            file_time=datetime.now(),
+            file_size_mb=10.0,
+            recording_date=datetime.now(),
+            recording_time=datetime.now(),
+            knee="right",
+            maneuver="walk",
+            num_channels=4,
+            mic_1_position="IPM",
+            mic_2_position="IPL",
+            mic_3_position="SPM",
+            mic_4_position="SPL",
+            processing_date=datetime.now(),
+            # QC Fail Segments
+            qc_fail_segments=[(1.0, 2.5)],
+            qc_fail_segments_ch1=[(1.0, 2.5)],
+            qc_fail_segments_ch2=[],
+            qc_fail_segments_ch3=[(3.0, 4.0)],
+            qc_fail_segments_ch4=[],
+            # Signal Dropout QC
+            qc_signal_dropout=True,
+            qc_signal_dropout_segments=[(0.5, 1.5), (8.0, 9.0)],
+            qc_signal_dropout_ch1=True,
+            qc_signal_dropout_segments_ch1=[(0.5, 1.5)],
+            qc_signal_dropout_ch2=False,
+            qc_signal_dropout_segments_ch2=[],
+            qc_signal_dropout_ch3=True,
+            qc_signal_dropout_segments_ch3=[(8.0, 9.0)],
+            qc_signal_dropout_ch4=False,
+            qc_signal_dropout_segments_ch4=[],
+            # Artifact QC
+            qc_artifact=True,
+            qc_artifact_type=["Intermittent"],
+            qc_artifact_segments=[(2.0, 3.0)],
+            qc_artifact_ch1=True,
+            qc_artifact_type_ch1=["Continuous"],
+            qc_artifact_segments_ch1=[(2.0, 3.0)],
+            qc_artifact_ch2=False,
+            qc_artifact_type_ch2=None,
+            qc_artifact_segments_ch2=[],
+            qc_artifact_ch3=False,
+            qc_artifact_type_ch3=None,
+            qc_artifact_segments_ch3=[],
+            qc_artifact_ch4=True,
+            qc_artifact_type_ch4=["Intermittent"],
+            qc_artifact_segments_ch4=[(5.0, 6.0)],
+        )
+
+    def test_qc_fields_in_to_dict(self):
+        """Test that all QC fields are included in to_dict() export."""
+        audio = self._create_audio_with_qc_fields()
+        result = audio.to_dict()
+
+        # QC Fail Segments
+        assert "QC Fail Segments" in result
+        assert "QC Fail Segments Ch1" in result
+        assert "QC Fail Segments Ch2" in result
+        assert "QC Fail Segments Ch3" in result
+        assert "QC Fail Segments Ch4" in result
+
+        # Signal Dropout QC
+        assert "QC Signal Dropout" in result
+        assert "QC Signal Dropout Segments" in result
+        assert "QC Signal Dropout Ch1" in result
+        assert "QC Signal Dropout Segments Ch1" in result
+        assert "QC Signal Dropout Ch2" in result
+        assert "QC Signal Dropout Segments Ch2" in result
+        assert "QC Signal Dropout Ch3" in result
+        assert "QC Signal Dropout Segments Ch3" in result
+        assert "QC Signal Dropout Ch4" in result
+        assert "QC Signal Dropout Segments Ch4" in result
+
+        # Artifact QC
+        assert "QC Artifact" in result
+        assert "QC Artifact Type" in result
+        assert "QC Artifact Segments" in result
+        assert "QC Artifact Ch1" in result
+        assert "QC Artifact Type Ch1" in result
+        assert "QC Artifact Segments Ch1" in result
+        assert "QC Artifact Ch2" in result
+        assert "QC Artifact Type Ch2" in result
+        assert "QC Artifact Segments Ch2" in result
+        assert "QC Artifact Ch3" in result
+        assert "QC Artifact Type Ch3" in result
+        assert "QC Artifact Segments Ch3" in result
+        assert "QC Artifact Ch4" in result
+        assert "QC Artifact Type Ch4" in result
+        assert "QC Artifact Segments Ch4" in result
+
+    def test_qc_field_values_in_to_dict(self):
+        """Test that QC field values are correctly exported."""
+        audio = self._create_audio_with_qc_fields()
+        result = audio.to_dict()
+
+        # QC Fail Segments
+        assert result["QC Fail Segments"] == [(1.0, 2.5)]
+        assert result["QC Fail Segments Ch1"] == [(1.0, 2.5)]
+        assert result["QC Fail Segments Ch2"] == []
+        assert result["QC Fail Segments Ch3"] == [(3.0, 4.0)]
+        assert result["QC Fail Segments Ch4"] == []
+
+        # Signal Dropout QC
+        assert result["QC Signal Dropout"] is True
+        assert result["QC Signal Dropout Ch1"] is True
+        assert result["QC Signal Dropout Ch2"] is False
+        assert result["QC Signal Dropout Ch3"] is True
+        assert result["QC Signal Dropout Ch4"] is False
+
+        # Artifact QC
+        assert result["QC Artifact"] is True
+        assert result["QC Artifact Type"] == ["Intermittent"]
+        assert result["QC Artifact Ch1"] is True
+        assert result["QC Artifact Type Ch1"] == ["Continuous"]
+        assert result["QC Artifact Ch2"] is False
+        assert result["QC Artifact Type Ch2"] is None
+
+    def test_qc_fields_persist_through_excel_roundtrip(self, tmp_path):
+        """Test that QC fields survive Excel save/load cycle."""
+        audio = self._create_audio_with_qc_fields()
+
+        # Save to Excel
+        excel_path = tmp_path / "test_qc_export.xlsx"
+        df = pd.DataFrame([audio.to_dict()])
+        df.to_excel(excel_path, sheet_name="Audio", index=False)
+
+        # Load from Excel
+        df_loaded = pd.read_excel(excel_path, sheet_name="Audio")
+
+        # Verify QC fields are present in loaded data
+        assert "QC Fail Segments" in df_loaded.columns
+        assert "QC Signal Dropout" in df_loaded.columns
+        assert "QC Artifact" in df_loaded.columns
+        assert "QC Artifact Type" in df_loaded.columns
+
+        # Verify boolean values
+        assert df_loaded["QC Signal Dropout"].iloc[0] is True or df_loaded["QC Signal Dropout"].iloc[0] == 1
+        assert df_loaded["QC Artifact"].iloc[0] is True or df_loaded["QC Artifact"].iloc[0] == 1
+
+    def test_biomechanics_import_id_in_to_dict(self):
+        """Test that biomechanics_import_id is exported in to_dict()."""
+        # Test with biomechanics_import_id set
+        audio = AudioProcessing(
+            study="AOA",
+            study_id=1016,
+            audio_file_name="test.bin",
+            device_serial="123",
+            firmware_version=1,
+            file_time=datetime.now(),
+            file_size_mb=10.0,
+            recording_date=datetime.now(),
+            recording_time=datetime.now(),
+            knee="right",
+            maneuver="walk",
+            num_channels=4,
+            mic_1_position="IPM",
+            mic_2_position="IPL",
+            mic_3_position="SPM",
+            mic_4_position="SPL",
+            processing_date=datetime.now(),
+            biomechanics_import_id=42,  # FK to biomechanics record
+        )
+        result = audio.to_dict()
+
+        # Verify biomechanics_import_id is in the export
+        assert "Biomechanics Import ID" in result
+        assert result["Biomechanics Import ID"] == 42
+
+    def test_biomechanics_import_id_none_in_to_dict(self):
+        """Test that biomechanics_import_id=None is exported correctly."""
+        audio = AudioProcessing(
+            study="AOA",
+            study_id=1016,
+            audio_file_name="test.bin",
+            device_serial="123",
+            firmware_version=1,
+            file_time=datetime.now(),
+            file_size_mb=10.0,
+            recording_date=datetime.now(),
+            recording_time=datetime.now(),
+            knee="right",
+            maneuver="walk",
+            num_channels=4,
+            mic_1_position="IPM",
+            mic_2_position="IPL",
+            mic_3_position="SPM",
+            mic_4_position="SPL",
+            processing_date=datetime.now(),
+            biomechanics_import_id=None,  # No biomechanics linked
+        )
+        result = audio.to_dict()
+
+        # Verify biomechanics_import_id is in the export as None
+        assert "Biomechanics Import ID" in result
+        assert result["Biomechanics Import ID"] is None
+
+    def test_biomechanics_import_id_persists_through_excel(self, tmp_path):
+        """Test that biomechanics_import_id persists through Excel save/load."""
+        audio = AudioProcessing(
+            study="AOA",
+            study_id=1016,
+            audio_file_name="test_with_biomech.bin",
+            device_serial="456",
+            firmware_version=1,
+            file_time=datetime.now(),
+            file_size_mb=15.0,
+            recording_date=datetime.now(),
+            recording_time=datetime.now(),
+            knee="left",
+            maneuver="sts",
+            num_channels=4,
+            mic_1_position="IPM",
+            mic_2_position="IPL",
+            mic_3_position="SPM",
+            mic_4_position="SPL",
+            processing_date=datetime.now(),
+            biomechanics_import_id=123,  # FK to biomechanics record
+        )
+
+        # Save to Excel
+        excel_path = tmp_path / "test_biomech_id.xlsx"
+        df = pd.DataFrame([audio.to_dict()])
+        df.to_excel(excel_path, sheet_name="Audio", index=False)
+
+        # Load from Excel
+        df_loaded = pd.read_excel(excel_path, sheet_name="Audio")
+
+        # Verify biomechanics_import_id is present and has correct value
+        assert "Biomechanics Import ID" in df_loaded.columns
+        assert df_loaded["Biomechanics Import ID"].iloc[0] == 123

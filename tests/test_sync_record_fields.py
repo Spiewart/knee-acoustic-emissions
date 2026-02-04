@@ -14,27 +14,10 @@ def _create_test_record(**kwargs):
     defaults = {
         "study": "AOA",
         "study_id": 1001,
-        "linked_biomechanics": True,
-        "biomechanics_file": "test.xlsx",
-        "biomechanics_type": "Gonio",
-        "biomechanics_sample_rate": 100.0,
-        "audio_file_name": "test_audio.wav",
-        "device_serial": "TEST001",
-        "firmware_version": 1,
-        "file_time": datetime.now(),
-        "file_size_mb": 10.0,
-        "recording_date": datetime.now(),
-        "recording_time": datetime.now(),
-        "knee": "left",
-        "maneuver": "walk",
+        "audio_processing_id": 1,
+        "biomechanics_import_id": 1,
         "pass_number": 1,
-        "speed": "normal",
-        "sample_rate": 46875.0,
-        "num_channels": 4,
-        "mic_1_position": "IPM",
-        "mic_2_position": "IPL",
-        "mic_3_position": "SPM",
-        "mic_4_position": "SPL",
+        "speed": "comfortable",  # Changed from "normal"
         "audio_sync_time": 0.0,
         "bio_left_sync_time": 0.0,
         "sync_offset": 0.0,
@@ -56,7 +39,6 @@ def _create_test_record(**kwargs):
         "median_cycle_duration_s": 0.0,
         "min_cycle_duration_s": 0.0,
         "max_cycle_duration_s": 0.0,
-        "mean_acoustic_auc": 0.0,
     }
     defaults.update(kwargs)
     return Synchronization(**defaults)
@@ -74,22 +56,17 @@ def test_synchronization_has_biomech_guided_fields():
     assert record.selected_audio_sync_time == 2.5
     assert record.contra_selected_audio_sync_time == 3.8
 
-def test_synchronization_to_dict_includes_new_fields():
-    """Test that to_dict includes new fields."""
+def test_synchronization_fields_include_new_values():
+    """Test that new fields are populated on the model."""
     record = _create_test_record(
         audio_stomp_method="biomechanics-guided",
         selected_audio_sync_time=2.5,
         contra_selected_audio_sync_time=3.8,
     )
 
-    record_dict = record.to_dict()
-
-    assert "Audio Stomp Method" in record_dict
-    assert record_dict["Audio Stomp Method"] == "biomechanics-guided"
-    assert "Selected Audio Sync Time (s)" in record_dict
-    assert record_dict["Selected Audio Sync Time (s)"] == 2.5
-    assert "Contra Selected Audio Sync Time (s)" in record_dict
-    assert record_dict["Contra Selected Audio Sync Time (s)"] == 3.8
+    assert record.audio_stomp_method == "biomechanics-guided"
+    assert record.selected_audio_sync_time == 2.5
+    assert record.contra_selected_audio_sync_time == 3.8
 
 
 def test_create_sync_record_populates_new_fields_from_detection_results():

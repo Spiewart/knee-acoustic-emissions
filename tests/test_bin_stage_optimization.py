@@ -22,10 +22,17 @@ from src.orchestration.participant_processor import (
 )
 
 
+@pytest.fixture
+def use_test_db(db_engine, monkeypatch):
+    """Ensure processing uses the test database with the latest schema."""
+    monkeypatch.setenv("AE_DATABASE_URL", str(db_engine.url))
+    return db_engine
+
+
 class TestBinStagePickleCreation:
     """Test that bin stage creates proper pickle files."""
 
-    def test_bin_stage_uses_or_creates_with_freq_pickle(self, fake_participant_directory):
+    def test_bin_stage_uses_or_creates_with_freq_pickle(self, fake_participant_directory, use_test_db):
         """Bin stage should use or create *_with_freq.pkl file."""
         participant_dir = fake_participant_directory["participant_dir"]
         maneuver_dir = participant_dir / "Left Knee" / "Flexion-Extension"
@@ -57,8 +64,8 @@ class TestBinStagePickleCreation:
 class TestBinStageOptimization:
     """Test that bin stage reuses existing pickle files."""
 
-    def test_bin_stage_reuses_existing_pickle(self, fake_participant_directory):
-        """Bin stage should reuse existing *_with_freq.pkl on second run."""
+    def test_bin_stage_reuses_existing_pickle(self, fake_participant_directory, use_test_db):
+        """Bin stage should reprocess *_with_freq.pkl on second run."""
         participant_dir = fake_participant_directory["participant_dir"]
         maneuver_dir = participant_dir / "Left Knee" / "Flexion-Extension"
 
@@ -77,16 +84,14 @@ class TestBinStageOptimization:
         assert success1, "First bin stage should succeed"
         assert with_freq_pkl.exists(), "Pickle should exist after first run"
 
-        # Record the pickle's modification time and first 100 bytes
+        # Record the pickle's modification time
         first_mtime = with_freq_pkl.stat().st_mtime
-        with open(with_freq_pkl, "rb") as f:
-            first_bytes = f.read(100)
 
         # Small delay to ensure mtime would change if file was rewritten
         import time
         time.sleep(0.2)
 
-        # Second run (should reuse)
+        # Second run (should reprocess)
         success2 = process_participant(
             participant_dir,
             entrypoint="bin",
@@ -95,20 +100,17 @@ class TestBinStageOptimization:
         )
         assert success2, "Second bin stage should succeed"
 
-        # Check if pickle was NOT re-written (optimization worked)
+        # Check if pickle was re-written (reprocessing worked)
         second_mtime = with_freq_pkl.stat().st_mtime
-        with open(with_freq_pkl, "rb") as f:
-            second_bytes = f.read(100)
 
-        # Both checks indicate reuse
-        assert second_mtime == first_mtime, "Pickle should be reused, not re-written (mtime check)"
-        assert second_bytes == first_bytes, "Pickle should be reused, not re-written (content check)"
+        # mtime indicates reprocessing; content may be identical depending on deterministic input
+        assert second_mtime > first_mtime, "Pickle should be re-written on reprocessing (mtime check)"
 
 
 class TestBinStageQCResults:
     """Test that bin stage properly captures QC results."""
 
-    def test_bin_stage_captures_qc_in_audio_record(self, fake_participant_directory):
+    def test_bin_stage_captures_qc_in_audio_record(self, fake_participant_directory, use_test_db):
         """Bin stage should populate audio record with QC results."""
         participant_dir = fake_participant_directory["participant_dir"]
 
@@ -146,7 +148,7 @@ class TestBinStageQCResults:
 class TestBinStageFallback:
     """Test that bin stage falls back to re-processing if pickle is invalid."""
 
-    def test_bin_stage_reprocesses_if_pickle_corrupted(self, fake_participant_directory):
+    def test_bin_stage_reprocesses_if_pickle_corrupted(self, fake_participant_directory, use_test_db):
         """Bin stage should re-process if existing pickle is corrupted."""
         participant_dir = fake_participant_directory["participant_dir"]
         maneuver_dir = participant_dir / "Left Knee" / "Flexion-Extension"
@@ -187,7 +189,7 @@ class TestBinStageFallback:
 class TestBinStageMetadataHandling:
     """Test that bin stage properly handles metadata files."""
 
-    def test_bin_stage_creates_metadata_json(self, fake_participant_directory):
+    def test_bin_stage_creates_metadata_json(self, fake_participant_directory, use_test_db):
         """Bin stage should preserve metadata from the bin file reading step."""
         participant_dir = fake_participant_directory["participant_dir"]
         maneuver_dir = participant_dir / "Left Knee" / "Flexion-Extension"

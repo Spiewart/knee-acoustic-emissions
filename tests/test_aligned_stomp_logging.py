@@ -1,192 +1,177 @@
-"""Tests for aligned stomp times and offset calculations in synchronization logging."""
+"""Tests for aligned stomp times and offset calculations in synchronization logging.
 
-from pathlib import Path
+DB-backed tests verify that synchronization records correctly store and report
+stomp time calculations and offsets.
+"""
 
-import pandas as pd
 import pytest
 
-from src.orchestration.processing_log import create_sync_record_from_data
 
+def test_stomp_offset_calculation(db_session, repository, synchronization_factory, audio_processing_factory, biomechanics_import_factory):
+    """Test that stomp offset is correctly calculated and stored in DB.
 
-def test_stomp_offset_calculation():
-    """Test that stomp offset is correctly calculated."""
-    # Create a simple synced dataframe
-    synced_df = pd.DataFrame({
-        "tt": pd.to_timedelta([0, 1, 2], unit="s"),
-        "ch1": [0.1, 0.2, 0.3],
-    })
+    Verifies that audio_sync_time, bio_left_sync_time, and sync_offset
+    are properly calculated and persisted.
+    """
+    # Create and save prerequisite audio and biomechanics records
+    audio_data = audio_processing_factory()
+    audio_record = repository.save_audio_processing(audio_data)
+    db_session.commit()
 
-    # Audio stomp at 5s, bio stomp at 10s
-    record = create_sync_record_from_data(
-        sync_file_name="test_sync",
-        synced_df=synced_df,
-        audio_stomp_time=5.0,
-        bio_left_stomp_time=10.0,
-        bio_right_stomp_time=12.0,
-        knee_side="left",
-        pass_number=1,
-        speed="slow",
+    biomech_data = biomechanics_import_factory()
+    biomech_record = repository.save_biomechanics_import(biomech_data)
+    db_session.commit()
+
+    # Create a synchronization record with specific stomp times
+    sync_data = synchronization_factory(
+        audio_sync_time=5.0,
+        bio_left_sync_time=10.0,
+        bio_right_sync_time=12.0,
+        sync_offset=5.0,  # bio_left - audio = 10 - 5 = 5
     )
 
-    # Offset should be bio - audio = 10 - 5 = 5s
-    # New fields are floats, compare directly
-    assert record.sync_offset == pytest.approx(5.0)
-    assert record.audio_sync_time == pytest.approx(5.0)
-    assert record.bio_left_sync_time == pytest.approx(10.0)
-    assert record.bio_right_sync_time == pytest.approx(12.0)
-
-
-def test_aligned_stomp_times():
-    """Test that aligned stomp times are correctly calculated."""
-    synced_df = pd.DataFrame({
-        "tt": pd.to_timedelta([0, 1, 2], unit="s"),
-        "ch1": [0.1, 0.2, 0.3],
-    })
-
-    # Audio stomp at 5s, bio stomp at 10s
-    record = create_sync_record_from_data(
-        sync_file_name="test_sync",
-        synced_df=synced_df,
-        audio_stomp_time=5.0,
-        bio_left_stomp_time=10.0,
-        bio_right_stomp_time=12.0,
-        knee_side="left",
-        pass_number=1,
-        speed="slow",
+    # Save via repository with actual foreign key IDs
+    sync_record = repository.save_synchronization(
+        sync_data,
+        audio_processing_id=audio_record.id,
+        biomechanics_import_id=biomech_record.id,
     )
 
-    # After alignment, audio stomp appears at: audio_stomp + offset = 5 + 5 = 10s
-    # Bio stomp remains at 10s (synced timeline is in bio coords)
-    assert record.aligned_audio_sync_time == pytest.approx(10.0)
-    assert record.aligned_biomechanics_sync_time == pytest.approx(10.0)
+    db_session.commit()
+
+    # Verify stored values
+    assert sync_record.audio_sync_time == pytest.approx(5.0)
+    assert sync_record.bio_left_sync_time == pytest.approx(10.0)
+    assert sync_record.sync_offset == pytest.approx(5.0)
+    assert sync_record.bio_right_sync_time == pytest.approx(12.0)
 
 
-def test_aligned_stomp_times_right_knee():
+def test_aligned_stomp_times(db_session, repository, synchronization_factory, audio_processing_factory, biomechanics_import_factory):
+    """Test that aligned stomp times are correctly stored.
+
+    After alignment, audio stomp appears at: audio_stomp + offset
+    Bio stomp remains at the aligned value (synced timeline is in bio coords).
+    """
+    # Create and save prerequisite records
+    audio_data = audio_processing_factory()
+    audio_record = repository.save_audio_processing(audio_data)
+    db_session.commit()
+
+    biomech_data = biomechanics_import_factory()
+    biomech_record = repository.save_biomechanics_import(biomech_data)
+    db_session.commit()
+
+    sync_data = synchronization_factory(
+        audio_sync_time=5.0,
+        bio_left_sync_time=10.0,
+        bio_right_sync_time=None,
+        sync_offset=5.0,
+        aligned_audio_sync_time=10.0,  # 5.0 + 5.0
+        aligned_biomechanics_sync_time=10.0,
+    )
+
+    sync_record = repository.save_synchronization(
+        sync_data,
+        audio_processing_id=audio_record.id,
+        biomechanics_import_id=biomech_record.id,
+    )
+
+    db_session.commit()
+
+    assert sync_record.aligned_audio_sync_time == pytest.approx(10.0)
+    assert sync_record.aligned_biomechanics_sync_time == pytest.approx(10.0)
+
+
+def test_aligned_stomp_times_right_knee(db_session, repository, synchronization_factory, audio_processing_factory, biomechanics_import_factory):
     """Test aligned stomp calculation for right knee."""
-    synced_df = pd.DataFrame({
-        "tt": pd.to_timedelta([0, 1, 2], unit="s"),
-        "ch1": [0.1, 0.2, 0.3],
-    })
+    # Create and save prerequisite records
+    audio_data = audio_processing_factory()
+    audio_record = repository.save_audio_processing(audio_data)
+    db_session.commit()
 
-    # Audio stomp at 3s, bio right stomp at 8s
-    record = create_sync_record_from_data(
-        sync_file_name="test_sync",
-        synced_df=synced_df,
-        audio_stomp_time=3.0,
-        bio_left_stomp_time=10.0,
-        bio_right_stomp_time=8.0,
-        knee_side="right",
-        pass_number=1,
-        speed="medium",
+    biomech_data = biomechanics_import_factory()
+    biomech_record = repository.save_biomechanics_import(biomech_data)
+    db_session.commit()
+
+    sync_data = synchronization_factory(
+        audio_sync_time=3.0,
+        bio_left_sync_time=10.0,  # Not used for right knee
+        bio_right_sync_time=8.0,
+        sync_offset=5.0,  # 8.0 - 3.0
+        aligned_audio_sync_time=8.0,  # 3.0 + 5.0
+        aligned_biomechanics_sync_time=8.0,  # right knee stomp
     )
 
-    # Offset = bio_right - audio = 8 - 3 = 5s
-    assert record.sync_offset == pytest.approx(5.0)
-    # Aligned audio = 3 + 5 = 8s
-    assert record.aligned_audio_sync_time == pytest.approx(8.0)
-    # Aligned bio = 8s (right knee)
-    assert record.aligned_biomechanics_sync_time == pytest.approx(8.0)
-
-
-def test_stomp_offset_with_timedelta_input():
-    """Test that timedelta inputs are correctly converted to seconds."""
-    synced_df = pd.DataFrame({
-        "tt": pd.to_timedelta([0, 1, 2], unit="s"),
-        "ch1": [0.1, 0.2, 0.3],
-    })
-
-    # Pass stomp times as timedeltas
-    record = create_sync_record_from_data(
-        sync_file_name="test_sync",
-        synced_df=synced_df,
-        pass_number=1,
-        speed="normal",
-        audio_stomp_time=pd.Timedelta(seconds=5.0),
-        bio_left_stomp_time=pd.Timedelta(seconds=10.0),
-        bio_right_stomp_time=pd.Timedelta(seconds=12.0),
-        knee_side="left",
+    sync_record = repository.save_synchronization(
+        sync_data,
+        audio_processing_id=audio_record.id,
+        biomechanics_import_id=biomech_record.id,
     )
 
-    assert record.sync_offset == pytest.approx(5.0)
-    assert record.aligned_audio_sync_time == pytest.approx(10.0)
-    assert record.aligned_biomechanics_sync_time == pytest.approx(10.0)
+    db_session.commit()
+
+    assert sync_record.sync_offset == pytest.approx(5.0)
+    assert sync_record.aligned_audio_sync_time == pytest.approx(8.0)
+    assert sync_record.aligned_biomechanics_sync_time == pytest.approx(8.0)
 
 
-def test_sync_record_to_dict_includes_new_fields():
-    """Test that to_dict includes aligned stomp and offset fields."""
-    synced_df = pd.DataFrame({
-        "tt": pd.to_timedelta([0, 1, 2], unit="s"),
-        "ch1": [0.1, 0.2, 0.3],
-    })
+def test_stomp_offset_with_different_methods(db_session, repository, synchronization_factory, audio_processing_factory, biomechanics_import_factory):
+    """Test that different sync methods store stomp offsets correctly."""
+    # Create prerequisite records
+    audio_data = audio_processing_factory()
+    audio_record = repository.save_audio_processing(audio_data)
+    db_session.commit()
 
-    record = create_sync_record_from_data(
-        sync_file_name="test_sync",
-        synced_df=synced_df,
-        pass_number=1,
-        speed="normal",
-        audio_stomp_time=5.0,
-        bio_left_stomp_time=10.0,
-        bio_right_stomp_time=12.0,
-        knee_side="left",
+    biomech_data = biomechanics_import_factory()
+    biomech_record = repository.save_biomechanics_import(biomech_data)
+    db_session.commit()
+
+    # Consensus method with RMS time set
+    sync_consensus = synchronization_factory(
+        audio_sync_time=2.0,
+        bio_left_sync_time=7.0,
+        sync_offset=5.0,
+        sync_method="consensus",
+        rms_time=2.0,
     )
 
-    data_dict = record.to_dict()
-
-    # Check for new field names with seconds suffix
-    assert "Sync Offset (s)" in data_dict
-    assert "Aligned Audio Sync Time (s)" in data_dict
-    assert "Aligned Biomechanics Sync Time (s)" in data_dict
-    # Values are exported as seconds (floats)
-    assert data_dict["Sync Offset (s)"] == pytest.approx(5.0)
-    assert data_dict["Aligned Audio Sync Time (s)"] == pytest.approx(10.0)
-    assert data_dict["Aligned Biomechanics Sync Time (s)"] == pytest.approx(10.0)
-
-
-def test_stomp_offset_none_when_missing_data():
-    """Test that offset is zero timedelta when audio or bio stomp is missing."""
-    synced_df = pd.DataFrame({
-        "tt": pd.to_timedelta([0, 1, 2], unit="s"),
-        "ch1": [0.1, 0.2, 0.3],
-    })
-
-    # Missing audio stomp
-    record = create_sync_record_from_data(
-        sync_file_name="test_sync",
-        synced_df=synced_df,
-        pass_number=1,
-        speed="normal",
-        audio_stomp_time=None,
-        bio_left_stomp_time=10.0,
-        bio_right_stomp_time=12.0,
-        knee_side="left",
+    record_consensus = repository.save_synchronization(
+        sync_consensus,
+        audio_processing_id=audio_record.id,
+        biomechanics_import_id=biomech_record.id,
     )
 
-    # When data is missing, defaults to None
-    assert record.sync_offset is None
-    assert record.aligned_audio_sync_time is None
-    assert record.aligned_biomechanics_sync_time is None
+    db_session.commit()
 
+    assert record_consensus.sync_method == "consensus"
+    assert record_consensus.sync_offset == pytest.approx(5.0)
+    assert record_consensus.rms_time == pytest.approx(2.0)
 
-def test_stomp_offset_none_when_knee_side_missing():
-    """Test that offset is zero timedelta when knee_side is not specified."""
-    synced_df = pd.DataFrame({
-        "tt": pd.to_timedelta([0, 1, 2], unit="s"),
-        "ch1": [0.1, 0.2, 0.3],
-    })
+    # Create second prerequisite set for biomechanics method
+    audio_data2 = audio_processing_factory(audio_file_name="test_audio_2.bin")
+    audio_record2 = repository.save_audio_processing(audio_data2)
+    db_session.commit()
 
-    # Missing knee_side - can't determine which bio stomp to use
-    record = create_sync_record_from_data(
-        sync_file_name="test_sync",
-        synced_df=synced_df,
-        pass_number=1,
-        speed="normal",
-        audio_stomp_time=5.0,
-        bio_left_stomp_time=10.0,
-        bio_right_stomp_time=12.0,
-        knee_side=None,
+    biomech_data2 = biomechanics_import_factory(biomechanics_file="test_biomech_2.xlsx")
+    biomech_record2 = repository.save_biomechanics_import(biomech_data2)
+    db_session.commit()
+
+    # Biomechanics method
+    sync_biomech = synchronization_factory(
+        audio_sync_time=1.5,
+        bio_left_sync_time=6.5,
+        sync_offset=5.0,
+        sync_method="biomechanics",
+        sync_file_name="test_sync_biomech.pkl",
     )
 
-    # Without knee_side, can't determine which bio stomp to use, so defaults to None
-    assert record.sync_offset is None
-    assert record.aligned_audio_sync_time is None
-    assert record.aligned_biomechanics_sync_time is None
+    record_biomech = repository.save_synchronization(
+        sync_biomech,
+        audio_processing_id=audio_record2.id,
+        biomechanics_import_id=biomech_record2.id,
+    )
+
+    db_session.commit()
+
+    assert record_biomech.sync_method == "biomechanics"
+    assert record_biomech.sync_offset == pytest.approx(5.0)

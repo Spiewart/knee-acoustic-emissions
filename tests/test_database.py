@@ -10,12 +10,17 @@ from pathlib import Path
 
 import pytest
 from dotenv import load_dotenv
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
 from src.db import Base, ParticipantRecord, StudyRecord, init_db
 from src.db.repository import Repository
-from src.metadata import AudioProcessing, BiomechanicsImport, MovementCycle, Synchronization
+from src.metadata import (
+    AudioProcessing,
+    BiomechanicsImport,
+    MovementCycle,
+    Synchronization,
+)
 
 # Load environment variables from .env.local
 load_dotenv(Path(__file__).parent.parent / ".env.local")
@@ -80,8 +85,8 @@ def create_test_synchronization(**kwargs):
         "study_id": 1012,
         "pass_number": 1,  # Required for walk
         "speed": "medium",  # Required for walk (removed "normal")
-        "audio_processing_id": None,  # Will be set by caller
-        "biomechanics_import_id": None,  # Will be set by caller
+        "audio_processing_id": 1,  # Dummy FK, will be overridden by caller
+        "biomechanics_import_id": 1,  # Dummy FK, will be overridden by caller
         "audio_sync_time": 5.0,
         "bio_left_sync_time": 10.0,
         "bio_right_sync_time": None,
@@ -133,6 +138,9 @@ def create_test_movement_cycle(**kwargs):
     defaults = {
         "study": "AOA",
         "study_id": 1014,
+        "audio_processing_id": 1,  # Dummy FK, will be overridden by caller
+        "biomechanics_import_id": None,
+        "synchronization_id": None,
         "cycle_file": "test_cycle.pkl",
         "cycle_index": 0,
         "is_outlier": False,
@@ -187,16 +195,20 @@ def test_db_engine():
         with engine.connect() as conn:
             pass
 
-        # Drop all tables first (clean slate)
-        Base.metadata.drop_all(engine)
-        
+# Reset schema to avoid FK naming mismatches
+        with engine.begin() as conn:
+            conn.execute(text("DROP SCHEMA IF EXISTS public CASCADE"))
+            conn.execute(text("CREATE SCHEMA public"))
+
         # Create all tables
         init_db(engine)
 
         yield engine
 
-        # Clean up - drop all tables after tests
-        Base.metadata.drop_all(engine)
+        # Clean up - drop schema after tests
+        with engine.begin() as conn:
+            conn.execute(text("DROP SCHEMA IF EXISTS public CASCADE"))
+            conn.execute(text("CREATE SCHEMA public"))
         engine.dispose()
 
     except Exception as e:
@@ -206,19 +218,20 @@ def test_db_engine():
 @pytest.fixture
 def test_session(test_db_engine):
     """Create a test database session that rolls back after each test.
-    
+
     Uses a transaction to ensure test isolation - all changes are rolled back.
     """
     connection = test_db_engine.connect()
     transaction = connection.begin()
     SessionLocal = sessionmaker(bind=connection)
     session = SessionLocal()
-    
+
     try:
         yield session
     finally:
         session.close()
-        transaction.rollback()
+        if transaction.is_active:
+            transaction.rollback()
         connection.close()
 
 
@@ -248,33 +261,33 @@ class TestDatabaseModels:
         test_session.flush()
 
         participant = ParticipantRecord(
-            study_id=study.id,
-            participant_number=1011
+            study_participant_id=study.id,
+            study_id=1011
         )
         test_session.add(participant)
         test_session.commit()
 
         assert participant.id is not None
-        assert participant.participant_number == 1011
+        assert participant.study_id == 1011
         assert participant.study.name == "AOA"
 
     def test_unique_study_participant(self, test_session):
-        """Test that study+participant_number is unique."""
+        """Test that study+study_id is unique."""
         study = StudyRecord(name="AOA")
         test_session.add(study)
         test_session.flush()
 
         participant1 = ParticipantRecord(
-            study_id=study.id,
-            participant_number=1011
+            study_participant_id=study.id,
+            study_id=1011
         )
         test_session.add(participant1)
         test_session.commit()
 
         # Try to create duplicate
         participant2 = ParticipantRecord(
-            study_id=study.id,
-            participant_number=1011
+            study_participant_id=study.id,
+            study_id=1011
         )
         test_session.add(participant2)
 
@@ -297,7 +310,7 @@ class TestRepository:
     def test_get_or_create_participant(self, repository):
         """Test getting or creating a participant."""
         participant1 = repository.get_or_create_participant("AOA", 1011)
-        assert participant1.participant_number == 1011
+        assert participant1.study_id == 1011
 
         # Should return same participant on second call
         participant2 = repository.get_or_create_participant("AOA", 1011)

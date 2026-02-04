@@ -15,8 +15,10 @@ Note: These models are designed for PostgreSQL and use PostgreSQL-specific
 features like ARRAY types. Run tests against PostgreSQL, not SQLite.
 """
 
-from datetime import datetime
-from typing import List
+from __future__ import annotations
+
+from datetime import datetime, timezone
+from typing import List, Optional
 
 from sqlalchemy import (
     ARRAY,
@@ -38,6 +40,11 @@ class Base(DeclarativeBase):
     pass
 
 
+def utcnow() -> datetime:
+    """Return timezone-aware UTC timestamp."""
+    return datetime.now(timezone.utc)
+
+
 class StudyRecord(Base):
     """Study-level metadata.
 
@@ -47,7 +54,7 @@ class StudyRecord(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)  # AOA, preOA, SMoCK
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
 
     # Relationships
     participants: Mapped[List["ParticipantRecord"]] = relationship(
@@ -67,9 +74,9 @@ class ParticipantRecord(Base):
     __tablename__ = "participants"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    study_id: Mapped[int] = mapped_column(Integer, ForeignKey("studies.id"), nullable=False)
-    participant_number: Mapped[int] = mapped_column(Integer, nullable=False)  # e.g., 1011 from #AOA1011
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    study_participant_id: Mapped[int] = mapped_column(Integer, ForeignKey("studies.id"), nullable=False)
+    study_id: Mapped[int] = mapped_column(Integer, nullable=False)  # e.g., 1011 from #AOA1011
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
 
     # Relationships
     study: Mapped["StudyRecord"] = relationship("StudyRecord", back_populates="participants")
@@ -87,7 +94,7 @@ class ParticipantRecord(Base):
     )
 
     __table_args__ = (
-        UniqueConstraint("study_id", "participant_number", name="uq_study_participant"),
+        UniqueConstraint("study_participant_id", "study_id", name="uq_study_participant"),
     )
 
 
@@ -103,7 +110,15 @@ class AudioProcessingRecord(Base):
     participant_id: Mapped[int] = mapped_column(Integer, ForeignKey("participants.id"), nullable=False)
 
     # Recording-time FK: which biomechanics (if any) was recorded with this audio
-    biomechanics_import_id = mapped_column(Integer, ForeignKey("biomechanics_imports.id"), nullable=True)
+    biomechanics_import_id = mapped_column(
+        Integer,
+        ForeignKey(
+            "biomechanics_imports.id",
+            use_alter=True,
+            name="fk_audio_processing_biomechanics_import",
+        ),
+        nullable=True,
+    )
 
     # File identification
     audio_file_name: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -115,6 +130,7 @@ class AudioProcessingRecord(Base):
     # Recording metadata
     recording_date: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     recording_time: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    recording_timezone: Mapped[str] = mapped_column(String(10), nullable=True)
 
     # Maneuver metadata
     knee: Mapped[str] = mapped_column(String(10), nullable=False)  # left, right
@@ -190,18 +206,20 @@ class AudioProcessingRecord(Base):
     qc_artifact_segments_ch4 = mapped_column(ARRAY(Float), nullable=True)
 
     # Processing metadata
-    processing_date: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    processing_date: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
     processing_status: Mapped[str] = mapped_column(String(50), default="not_processed", nullable=False)
     error_message = mapped_column(Text, nullable=True)
     duration_seconds = mapped_column(Float, nullable=True)
-    
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
 
     # Relationships
     participant: Mapped["ParticipantRecord"] = relationship("ParticipantRecord", back_populates="audio_processing")
-    biomechanics_import: Mapped["BiomechanicsImportRecord"] = relationship(
-        "BiomechanicsImportRecord", back_populates="audio_processing", foreign_keys=[biomechanics_import_id]
+    biomechanics_import: Mapped[Optional["BiomechanicsImportRecord"]] = relationship(
+        "BiomechanicsImportRecord",
+        foreign_keys=[biomechanics_import_id],
+        uselist=False
     )
     synchronizations: Mapped[List["SynchronizationRecord"]] = relationship(
         "SynchronizationRecord", back_populates="audio_processing", cascade="all, delete-orphan"
@@ -217,6 +235,16 @@ class AudioProcessingRecord(Base):
         UniqueConstraint("participant_id", "audio_file_name", "knee", "maneuver", name="uq_audio_processing"),
     )
 
+    @property
+    def study_id(self) -> Optional[int]:
+        """Compatibility accessor for tests expecting study_id on audio records.
+
+        Returns the study_id from the linked participant record.
+        """
+        if self.participant is None:
+            return None
+        return self.participant.study_id
+
 
 class BiomechanicsImportRecord(Base):
     """Biomechanics import metadata.
@@ -230,7 +258,15 @@ class BiomechanicsImportRecord(Base):
     participant_id: Mapped[int] = mapped_column(Integer, ForeignKey("participants.id"), nullable=False)
 
     # Recording-time FK: which audio (if any) was recorded with this biomechanics
-    audio_processing_id = mapped_column(Integer, ForeignKey("audio_processing.id"), nullable=True)
+    audio_processing_id = mapped_column(
+        Integer,
+        ForeignKey(
+            "audio_processing.id",
+            use_alter=True,
+            name="fk_biomechanics_import_audio_processing",
+        ),
+        nullable=True,
+    )
 
     # File identification
     biomechanics_file: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -240,10 +276,6 @@ class BiomechanicsImportRecord(Base):
     # Maneuver metadata
     knee: Mapped[str] = mapped_column(String(10), nullable=False)
     maneuver: Mapped[str] = mapped_column(String(20), nullable=False)
-
-    # Walk-specific metadata (optional)
-    pass_number = mapped_column(Integer, nullable=True)
-    speed = mapped_column(String(20), nullable=True)
 
     # Biomechanics characteristics
     biomechanics_sync_method: Mapped[str] = mapped_column(String(20), nullable=False)  # flick, stomp
@@ -262,17 +294,19 @@ class BiomechanicsImportRecord(Base):
     biomechanics_qc_notes = mapped_column(Text, nullable=True)
 
     # Processing metadata
-    processing_date: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    processing_date: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
     processing_status: Mapped[str] = mapped_column(String(50), default="not_processed", nullable=False)
     error_message = mapped_column(Text, nullable=True)
-    
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
 
     # Relationships
     participant: Mapped["ParticipantRecord"] = relationship("ParticipantRecord", back_populates="biomechanics_imports")
-    audio_processing: Mapped["AudioProcessingRecord"] = relationship(
-        "AudioProcessingRecord", back_populates="biomechanics_import", foreign_keys=[audio_processing_id]
+    audio_processing: Mapped[Optional["AudioProcessingRecord"]] = relationship(
+        "AudioProcessingRecord",
+        foreign_keys=[audio_processing_id],
+        uselist=False
     )
     synchronizations: Mapped[List["SynchronizationRecord"]] = relationship(
         "SynchronizationRecord", back_populates="biomechanics_import", cascade="all, delete-orphan"
@@ -299,7 +333,7 @@ class SynchronizationRecord(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     participant_id: Mapped[int] = mapped_column(Integer, ForeignKey("participants.id"), nullable=False)
-    
+
     # Foreign keys to related records
     audio_processing_id: Mapped[int] = mapped_column(Integer, ForeignKey("audio_processing.id"), nullable=False)
     biomechanics_import_id: Mapped[int] = mapped_column(Integer, ForeignKey("biomechanics_imports.id"), nullable=False)
@@ -323,7 +357,7 @@ class SynchronizationRecord(Base):
     rms_time = mapped_column(Float, nullable=True)
     onset_time = mapped_column(Float, nullable=True)
     freq_time = mapped_column(Float, nullable=True)
-    
+
     # Biomechanics-guided sync fields
     selected_audio_sync_time = mapped_column(Float, nullable=True)
     contra_selected_audio_sync_time = mapped_column(Float, nullable=True)
@@ -343,7 +377,7 @@ class SynchronizationRecord(Base):
     total_cycles_extracted = mapped_column(Integer, default=0, nullable=False)
     clean_cycles = mapped_column(Integer, default=0, nullable=False)
     outlier_cycles = mapped_column(Integer, default=0, nullable=False)
-    
+
     # Cycle duration statistics
     mean_cycle_duration_s = mapped_column(Float, nullable=True)
     median_cycle_duration_s = mapped_column(Float, nullable=True)
@@ -359,12 +393,12 @@ class SynchronizationRecord(Base):
     sync_qc_notes = mapped_column(Text, nullable=True)
 
     # Processing metadata
-    processing_date: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    processing_date: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
     processing_status: Mapped[str] = mapped_column(String(50), default="not_processed", nullable=False)
     error_message = mapped_column(Text, nullable=True)
-    
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
 
     # Relationships
     participant: Mapped["ParticipantRecord"] = relationship("ParticipantRecord", back_populates="synchronizations")
@@ -376,8 +410,8 @@ class SynchronizationRecord(Base):
 
     __table_args__ = (
         CheckConstraint("processing_status IN ('not_processed', 'success', 'error')", name="sync_valid_status"),
-        # Unique constraint: one sync per audio+biomech combination
-        UniqueConstraint("audio_processing_id", "biomechanics_import_id", name="uq_synchronization"),
+        # Unique constraint: file names must be unique in study context
+        UniqueConstraint("participant_id", "sync_file_name", name="uq_synchronization"),
     )
 
 
@@ -393,7 +427,7 @@ class MovementCycleRecord(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     participant_id: Mapped[int] = mapped_column(Integer, ForeignKey("participants.id"), nullable=False)
-    
+
     # Foreign keys to related records
     audio_processing_id: Mapped[int] = mapped_column(Integer, ForeignKey("audio_processing.id"), nullable=False)
     biomechanics_import_id = mapped_column(Integer, ForeignKey("biomechanics_imports.id"), nullable=True)
@@ -408,11 +442,11 @@ class MovementCycleRecord(Base):
     start_time_s: Mapped[float] = mapped_column(Float, nullable=False)
     end_time_s: Mapped[float] = mapped_column(Float, nullable=False)
     duration_s: Mapped[float] = mapped_column(Float, nullable=False)
-    
+
     # Audio timestamps (always present)
     audio_start_time: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     audio_end_time: Mapped[datetime] = mapped_column(DateTime, nullable=False)
-    
+
     # Biomechanics timestamps (optional - only if biomechanics_import_id is not null)
     bio_start_time = mapped_column(DateTime, nullable=True)
     bio_end_time = mapped_column(DateTime, nullable=True)
@@ -420,7 +454,7 @@ class MovementCycleRecord(Base):
     # QC flags (cycle-specific)
     biomechanics_qc_fail: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     sync_qc_fail: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    
+
     # QC versions
     biomechanics_qc_version = mapped_column(String(20), nullable=True)
     sync_qc_version = mapped_column(String(20), nullable=True)
@@ -431,8 +465,8 @@ class MovementCycleRecord(Base):
     cycle_file_size_mb = mapped_column(Float, nullable=True)
     cycle_file_modified = mapped_column(DateTime, nullable=True)
 
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
 
     # Relationships
     participant: Mapped["ParticipantRecord"] = relationship("ParticipantRecord", back_populates="movement_cycles")
@@ -441,6 +475,6 @@ class MovementCycleRecord(Base):
     synchronization: Mapped["SynchronizationRecord"] = relationship("SynchronizationRecord", back_populates="movement_cycles")
 
     __table_args__ = (
-        # Unique constraint: one cycle per audio+index combination
-        UniqueConstraint("audio_processing_id", "cycle_index", name="uq_movement_cycle"),
+        # Unique constraint: file names must be unique in study context
+        UniqueConstraint("participant_id", "cycle_file", name="uq_movement_cycle"),
     )

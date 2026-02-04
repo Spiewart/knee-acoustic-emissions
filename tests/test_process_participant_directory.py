@@ -8,6 +8,28 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from src.orchestration.processing_log import KneeProcessingLog, ManeuverProcessingLog
+
+
+@pytest.fixture(autouse=True)
+def _stub_report_generation(tmp_path, monkeypatch):
+    """Disable DB-backed Excel report generation for these filesystem tests."""
+
+    def _maneuver_save_stub(self, output_path=None, **_):
+        output_path = output_path or (self.maneuver_directory / "processing_log_test.xlsx")
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.touch(exist_ok=True)
+        return output_path
+
+    def _knee_save_stub(self, output_path=None, **_):
+        output_path = output_path or (self.knee_directory / "knee_processing_log_test.xlsx")
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.touch(exist_ok=True)
+        return output_path
+
+    monkeypatch.setattr(ManeuverProcessingLog, "save_to_excel", _maneuver_save_stub)
+    monkeypatch.setattr(KneeProcessingLog, "save_to_excel", _knee_save_stub)
+
 from src.orchestration.participant import (
     _generate_synced_filename,
     _load_event_data,

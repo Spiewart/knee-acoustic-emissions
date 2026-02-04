@@ -4,16 +4,22 @@ Tests the integration between the orchestration pipeline and the
 PostgreSQL database via the persistence layer.
 """
 
-import pytest
 from datetime import datetime
 from pathlib import Path
 
+import pytest
+
+from src.metadata import (
+    AudioProcessing,
+    BiomechanicsImport,
+    MovementCycle,
+    Synchronization,
+)
 from src.orchestration.database_persistence import (
     OrchestrationDatabasePersistence,
     RecordTracker,
 )
 from src.orchestration.processing_log_persistence import PersistentProcessingLog
-from src.metadata import AudioProcessing, BiomechanicsImport, Synchronization, MovementCycle
 
 
 class TestRecordTracker:
@@ -167,15 +173,14 @@ class TestOrchestrationDatabaseIntegration:
 
     def test_persistence_enabled_with_session(self):
         """Test that persistence is enabled when session provided.
-        
+
         Skipped - requires live database. Run from test_database.py instead.
         """
         pass
 
     def test_full_integration_workflow(self):
         """Test complete persistence workflow with FK relationships.
-        
+
         Skipped - requires live database. Run from test_database.py instead.
         """
         pass
-

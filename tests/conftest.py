@@ -90,17 +90,22 @@ For detailed guidelines, see:
 """
 
 import json
+import os
 import pickle
 import sys
+import warnings
+from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import pytest
+from dotenv import load_dotenv
+from sqlalchemy import create_engine, text
+from sqlalchemy.orm import sessionmaker
 
 # Add parent directory to path for module imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
-
 
 @pytest.fixture
 def dummy_pkl_file(tmp_path):
@@ -229,7 +234,7 @@ def _create_acoustic_legend(participant_dir: Path) -> Path:
 
 
 def _generate_audio_dataframe(
-    duration_seconds: int = 40,
+    duration_seconds: int = 60,
     sample_rate: int = 2000,
 ) -> pd.DataFrame:
     """Generate synthetic audio with a clear stomp spike."""
@@ -258,6 +263,65 @@ def _generate_audio_dataframe(
     return audio_df
 
 
+def _filetime_bytes_for_datetime(file_time: datetime) -> bytes:
+    """Create fileTime bytes matching read_audio_board_file conversions."""
+    num_ticks_1601_to_1900 = 94354848000000000
+    num_ticks_per_day = 24 * 60 * 60 / 100e-9
+
+    excel_base = datetime(1899, 12, 30)
+    excel_time = (file_time - excel_base).total_seconds() / (24 * 60 * 60)
+    file_time_1900 = (excel_time - 2) * num_ticks_per_day
+
+    try:
+        utco = datetime.now(timezone.utc).astimezone().utcoffset()
+        tz_offset_hours = (utco.total_seconds() / 3600.0) if utco is not None else 0.0
+    except (OSError, ValueError, OverflowError):
+        tz_offset_hours = 0.0
+
+    file_time_1900 = file_time_1900 - tz_offset_hours * 60 * 60 / 100e-9
+    file_time_uint64 = int(file_time_1900 + num_ticks_1601_to_1900)
+
+    # The reader reverses the bytes before decoding, so we store reversed little-endian bytes.
+    return file_time_uint64.to_bytes(8, byteorder="little", signed=False)[::-1]
+
+
+def _write_valid_audio_bin(
+    bin_path: Path,
+    *,
+    device_serial: int,
+    firmware_version: int,
+    file_time: datetime,
+) -> None:
+    """Write a minimal but valid .bin file for read_audio_board_file."""
+    header = bytearray(512)
+
+    # deviceSerial occupies bytes 0-15 as 4 uint32 values
+    header[0:4] = int(device_serial).to_bytes(4, byteorder="little", signed=False)
+
+    # devFirmwareVersion at bytes 24-28
+    header[24:28] = int(firmware_version).to_bytes(4, byteorder="little", signed=False)
+
+    # numSDBlocks at bytes 61-65
+    header[61:65] = int(1).to_bytes(4, byteorder="little", signed=False)
+
+    # fileTime at bytes 65-73
+    header[65:73] = _filetime_bytes_for_datetime(file_time)
+
+    # Build one packet of data plus syncTime (128 uint32 values)
+    num_uint32_per_write = 5504 + 128
+    rng = np.random.default_rng(12345)
+    raw_packet = rng.integers(0, 2**16, size=num_uint32_per_write, dtype=np.uint32)
+
+    sync_time = np.zeros(128, dtype=np.uint32)
+    sync_time[0:4] = np.array([1000, 2000, 3000, 4000], dtype=np.uint32)
+
+    raw = np.concatenate([raw_packet, sync_time]).astype("<u4")
+
+    with open(bin_path, "wb") as f:
+        f.write(header)
+        f.write(raw.tobytes(order="C"))
+
+
 def _write_audio_files(
     knee_dir: Path,
     audio_df: pd.DataFrame,
@@ -275,7 +339,13 @@ def _write_audio_files(
         maneuver_dir.mkdir(parents=True, exist_ok=True)
 
         bin_file = maneuver_dir / "test_audio.bin"
-        bin_file.touch()
+        file_time = datetime(2024, 3, 12, 12, 40, 55)
+        _write_valid_audio_bin(
+            bin_file,
+            device_serial=5,
+            firmware_version=1,
+            file_time=file_time,
+        )
 
         outputs_dir = maneuver_dir / "test_audio_outputs"
         outputs_dir.mkdir(exist_ok=True)
@@ -287,6 +357,19 @@ def _write_audio_files(
         # Frequency-augmented pickle lives in the same outputs folder
         pkl_freq_path = outputs_dir / "test_audio_with_freq.pkl"
         audio_df.to_pickle(pkl_freq_path)
+
+        meta_path = outputs_dir / "test_audio_meta.json"
+        meta = {
+            "deviceSerial": [5, 0, 0, 0],
+            "devFirmwareVersion": 1,
+            "fileTime": file_time.isoformat(),
+            "recordingTime": file_time.isoformat(),
+            "fs": 46875.0,
+            "numBits": 16,
+            "numSDBlocks": 1,
+        }
+        with open(meta_path, "w", encoding="utf-8") as meta_file:
+            json.dump(meta, meta_file, ensure_ascii=False, indent=2)
 
         audio_paths[maneuver_name] = pkl_path
 
@@ -305,16 +388,16 @@ def _walk_sheet(
     )
     data_dict = {
         f"{uid_base}": ["Frame", ""] + time_points.tolist(),
-        f"{uid_base}.1": [
-            "LAnkleAngles",
-            "X",
-        ]
-        + (np.sin(time_points + pass_number) * 10).tolist(),
-        f"{uid_base}.2": [
-            "LAnkleAngles",
-            "Y",
-        ]
-        + (np.cos(time_points + pass_number) * 5).tolist(),
+            f"{uid_base}.1": [
+                "Left Knee Angle",
+                "Z",
+            ]
+            + (np.sin(time_points + pass_number) * 20).tolist(),
+            f"{uid_base}.2": [
+                "Right Knee Angle",
+                "Z",
+            ]
+            + (np.cos(time_points + pass_number) * 20).tolist(),
     }
     return pd.DataFrame(data_dict)
 
@@ -328,15 +411,15 @@ def _non_walk_sheet(
     data_dict = {
         f"{uid_base}": ["Frame", ""] + time_points.tolist(),
         f"{uid_base}.1": [
-            "LKneeAngles",
-            "X",
+            "Left Knee Angle",
+            "Z",
         ]
-        + (np.sin(time_points) * 15).tolist(),
+        + (np.sin(time_points) * 20).tolist(),
         f"{uid_base}.2": [
-            "RKneeAngles",
-            "X",
+            "Right Knee Angle",
+            "Z",
         ]
-        + (np.cos(time_points) * 15).tolist(),
+        + (np.cos(time_points) * 20).tolist(),
     }
     return pd.DataFrame(data_dict)
 
@@ -352,7 +435,7 @@ def _create_biomechanics_excel(
     motion_capture_dir.mkdir(parents=True, exist_ok=True)
     excel_path = motion_capture_dir / (f"AOA{study_id}_Biomechanics_Full_Set.xlsx")
 
-    time_points = np.linspace(0, 10, 50)
+    time_points = np.linspace(0, 30, 150)
 
     walk_sheets = {
         "Slow": pd.concat(
@@ -375,34 +458,34 @@ def _create_biomechanics_excel(
     fe_df = _non_walk_sheet(study_id, "FlexExt", time_points)
 
     walking_events_data = [
-        {"Event Info": "Sync Left", "Time (sec)": 16.23},
-        {"Event Info": "Sync Right", "Time (sec)": 17.48},
-        {"Event Info": "SS Pass 1 Start", "Time (sec)": 19.28},
-        {"Event Info": "SS Pass 1 End", "Time (sec)": 26.50},
-        {"Event Info": "SS Pass 2 Start", "Time (sec)": 27.80},
-        {"Event Info": "SS Pass 2 End", "Time (sec)": 34.95},
-        {"Event Info": "NS Pass 1 Start", "Time (sec)": 136.96},
-        {"Event Info": "NS Pass 1 End", "Time (sec)": 144.00},
-        {"Event Info": "NS Pass 2 Start", "Time (sec)": 144.13},
-        {"Event Info": "NS Pass 2 End", "Time (sec)": 151.25},
-        {"Event Info": "FS Pass 1 Start", "Time (sec)": 210.15},
-        {"Event Info": "FS Pass 1 End", "Time (sec)": 216.80},
+        {"Event Info": "Sync Left", "Time (sec)": 12.00},
+        {"Event Info": "Sync Right", "Time (sec)": 13.00},
+        {"Event Info": "SS Pass 1 Start", "Time (sec)": 14.00},
+        {"Event Info": "SS Pass 1 End", "Time (sec)": 20.00},
+        {"Event Info": "SS Pass 2 Start", "Time (sec)": 21.00},
+        {"Event Info": "SS Pass 2 End", "Time (sec)": 27.00},
+        {"Event Info": "NS Pass 1 Start", "Time (sec)": 15.50},
+        {"Event Info": "NS Pass 1 End", "Time (sec)": 21.50},
+        {"Event Info": "NS Pass 2 Start", "Time (sec)": 22.00},
+        {"Event Info": "NS Pass 2 End", "Time (sec)": 28.00},
+        {"Event Info": "FS Pass 1 Start", "Time (sec)": 16.50},
+        {"Event Info": "FS Pass 1 End", "Time (sec)": 22.50},
     ]
 
     sts_events_df = pd.DataFrame(
         [
-            {"Event Info": "Sync Left", "Time (sec)": 10.50},
-            {"Event Info": "Sync Right", "Time (sec)": 11.75},
-            {"Event Info": "Movement Start", "Time (sec)": 5.0},
-            {"Event Info": "Movement End", "Time (sec)": 8.5},
+            {"Event Info": "Sync Left", "Time (sec)": 12.00},
+            {"Event Info": "Sync Right", "Time (sec)": 13.00},
+            {"Event Info": "Movement Start", "Time (sec)": 6.0},
+            {"Event Info": "Movement End", "Time (sec)": 11.0},
         ]
     )
     fe_events_df = pd.DataFrame(
         [
-            {"Event Info": "Sync Left", "Time (sec)": 8.90},
-            {"Event Info": "Sync Right", "Time (sec)": 10.15},
-            {"Event Info": "Movement Start", "Time (sec)": 2.0},
-            {"Event Info": "Movement End", "Time (sec)": 9.0},
+            {"Event Info": "Sync Left", "Time (sec)": 12.00},
+            {"Event Info": "Sync Right", "Time (sec)": 13.00},
+            {"Event Info": "Movement Start", "Time (sec)": 4.0},
+            {"Event Info": "Movement End", "Time (sec)": 12.0},
         ]
     )
 
@@ -425,10 +508,10 @@ def _create_biomechanics_excel(
         # Speed-specific event sheets contain stomp/event timing data
         slow_events = pd.DataFrame(
             [
-                {"Event Info": "Sync Left", "Time (sec)": 16.23},
-                {"Event Info": "Sync Right", "Time (sec)": 17.48},
-                {"Event Info": "SS Pass 1 Start", "Time (sec)": 19.28},
-                {"Event Info": "SS Pass 2 Start", "Time (sec)": 27.80},
+                {"Event Info": "Sync Left", "Time (sec)": 12.00},
+                {"Event Info": "Sync Right", "Time (sec)": 13.00},
+                {"Event Info": "SS Pass 1 Start", "Time (sec)": 14.00},
+                {"Event Info": "SS Pass 2 Start", "Time (sec)": 21.00},
             ]
         )
         slow_events.to_excel(
@@ -439,10 +522,10 @@ def _create_biomechanics_excel(
 
         medium_events = pd.DataFrame(
             [
-                {"Event Info": "Sync Left", "Time (sec)": 16.23},
-                {"Event Info": "Sync Right", "Time (sec)": 17.48},
-                {"Event Info": "NS Pass 1 Start", "Time (sec)": 136.96},
-                {"Event Info": "NS Pass 2 Start", "Time (sec)": 144.13},
+                {"Event Info": "Sync Left", "Time (sec)": 12.00},
+                {"Event Info": "Sync Right", "Time (sec)": 13.00},
+                {"Event Info": "NS Pass 1 Start", "Time (sec)": 15.50},
+                {"Event Info": "NS Pass 2 Start", "Time (sec)": 22.00},
             ]
         )
         medium_events.to_excel(
@@ -453,9 +536,9 @@ def _create_biomechanics_excel(
 
         fast_events = pd.DataFrame(
             [
-                {"Event Info": "Sync Left", "Time (sec)": 16.23},
-                {"Event Info": "Sync Right", "Time (sec)": 17.48},
-                {"Event Info": "FS Pass 1 Start", "Time (sec)": 210.15},
+                {"Event Info": "Sync Left", "Time (sec)": 12.00},
+                {"Event Info": "Sync Right", "Time (sec)": 13.00},
+                {"Event Info": "FS Pass 1 Start", "Time (sec)": 16.50},
             ]
         )
         fast_events.to_excel(
@@ -736,7 +819,7 @@ def synchronization_factory():
     """Factory for creating Synchronization test records with sensible defaults.
 
     Usage:
-        sync = synchronization_factory(audio_sync_time=5.0, knee="left")
+        sync = synchronization_factory(audio_sync_time=5.0)
     """
     from datetime import datetime
 
@@ -744,45 +827,24 @@ def synchronization_factory():
 
     def _create(**overrides):
         defaults = {
-            # StudyMetadata
             "study": "AOA",
             "study_id": 1001,
-            # BiomechanicsMetadata
-            "linked_biomechanics": True,
-            "biomechanics_file": "test_biomech.xlsx",
-            "biomechanics_type": "Motion Analysis",
-            "biomechanics_sync_method": "stomp",
-            "biomechanics_sample_rate": 100.0,
-            # AcousticsFile
-            "audio_file_name": "test_audio.bin",
-            "device_serial": "TEST001",
-            "firmware_version": 1,
-            "file_time": datetime(2024, 1, 1, 10, 0, 0),
-            "file_size_mb": 100.0,
-            "recording_date": datetime(2024, 1, 1),
-            "recording_time": datetime(2024, 1, 1, 10, 0, 0),
-            "knee": "left",
-            "maneuver": "walk",
-            "num_channels": 4,
-            "sample_rate": 46875.0,
-            "mic_1_position": "IPM",
-            "mic_2_position": "IPL",
-            "mic_3_position": "SPM",
-            "mic_4_position": "SPL",
-            # SynchronizationMetadata (all times in seconds as float)
+            "audio_processing_id": 1,
+            "biomechanics_import_id": 1,
+            "pass_number": 1,
+            "speed": "medium",
             "audio_sync_time": 5.0,
             "bio_left_sync_time": 10.0,
+            "bio_right_sync_time": None,
             "sync_offset": 5.0,
             "aligned_audio_sync_time": 10.0,
             "aligned_biomechanics_sync_time": 10.0,
             "sync_method": "consensus",
+            "consensus_methods": "rms, onset, freq",
             "consensus_time": 5.0,
             "rms_time": 5.0,
             "onset_time": 5.0,
             "freq_time": 5.0,
-            "pass_number": 1,  # Required for walk maneuvers
-            "speed": "normal",  # Required for walk maneuvers
-            # Synchronization-specific
             "sync_file_name": "test_sync.pkl",
             "processing_date": datetime(2024, 1, 1, 12, 0, 0),
             "processing_status": "success",
@@ -803,53 +865,25 @@ def synchronization_factory():
 
 @pytest.fixture
 def synchronization_metadata_factory():
-    """Factory for creating SynchronizationMetadata test records.
+    """Deprecated fixture retained for compatibility.
 
-    Usage:
-        sync_meta = synchronization_metadata_factory(audio_sync_time=10.0)
+    Returns Synchronization records instead of removed SynchronizationMetadata.
     """
     from datetime import datetime
 
-    from src.metadata import SynchronizationMetadata
+    from src.metadata import Synchronization
 
     def _create(**overrides):
         defaults = {
             "study": "AOA",
             "study_id": 1001,
-            "linked_biomechanics": True,
-            "biomechanics_file": "test.xlsx",
-            "biomechanics_type": "Motion Analysis",
-            "biomechanics_sync_method": "stomp",
-            "biomechanics_sample_rate": 100.0,
-            "audio_file_name": "test_audio.wav",
-            "device_serial": "TEST001",
-            "firmware_version": 1,
-            "file_time": datetime.now(),
-            "file_size_mb": 10.0,
-            "recording_date": datetime.now(),
-            "recording_time": datetime.now(),
-            "knee": "left",
-            "maneuver": "walk",
-            "num_channels": 4,
-            "sample_rate": 46875.0,
-            "mic_1_position": "IPM",
-            "mic_2_position": "IPL",
-            "mic_3_position": "SPM",
-            "mic_4_position": "SPL",
-            # All time fields in seconds (float)
-            "audio_sync_time": 0.0,
-            "bio_left_sync_time": 0.0,
-            "sync_offset": 0.0,
-            "aligned_audio_sync_time": 0.0,
-            "aligned_biomechanics_sync_time": 0.0,
-            "sync_method": "consensus",
-            "consensus_time": 0.0,
-            "rms_time": 0.0,
-            "onset_time": 0.0,
-            "freq_time": 0.0,
+            "audio_processing_id": 1,
+            "biomechanics_import_id": 1,
+            "sync_file_name": "test_sync.pkl",
+            "processing_date": datetime(2024, 1, 1, 12, 0, 0),
         }
         defaults.update(overrides)
-        return SynchronizationMetadata(**defaults)
+        return Synchronization(**defaults)
 
     return _create
 
@@ -876,6 +910,7 @@ def audio_processing_factory():
             "file_size_mb": 100.0,
             "recording_date": datetime(2024, 1, 1),
             "recording_time": datetime(2024, 1, 1, 10, 0, 0),
+            "recording_timezone": "UTC",
             "knee": "left",
             "maneuver": "walk",
             "num_channels": 4,
@@ -895,11 +930,42 @@ def audio_processing_factory():
 
 
 @pytest.fixture
+def biomechanics_import_factory():
+    """Factory for creating BiomechanicsImport test records."""
+    from datetime import datetime
+
+    from src.metadata import BiomechanicsImport
+
+    def _create(**overrides):
+        defaults = {
+            "study": "AOA",
+            "study_id": 1001,
+            "biomechanics_file": "test_biomech.xlsx",
+            "sheet_name": "walk_data",
+            "biomechanics_type": "Motion Analysis",
+            "knee": "left",
+            "maneuver": "walk",
+            "biomechanics_sync_method": "stomp",
+            "biomechanics_sample_rate": 100.0,
+            "num_sub_recordings": 1,
+            "duration_seconds": 120.0,
+            "num_data_points": 12000,
+            "num_passes": 1,
+            "processing_date": datetime(2024, 1, 1, 12, 0, 0),
+            "processing_status": "success",
+        }
+        defaults.update(overrides)
+        return BiomechanicsImport(**defaults)
+
+    return _create
+
+
+@pytest.fixture
 def movement_cycle_factory():
     """Factory for creating MovementCycle test records.
 
     Usage:
-        cycle = movement_cycle_factory(cycle_number=1, cycle_duration_s=1.2)
+        cycle = movement_cycle_factory(cycle_index=1)
     """
     from datetime import datetime
 
@@ -907,46 +973,117 @@ def movement_cycle_factory():
 
     def _create(**overrides):
         defaults = {
-            # StudyMetadata
             "study": "AOA",
             "study_id": 1001,
-            # BiomechanicsMetadata
-            "linked_biomechanics": True,
-            "biomechanics_file": "test_biomech.xlsx",
-            "biomechanics_type": "Gonio",
-            "biomechanics_sample_rate": 100.0,
-            # AcousticsFile
-            "audio_file_name": "test_audio.bin",
-            "device_serial": "TEST001",
-            "firmware_version": 1,
-            "file_time": datetime(2024, 1, 1, 10, 0, 0),
-            "file_size_mb": 100.0,
-            "recording_date": datetime(2024, 1, 1),
-            "recording_time": datetime(2024, 1, 1, 10, 0, 0),
-            "knee": "left",
-            "maneuver": "walk",
-            "num_channels": 4,
-            "sample_rate": 46875.0,
-            "mic_1_position": "IPM",
-            "mic_2_position": "IPL",
-            "mic_3_position": "SPM",
-            "mic_4_position": "SPL",
-            # SynchronizationMetadata (times in seconds)
-            "audio_sync_time": 5.0,
-            "sync_offset": 5.0,
-            "sync_method": "consensus",
-            # AudioProcessing
-            "processing_date": datetime(2024, 1, 1, 12, 0, 0),
-            "processing_status": "success",
-            "duration_seconds": 120.0,
-            # MovementCycle-specific
+            "audio_processing_id": 1,
+            "biomechanics_import_id": 1,
+            "synchronization_id": 1,
+            "pass_number": 1,
+            "speed": "medium",
             "cycle_file": "test_cycle_01.pkl",
-            "cycle_number": 1,
-            "cycle_start_time": 0.0,
-            "cycle_end_time": 1.2,
-            "cycle_duration_s": 1.2,
+            "cycle_index": 0,
+            "is_outlier": False,
+            "start_time_s": 0.0,
+            "end_time_s": 1.2,
+            "duration_s": 1.2,
+            "audio_start_time": datetime(2024, 1, 1, 10, 0, 0),
+            "audio_end_time": datetime(2024, 1, 1, 10, 0, 1, 200000),
+            "bio_start_time": datetime(2024, 1, 1, 10, 0, 0),
+            "bio_end_time": datetime(2024, 1, 1, 10, 0, 1, 200000),
+            "biomechanics_qc_fail": False,
+            "sync_qc_fail": False,
         }
         defaults.update(overrides)
         return MovementCycle(**defaults)
 
     return _create
+
+
+# ===== Database Fixtures =====
+
+load_dotenv(Path(__file__).parent.parent / ".env.local")
+
+
+def _get_test_db_url() -> str:
+    test_url = os.getenv("AE_TEST_DATABASE_URL")
+    if test_url:
+        return test_url
+
+    prod_url = os.getenv("AE_DATABASE_URL")
+    if prod_url and "acoustic_emissions" in prod_url:
+        return prod_url.replace("acoustic_emissions", "acoustic_emissions_test")
+
+    return "postgresql+psycopg://postgres@localhost/acoustic_emissions_test"
+
+
+@pytest.fixture(scope="module")
+def db_engine():
+    """Create a test PostgreSQL database engine.
+
+    Requires PostgreSQL to be running and AE_DATABASE_URL configured.
+    """
+    try:
+        db_url = _get_test_db_url()
+        engine = create_engine(db_url, echo=False)
+
+        with engine.connect() as conn:
+            pass
+
+        from src.db import init_db
+
+        with engine.begin() as conn:
+            conn.execute(text("DROP SCHEMA IF EXISTS public CASCADE"))
+            conn.execute(text("CREATE SCHEMA public"))
+
+        init_db(engine)
+
+        yield engine
+
+        with engine.begin() as conn:
+            conn.execute(text("DROP SCHEMA IF EXISTS public CASCADE"))
+            conn.execute(text("CREATE SCHEMA public"))
+        engine.dispose()
+    except Exception as exc:
+        pytest.skip(
+            f"PostgreSQL not available: {exc}\nMake sure PostgreSQL is running and AE_DATABASE_URL is set."
+        )
+
+
+@pytest.fixture
+def db_session(db_engine):
+    """Database session with rollback after each test."""
+    connection = db_engine.connect()
+    transaction = connection.begin()
+    SessionLocal = sessionmaker(bind=connection)
+    session = SessionLocal()
+
+    try:
+        yield session
+    finally:
+        session.close()
+        transaction.rollback()
+        connection.close()
+
+
+@pytest.fixture
+def repository(db_session):
+    """Repository fixture for DB-backed tests."""
+    from src.db.repository import Repository
+
+    return Repository(db_session)
+
+
+@pytest.fixture
+def use_test_db(db_engine, monkeypatch):
+    """Ensure processing uses the test database with the latest schema.
+
+    This fixture sets the AE_DATABASE_URL environment variable to point to
+    the test database, ensuring that any code that creates new database
+    connections (e.g., Repository, process_participant) uses the properly
+    initialized test database schema.
+
+    Use this fixture in integration tests that call process_participant()
+    or other high-level functions that create their own database connections.
+    """
+    monkeypatch.setenv("AE_DATABASE_URL", str(db_engine.url))
+    return db_engine

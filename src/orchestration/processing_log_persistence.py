@@ -7,7 +7,10 @@ to the PostgreSQL database via the persistence layer.
 import logging
 from typing import Optional
 
-from src.orchestration.database_persistence import OrchestrationDatabasePersistence, RecordTracker
+from src.orchestration.database_persistence import (
+    OrchestrationDatabasePersistence,
+    RecordTracker,
+)
 from src.orchestration.processing_log import (
     create_audio_record_from_data,
     create_biomechanics_record_from_data,

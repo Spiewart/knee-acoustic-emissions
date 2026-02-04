@@ -4,7 +4,7 @@ Provides high-level CRUD operations for all metadata entities,
 abstracting away SQLAlchemy session management and query construction.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional
 
 from sqlalchemy import and_, select
@@ -36,6 +36,23 @@ class Repository:
             session: SQLAlchemy session
         """
         self.session = session
+
+    @property
+    def _session(self) -> Session:
+        """Compatibility accessor for tests expecting _session."""
+        return self.session
+
+    @property
+    def _models(self) -> dict:
+        """Compatibility accessor for tests expecting model mapping."""
+        return {
+            "StudyRecord": StudyRecord,
+            "ParticipantRecord": ParticipantRecord,
+            "AudioProcessingRecord": AudioProcessingRecord,
+            "BiomechanicsImportRecord": BiomechanicsImportRecord,
+            "SynchronizationRecord": SynchronizationRecord,
+            "MovementCycleRecord": MovementCycleRecord,
+        }
 
     # ========================================================================
     # Study operations
@@ -72,7 +89,7 @@ class Repository:
 
         Args:
             study_name: Study name (AOA, preOA, SMoCK)
-            participant_number: Participant ID within study
+            participant_number: Participant ID within study (study_id column)
 
         Returns:
             Participant record
@@ -82,15 +99,15 @@ class Repository:
         participant = self.session.execute(
             select(ParticipantRecord).where(
                 and_(
-                    ParticipantRecord.study_id == study.id,
-                    ParticipantRecord.participant_number == participant_number,
+                    ParticipantRecord.study_participant_id == study.id,
+                    ParticipantRecord.study_id == participant_number,
                 )
             )
         ).scalar_one_or_none()
 
         if participant is None:
             participant = ParticipantRecord(
-                study_id=study.id, participant_number=participant_number
+                study_participant_id=study.id, study_id=participant_number
             )
             self.session.add(participant)
             self.session.flush()
@@ -169,6 +186,7 @@ class Repository:
         """
         return AudioProcessingRecord(
             participant_id=participant_id,
+            biomechanics_import_id=biomechanics_import_id,
             audio_file_name=audio.audio_file_name,
             device_serial=audio.device_serial,
             firmware_version=audio.firmware_version,
@@ -176,6 +194,7 @@ class Repository:
             file_size_mb=audio.file_size_mb,
             recording_date=audio.recording_date,
             recording_time=audio.recording_time,
+            recording_timezone=audio.recording_timezone,
             knee=audio.knee,
             maneuver=audio.maneuver,
             num_channels=audio.num_channels,
@@ -196,12 +215,43 @@ class Repository:
             audio_qc_fail_ch2=audio.qc_not_passed_mic_2,
             audio_qc_fail_ch3=audio.qc_not_passed_mic_3,
             audio_qc_fail_ch4=audio.qc_not_passed_mic_4,
+            # ===== QC Fail Segments =====
+            qc_fail_segments=audio.qc_fail_segments,
+            qc_fail_segments_ch1=audio.qc_fail_segments_ch1,
+            qc_fail_segments_ch2=audio.qc_fail_segments_ch2,
+            qc_fail_segments_ch3=audio.qc_fail_segments_ch3,
+            qc_fail_segments_ch4=audio.qc_fail_segments_ch4,
+            # ===== Signal Dropout QC =====
+            qc_signal_dropout=audio.qc_signal_dropout,
+            qc_signal_dropout_segments=audio.qc_signal_dropout_segments,
+            qc_signal_dropout_ch1=audio.qc_signal_dropout_ch1,
+            qc_signal_dropout_segments_ch1=audio.qc_signal_dropout_segments_ch1,
+            qc_signal_dropout_ch2=audio.qc_signal_dropout_ch2,
+            qc_signal_dropout_segments_ch2=audio.qc_signal_dropout_segments_ch2,
+            qc_signal_dropout_ch3=audio.qc_signal_dropout_ch3,
+            qc_signal_dropout_segments_ch3=audio.qc_signal_dropout_segments_ch3,
+            qc_signal_dropout_ch4=audio.qc_signal_dropout_ch4,
+            qc_signal_dropout_segments_ch4=audio.qc_signal_dropout_segments_ch4,
+            # ===== Artifact QC =====
+            qc_artifact=audio.qc_artifact,
             qc_artifact_type=audio.qc_artifact_type,
+            qc_artifact_segments=audio.qc_artifact_segments,
+            qc_artifact_ch1=audio.qc_artifact_ch1,
             qc_artifact_type_ch1=audio.qc_artifact_type_ch1,
+            qc_artifact_segments_ch1=audio.qc_artifact_segments_ch1,
+            qc_artifact_ch2=audio.qc_artifact_ch2,
             qc_artifact_type_ch2=audio.qc_artifact_type_ch2,
+            qc_artifact_segments_ch2=audio.qc_artifact_segments_ch2,
+            qc_artifact_ch3=audio.qc_artifact_ch3,
             qc_artifact_type_ch3=audio.qc_artifact_type_ch3,
+            qc_artifact_segments_ch3=audio.qc_artifact_segments_ch3,
+            qc_artifact_ch4=audio.qc_artifact_ch4,
             qc_artifact_type_ch4=audio.qc_artifact_type_ch4,
+            qc_artifact_segments_ch4=audio.qc_artifact_segments_ch4,
             processing_date=audio.processing_date,
+            processing_status=audio.processing_status,
+            error_message=audio.error_message,
+            duration_seconds=audio.duration_seconds,
         )
 
     def _update_audio_processing_record(
@@ -218,6 +268,9 @@ class Repository:
             pkl_file_path: Optional new path to .pkl file
         """
         record.file_size_mb = audio.file_size_mb
+        record.device_serial = audio.device_serial
+        record.firmware_version = audio.firmware_version
+        record.recording_timezone = audio.recording_timezone
         record.mic_1_notes = audio.mic_1_notes
         record.mic_2_notes = audio.mic_2_notes
         record.mic_3_notes = audio.mic_3_notes
@@ -230,13 +283,44 @@ class Repository:
         record.audio_qc_fail_ch2 = audio.qc_not_passed_mic_2
         record.audio_qc_fail_ch3 = audio.qc_not_passed_mic_3
         record.audio_qc_fail_ch4 = audio.qc_not_passed_mic_4
+        # ===== QC Fail Segments =====
+        record.qc_fail_segments = audio.qc_fail_segments
+        record.qc_fail_segments_ch1 = audio.qc_fail_segments_ch1
+        record.qc_fail_segments_ch2 = audio.qc_fail_segments_ch2
+        record.qc_fail_segments_ch3 = audio.qc_fail_segments_ch3
+        record.qc_fail_segments_ch4 = audio.qc_fail_segments_ch4
+        # ===== Signal Dropout QC =====
+        record.qc_signal_dropout = audio.qc_signal_dropout
+        record.qc_signal_dropout_segments = audio.qc_signal_dropout_segments
+        record.qc_signal_dropout_ch1 = audio.qc_signal_dropout_ch1
+        record.qc_signal_dropout_segments_ch1 = audio.qc_signal_dropout_segments_ch1
+        record.qc_signal_dropout_ch2 = audio.qc_signal_dropout_ch2
+        record.qc_signal_dropout_segments_ch2 = audio.qc_signal_dropout_segments_ch2
+        record.qc_signal_dropout_ch3 = audio.qc_signal_dropout_ch3
+        record.qc_signal_dropout_segments_ch3 = audio.qc_signal_dropout_segments_ch3
+        record.qc_signal_dropout_ch4 = audio.qc_signal_dropout_ch4
+        record.qc_signal_dropout_segments_ch4 = audio.qc_signal_dropout_segments_ch4
+        # ===== Artifact QC =====
+        record.qc_artifact = audio.qc_artifact
         record.qc_artifact_type = audio.qc_artifact_type
+        record.qc_artifact_segments = audio.qc_artifact_segments
+        record.qc_artifact_ch1 = audio.qc_artifact_ch1
         record.qc_artifact_type_ch1 = audio.qc_artifact_type_ch1
+        record.qc_artifact_segments_ch1 = audio.qc_artifact_segments_ch1
+        record.qc_artifact_ch2 = audio.qc_artifact_ch2
         record.qc_artifact_type_ch2 = audio.qc_artifact_type_ch2
+        record.qc_artifact_segments_ch2 = audio.qc_artifact_segments_ch2
+        record.qc_artifact_ch3 = audio.qc_artifact_ch3
         record.qc_artifact_type_ch3 = audio.qc_artifact_type_ch3
+        record.qc_artifact_segments_ch3 = audio.qc_artifact_segments_ch3
+        record.qc_artifact_ch4 = audio.qc_artifact_ch4
         record.qc_artifact_type_ch4 = audio.qc_artifact_type_ch4
+        record.qc_artifact_segments_ch4 = audio.qc_artifact_segments_ch4
         record.processing_date = audio.processing_date
-        record.updated_at = datetime.utcnow()
+        record.processing_status = audio.processing_status
+        record.error_message = audio.error_message
+        record.duration_seconds = audio.duration_seconds
+        record.updated_at = datetime.now(timezone.utc)
 
     # ========================================================================
     # Biomechanics import operations
@@ -278,20 +362,24 @@ class Repository:
             existing.processing_date = biomech.processing_date
             if audio_processing_id is not None:
                 existing.audio_processing_id = audio_processing_id
-            existing.updated_at = datetime.utcnow()
+            existing.updated_at = datetime.now(timezone.utc)
             record = existing
         else:
             # Create new record
             record = BiomechanicsImportRecord(
                 participant_id=participant.id,
                 biomechanics_file=biomech.biomechanics_file,
+                sheet_name=biomech.sheet_name,
                 biomechanics_type=biomech.biomechanics_type,
                 knee=biomech.knee,
                 maneuver=biomech.maneuver,
-                pass_number=biomech.pass_number,
-                speed=biomech.speed,
                 biomechanics_sync_method=biomech.biomechanics_sync_method,
                 biomechanics_sample_rate=biomech.biomechanics_sample_rate,
+                biomechanics_notes=biomech.biomechanics_notes,
+                num_sub_recordings=biomech.num_sub_recordings,
+                duration_seconds=biomech.duration_seconds,
+                num_data_points=biomech.num_data_points,
+                num_passes=biomech.num_passes,
                 biomech_qc_version=biomech.biomech_qc_version,
                 biomechanics_qc_fail=biomech.biomechanics_qc_fail,
                 biomechanics_qc_notes=biomech.biomechanics_qc_notes,
@@ -327,16 +415,17 @@ class Repository:
         """
         participant = self.get_or_create_participant(sync.study, sync.study_id)
 
-        # Check if record already exists by FK combination
-        existing = self.session.execute(
-            select(SynchronizationRecord).where(
-                and_(
-                    SynchronizationRecord.participant_id == participant.id,
-                    SynchronizationRecord.audio_processing_id == audio_processing_id,
-                    SynchronizationRecord.biomechanics_import_id == biomechanics_import_id,
+        # Check if record already exists by sync file name (unique constraint)
+        existing = None
+        if sync.sync_file_name:
+            existing = self.session.execute(
+                select(SynchronizationRecord).where(
+                    and_(
+                        SynchronizationRecord.participant_id == participant.id,
+                        SynchronizationRecord.sync_file_name == sync.sync_file_name,
+                    )
                 )
-            )
-        ).scalar_one_or_none()
+            ).scalar_one_or_none()
 
         if existing:
             # Update existing record
@@ -386,6 +475,7 @@ class Repository:
             aligned_biomechanics_sync_time=sync.aligned_biomechanics_sync_time,
             sync_method=sync.sync_method,
             consensus_methods=sync.consensus_methods,
+            consensus_time=getattr(sync, "consensus_time", None),
             rms_time=sync.rms_time,
             onset_time=sync.onset_time,
             freq_time=sync.freq_time,
@@ -397,8 +487,18 @@ class Repository:
             sync_file_name=sync.sync_file_name,
             sync_file_path=sync_file_path,
             sync_duration=sync.sync_duration,
+            total_cycles_extracted=getattr(sync, "total_cycles_extracted", None),
+            clean_cycles=getattr(sync, "clean_cycles", None),
+            outlier_cycles=getattr(sync, "outlier_cycles", None),
+            mean_cycle_duration_s=getattr(sync, "mean_cycle_duration_s", None),
+            median_cycle_duration_s=getattr(sync, "median_cycle_duration_s", None),
+            min_cycle_duration_s=getattr(sync, "min_cycle_duration_s", None),
+            max_cycle_duration_s=getattr(sync, "max_cycle_duration_s", None),
+            method_agreement_span=getattr(sync, "method_agreement_span", None),
             sync_qc_fail=sync.sync_qc_fail,
             processing_date=sync.processing_date,
+            processing_status=sync.processing_status,
+            error_message=sync.error_message,
         )
 
     def _update_synchronization_record(
@@ -424,6 +524,7 @@ class Repository:
         record.aligned_biomechanics_sync_time = sync.aligned_biomechanics_sync_time
         record.sync_method = sync.sync_method
         record.consensus_methods = sync.consensus_methods
+        record.consensus_time = getattr(sync, "consensus_time", None)
         record.rms_time = sync.rms_time
         record.onset_time = sync.onset_time
         record.freq_time = sync.freq_time
@@ -440,9 +541,20 @@ class Repository:
         record.sync_file_name = sync.sync_file_name
         record.sync_file_path = sync_file_path or record.sync_file_path
         record.sync_duration = sync.sync_duration
+        record.total_cycles_extracted = getattr(sync, "total_cycles_extracted", None)
+        record.clean_cycles = getattr(sync, "clean_cycles", None)
+        record.outlier_cycles = getattr(sync, "outlier_cycles", None)
+        record.mean_cycle_duration_s = getattr(sync, "mean_cycle_duration_s", None)
+        record.median_cycle_duration_s = getattr(sync, "median_cycle_duration_s", None)
+        record.min_cycle_duration_s = getattr(sync, "min_cycle_duration_s", None)
+        record.max_cycle_duration_s = getattr(sync, "max_cycle_duration_s", None)
+        record.method_agreement_span = getattr(sync, "method_agreement_span", None)
         record.sync_qc_fail = sync.sync_qc_fail
         record.processing_date = sync.processing_date
-        record.updated_at = datetime.utcnow()
+        record.processing_status = sync.processing_status
+        record.error_message = sync.error_message
+        record.processing_date = sync.processing_date
+        record.updated_at = datetime.now(timezone.utc)
 
     # ========================================================================
     # Movement cycle operations
@@ -470,13 +582,12 @@ class Repository:
         """
         participant = self.get_or_create_participant(cycle.study, cycle.study_id)
 
-        # Check if record already exists by unique constraint
+        # Check if record already exists by cycle file name (unique constraint)
         existing = self.session.execute(
             select(MovementCycleRecord).where(
                 and_(
                     MovementCycleRecord.participant_id == participant.id,
-                    MovementCycleRecord.audio_processing_id == audio_processing_id,
-                    MovementCycleRecord.cycle_index == cycle.cycle_index,
+                    MovementCycleRecord.cycle_file == cycle.cycle_file,
                 )
             )
         ).scalar_one_or_none()
@@ -577,7 +688,7 @@ class Repository:
             record.biomechanics_import_id = biomechanics_import_id
         if synchronization_id is not None:
             record.synchronization_id = synchronization_id
-        record.updated_at = datetime.utcnow()
+        record.updated_at = datetime.now(timezone.utc)
 
     # ========================================================================
     # Query operations
@@ -594,7 +705,7 @@ class Repository:
 
         Args:
             study_name: Filter by study name
-            participant_number: Filter by participant number
+            participant_number: Filter by participant study_id
             maneuver: Filter by maneuver
             knee: Filter by knee
 
@@ -606,7 +717,7 @@ class Repository:
         if study_name:
             query = query.join(StudyRecord).where(StudyRecord.name == study_name)
         if participant_number is not None:
-            query = query.where(ParticipantRecord.participant_number == participant_number)
+            query = query.where(ParticipantRecord.study_id == participant_number)
         if maneuver:
             query = query.where(AudioProcessingRecord.maneuver == maneuver)
         if knee:
@@ -625,7 +736,7 @@ class Repository:
 
         Args:
             study_name: Filter by study name
-            participant_number: Filter by participant number
+            participant_number: Filter by participant study_id
             maneuver: Filter by maneuver
             knee: Filter by knee
 
@@ -637,7 +748,7 @@ class Repository:
         if study_name:
             query = query.join(StudyRecord).where(StudyRecord.name == study_name)
         if participant_number is not None:
-            query = query.where(ParticipantRecord.participant_number == participant_number)
+            query = query.where(ParticipantRecord.study_id == participant_number)
         if maneuver:
             query = query.where(SynchronizationRecord.maneuver == maneuver)
         if knee:
@@ -656,7 +767,7 @@ class Repository:
 
         Args:
             study_name: Filter by study name
-            participant_number: Filter by participant number
+            participant_number: Filter by participant study_id
             maneuver: Filter by maneuver
             knee: Filter by knee
 
@@ -668,7 +779,7 @@ class Repository:
         if study_name:
             query = query.join(StudyRecord).where(StudyRecord.name == study_name)
         if participant_number is not None:
-            query = query.where(ParticipantRecord.participant_number == participant_number)
+            query = query.where(ParticipantRecord.study_id == participant_number)
         if maneuver:
             query = query.where(MovementCycleRecord.maneuver == maneuver)
         if knee:

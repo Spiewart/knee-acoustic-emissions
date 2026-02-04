@@ -44,7 +44,7 @@ def get_test_db_url() -> str:
 @pytest.fixture(scope="module")
 def test_db_engine():
     """Create a test PostgreSQL database engine.
-    
+
     Requires PostgreSQL to be running and AE_DATABASE_URL configured.
     Tests will create/drop tables in the configured database.
     """
@@ -58,7 +58,7 @@ def test_db_engine():
 
         # Drop all tables first (clean slate)
         Base.metadata.drop_all(engine)
-        
+
         # Create all tables
         init_db(engine)
 
@@ -79,7 +79,7 @@ def test_session(test_db_engine):
     transaction = connection.begin()
     SessionLocal = sessionmaker(bind=connection)
     session = SessionLocal()
-    
+
     try:
         yield session
     finally:
@@ -121,7 +121,7 @@ class TestDatabasePersistenceWithSampleData:
     def test_sample_data_directory_exists(self, sample_data_root):
         """Verify sample data directory is available."""
         assert sample_data_root.exists()
-        
+
         # Check for participant directories
         participant_dirs = [d for d in sample_data_root.iterdir() if d.is_dir() and d.name.startswith("#")]
         assert len(participant_dirs) > 0, "No participant directories found in sample data"
@@ -131,9 +131,9 @@ class TestDatabasePersistenceWithSampleData:
         participant_dir = sample_data_root / "#1011"
         if not participant_dir.exists():
             pytest.skip(f"Participant directory not found: {participant_dir}")
-        
+
         assert participant_dir.exists()
-        
+
         # Check for knee directories
         knee_dirs = ["Left Knee", "Right Knee"]
         for knee in knee_dirs:
@@ -189,9 +189,9 @@ class TestDatabasePersistenceWithSampleData:
         # Create a persistence instance with intentionally broken session
         # (we close it to make it invalid)
         test_session.close()
-        
+
         persistence = OrchestrationDatabasePersistence(session=test_session)
-        
+
         # Attempting to save should handle the error gracefully
         # (in real implementation, would log warning and return None)
         result = persistence.save_audio_processing(None, None)  # type: ignore
@@ -293,7 +293,7 @@ class TestDatabasePersistenceWithSampleData:
         queried_biomech = repository._session.query(
             repository._models["BiomechanicsImportRecord"]
         ).filter_by(id=biomech_record.id).first()
-        
+
         assert queried_biomech is not None
         assert queried_biomech.audio_processing_id == audio_id
 
@@ -304,12 +304,12 @@ class TestProcessingPipelineWithDatabase:
     @pytest.mark.skip(reason="Requires full sample data with actual audio files")
     def test_process_participant_with_persistence(self, sample_data_root, persistence, tracker):
         """Test processing a participant with database persistence.
-        
+
         This test requires:
         1. PostgreSQL running
         2. Sample data directory with actual audio files
         3. Full participant directory structure
-        
+
         Skipped by default - run manually with:
             pytest tests/test_session_6_integration.py::TestProcessingPipelineWithDatabase::test_process_participant_with_persistence -v
         """

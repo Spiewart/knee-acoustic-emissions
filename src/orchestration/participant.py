@@ -27,8 +27,8 @@ from typing import TYPE_CHECKING, Dict, Literal, Optional, cast
 
 import pandas as pd
 
-from src.config import get_data_root, load_env_file
 from src.biomechanics.importers import import_biomechanics_recordings
+from src.config import get_data_root, load_env_file
 from src.orchestration.processing_log import (
     KneeProcessingLog,
     ManeuverProcessingLog,
@@ -233,13 +233,31 @@ def _save_or_update_processing_log(
                 bin_files = list(maneuver_dir.glob("*.bin"))
                 audio_bin_path = bin_files[0] if bin_files else None
 
+            if audio_metadata is None:
+                audio_metadata = {}
+            audio_metadata["study_id"] = int(study_id)
+            audio_metadata["recording_timezone"] = "UTC"
+            audio_metadata["mic_positions"] = _load_mic_positions_from_legend(
+                participant_dir=maneuver_dir.parents[1],
+                knee=knee_side.lower(),
+                maneuver_key=maneuver_key,
+            )
+
+            audio_file_base = None
+            if audio_bin_path is not None:
+                audio_file_base = Path(audio_bin_path).stem
+            if audio_file_base is None:
+                audio_file_base = audio_pkl_file.stem.replace("_with_freq", "")
+
             audio_record = create_audio_record_from_data(
-                audio_file_name=audio_pkl_file.stem,
+                audio_file_name=audio_file_base,
                 audio_df=audio_df,
                 audio_bin_path=audio_bin_path,
                 audio_pkl_path=audio_pkl_file,
                 metadata=audio_metadata,
                 biomechanics_type=biomechanics_type,
+                knee=knee_side.lower(),
+                maneuver=maneuver_key,
             )
 
             # Preserve existing biomechanics metadata from log if present
@@ -314,6 +332,10 @@ def _save_or_update_processing_log(
                 sheet_name=f"{maneuver_key}_data",
                 maneuver=maneuver_key,
                 biomechanics_type=biomechanics_type,
+                knee=knee_side.lower(),
+                biomechanics_sync_method=("flick" if biomechanics_type == "Gonio" else "stomp"),
+                biomechanics_sample_rate=audio_record.biomechanics_sample_rate if audio_record else None,
+                study_id=int(study_id),
             )
             log.update_biomechanics_record(bio_record)
 
@@ -1396,6 +1418,42 @@ def _load_acoustics_file_names(participant_dir: Path) -> dict[tuple[str, str], s
                 continue
 
     return mapping
+
+
+def _load_mic_positions_from_legend(
+    participant_dir: Path,
+    knee: str,
+    maneuver_key: str,
+) -> dict:
+    """Load microphone positions from the acoustics file legend."""
+    legend_path = _find_excel_file(participant_dir, "*acoustic_file_legend*")
+    if legend_path is None:
+        raise FileNotFoundError(
+            f"No acoustic file legend found in {participant_dir}"
+        )
+
+    from src.audio.parsers import get_acoustics_metadata  # Local import to avoid cycle
+    meta = get_acoustics_metadata(
+        metadata_file_path=str(legend_path),
+        scripted_maneuver=maneuver_key,
+        knee=knee,
+    )
+
+    def _to_code(pos) -> str:
+        patellar = "I" if pos.patellar_position == "Infrapatellar" else "S"
+        lateral = "M" if pos.laterality == "Medial" else "L"
+        return f"{patellar}P{lateral}"
+
+    mic_positions = {}
+    for mic_num, pos in meta.microphones.items():
+        mic_positions[f"mic_{mic_num}_position"] = _to_code(pos)
+
+    if len(mic_positions) != 4:
+        raise ValueError(
+            f"Incomplete microphone positions in legend: {legend_path}"
+        )
+
+    return mic_positions
 
 
 def get_audio_file_name(maneuver_dir: Path, with_freq: bool = False) -> str:

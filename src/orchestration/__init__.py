@@ -9,8 +9,8 @@ from src.orchestration.participant import (
                                            sync_single_audio_file,
 )
 from src.orchestration.persistent_processor import (
-    PersistentParticipantProcessor,
-    create_persistent_processor,
+                                           PersistentParticipantProcessor,
+                                           create_persistent_processor,
 )
 
 __all__ = [

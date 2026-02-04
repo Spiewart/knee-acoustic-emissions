@@ -46,7 +46,7 @@ This project uses unified Pydantic dataclasses (`src/metadata.py`) as the single
 
 **Key Design Principle**: Pydantic dataclasses in `metadata.py` unify validation and Excel export in a single definition. They contain metadata and recording properties (file names, QC parameters, timestamps, sample rates) plus data-derived statistics (channel RMS values, per-sample counts) for comprehensive logging.
 
-See [ai_instructions.md](ai_instructions.md) for detailed information on adding new fields to models, [MIGRATION.md](MIGRATION.md) for module mappings, [QC_VERSIONING.md](docs/QC_VERSIONING.md) for QA/QC version tracking, and [CYCLE_QC.md](docs/CYCLE_QC.md) for movement cycle quality control details.
+See [ai_instructions.md](ai_instructions.md) for detailed information on adding new fields to models, [QC_VERSIONING.md](docs/QC_VERSIONING.md) for QA/QC version tracking, and [CYCLE_QC.md](docs/CYCLE_QC.md) for movement cycle quality control details.
 
 Prerequisites
 -----------
@@ -55,6 +55,49 @@ Prerequisites
   ```bash
   python --version
   ```
+
+Database Setup
+--------------
+
+This project uses PostgreSQL for processing logs and report generation. Configure the database
+connection in `.env.local` and initialize the schema before running the pipeline.
+
+**📖 For comprehensive database operations guide, see [docs/POSTGRES_OPERATION.md](docs/POSTGRES_OPERATION.md)**
+
+### Quick Setup
+
+**1) Configure connection string**
+
+Set `AE_DATABASE_URL` in `.env.local`:
+
+```bash
+AE_DATABASE_URL=postgresql+psycopg://USERNAME@localhost:5432/acoustic_emissions
+```
+
+**2) Initialize the schema**
+
+For new databases or complete reset:
+```bash
+python init_fresh_db.py
+```
+
+Or to create missing tables only (preserves data):
+```bash
+python scripts/init_database.py --init
+```
+
+**3) Test connection**
+```bash
+python scripts/init_database.py --test-connection
+```
+
+### Additional Resources
+
+- **[POSTGRES_OPERATION.md](docs/POSTGRES_OPERATION.md)** - Complete database operations guide (setup, migrations, backup/restore, troubleshooting)
+- **[POSTGRES_SETUP.md](docs/POSTGRES_SETUP.md)** - PostgreSQL installation for macOS/Windows
+
+If you see errors like `column audio_processing.recording_timezone does not exist`, your database
+schema is out of date. See [POSTGRES_OPERATION.md](docs/POSTGRES_OPERATION.md#schema-migrations) for migration instructions.
 
 Quick Start
 -----------
@@ -482,7 +525,7 @@ from src.visualization.plots import plot_syncd_data
 from src.orchestration.participant import process_participant
 ```
 
-See [MIGRATION.md](MIGRATION.md) for detailed import paths and examples.
+See [ai_instructions.md](ai_instructions.md) for detailed import paths and examples.
 
 Troubleshooting
 ---------------
@@ -499,12 +542,12 @@ If your participant folders are not inside the repo, set a default root path:
 - Set `AE_DATA_ROOT` in `.env.local` (created from `.env.example` by the setup scripts).
 - If the CLI `PATH` argument is omitted, the tools will use `AE_DATA_ROOT`.
 
-PostgreSQL Transition Plan
+PostgreSQL Setup
 --------------------------
 
 See:
 - [docs/POSTGRES_SETUP.md](docs/POSTGRES_SETUP.md)
-- [docs/POSTGRES_TRANSITION.md](docs/POSTGRES_TRANSITION.md)
+- [docs/POSTGRES_OPERATION.md](docs/POSTGRES_OPERATION.md)
 
 ### Updated CLI Usage
 

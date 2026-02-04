@@ -18,8 +18,8 @@ from src.orchestration.participant import (
     setup_logging,
     sync_single_audio_file,
 )
-from src.orchestration.processing_log import _infer_biomechanics_type_from_study
 from src.orchestration.persistent_processor import create_persistent_processor
+from src.orchestration.processing_log import _infer_biomechanics_type_from_study
 
 
 def main() -> None:
@@ -255,7 +255,7 @@ def main() -> None:
                 maneuver=args.maneuver,
                 biomechanics_type=biomechanics_type,
             )
-        
+
         if success:
             success_count += 1
         else:

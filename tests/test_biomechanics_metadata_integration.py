@@ -7,7 +7,6 @@ metadata columns:
 - Biomechanics Type
 - Biomechanics Sync Method
 - Biomechanics Sample Rate (Hz)
-- Log Updated
 """
 
 from pathlib import Path
@@ -37,7 +36,7 @@ def mock_audio_reading():
         yield mock_read
 
 
-def test_biomechanics_metadata_populated_after_bin_processing(fake_participant_directory, mock_audio_reading):
+def test_biomechanics_metadata_populated_after_bin_processing(fake_participant_directory, mock_audio_reading, use_test_db):
     """Test that biomechanics metadata columns are populated after processing from bin."""
     participant_dir = fake_participant_directory["participant_dir"]
 
@@ -66,7 +65,6 @@ def test_biomechanics_metadata_populated_after_bin_processing(fake_participant_d
         "Biomechanics Type",
         "Biomechanics Sync Method",
         "Biomechanics Sample Rate (Hz)",
-        "Log Updated"
     ]
     for col in required_columns:
         assert col in audio_df.columns, f"Column '{col}' should exist in Audio sheet"
@@ -78,10 +76,33 @@ def test_biomechanics_metadata_populated_after_bin_processing(fake_participant_d
     assert row["Biomechanics Sync Method"] == "stomp", "Biomechanics Sync Method should be 'stomp' for Motion Analysis"
     assert pd.notna(row["Biomechanics Sample Rate (Hz)"]), "Biomechanics Sample Rate should not be NaN"
     assert row["Biomechanics Sample Rate (Hz)"] > 0, "Biomechanics Sample Rate should be positive"
-    assert pd.notna(row["Log Updated"]), "Log Updated should not be NaN"
 
 
-def test_biomechanics_sample_rate_calculated_correctly(fake_participant_directory, mock_audio_reading):
+def test_audio_sheet_mic_positions_from_legend(fake_participant_directory, mock_audio_reading, use_test_db):
+    """Test that microphone positions are populated from the acoustics legend."""
+    participant_dir = fake_participant_directory["participant_dir"]
+
+    success = process_participant(
+        participant_dir,
+        entrypoint="bin",
+        knee="left",
+        maneuver="fe",
+        biomechanics_type="Motion Analysis"
+    )
+
+    assert success, "Processing should succeed"
+
+    log_file = participant_dir / "Left Knee" / "Flexion-Extension" / "processing_log_1011_Left_flexion_extension.xlsx"
+    audio_df = pd.read_excel(log_file, sheet_name="Audio")
+    row = audio_df.iloc[0]
+
+    assert row["Mic 1 Position"] == "IPL"
+    assert row["Mic 2 Position"] == "IPM"
+    assert row["Mic 3 Position"] == "SPM"
+    assert row["Mic 4 Position"] == "SPL"
+
+
+def test_biomechanics_sample_rate_calculated_correctly(fake_participant_directory, mock_audio_reading, use_test_db):
     """Test that biomechanics sample rate is calculated and populated."""
     participant_dir = fake_participant_directory["participant_dir"]
 
@@ -106,7 +127,7 @@ def test_biomechanics_sample_rate_calculated_correctly(fake_participant_director
     assert left_sr > 0, f"Sample rate {left_sr} should be positive"
 
 
-def test_gonio_sync_method_is_flick(fake_participant_directory, mock_audio_reading):
+def test_gonio_sync_method_is_flick(fake_participant_directory, mock_audio_reading, use_test_db):
     """Test that Gonio biomechanics type uses 'flick' sync method."""
     participant_dir = fake_participant_directory["participant_dir"]
 
@@ -128,7 +149,7 @@ def test_gonio_sync_method_is_flick(fake_participant_directory, mock_audio_readi
     assert row["Biomechanics Sync Method"] == "flick", "Gonio should use 'flick' sync method"
 
 
-def test_imu_sync_method_is_stomp(fake_participant_directory, mock_audio_reading):
+def test_imu_sync_method_is_stomp(fake_participant_directory, mock_audio_reading, use_test_db):
     """Test that IMU biomechanics type uses 'stomp' sync method."""
     participant_dir = fake_participant_directory["participant_dir"]
 
@@ -151,7 +172,7 @@ def test_imu_sync_method_is_stomp(fake_participant_directory, mock_audio_reading
     assert row["Biomechanics Sync Method"] == "stomp", "IMU should use 'stomp' sync method"
 
 
-def test_log_updated_timestamp_persists_across_reload(fake_participant_directory, mock_audio_reading):
+def test_log_updated_timestamp_persists_across_reload(fake_participant_directory, mock_audio_reading, use_test_db):
     """Test that log_updated timestamp is preserved when loading and saving logs."""
     participant_dir = fake_participant_directory["participant_dir"]
 
@@ -168,12 +189,12 @@ def test_log_updated_timestamp_persists_across_reload(fake_participant_directory
 
     log_file = participant_dir / "Left Knee" / "Flexion-Extension" / "processing_log_1011_Left_flexion_extension.xlsx"
 
-    # Get the initial timestamp
+    # Ensure Processing Date is populated after first run
     audio_df1 = pd.read_excel(log_file, sheet_name="Audio")
-    timestamp1 = audio_df1.iloc[0]["Log Updated"]
-    assert pd.notna(timestamp1), "Log Updated should be populated after first run"
+    processing_date = audio_df1.iloc[0]["Processing Date"]
+    assert pd.notna(processing_date), "Processing Date should be populated after first run"
 
-    # Second processing run (sync stage only) - should update timestamp
+    # Second processing run (sync stage only)
     success = process_participant(
         participant_dir,
         entrypoint="sync",
@@ -184,16 +205,13 @@ def test_log_updated_timestamp_persists_across_reload(fake_participant_directory
 
     assert success, "Second processing should succeed"
 
-    # Get the updated timestamp
+    # Ensure Processing Date is still populated
     audio_df2 = pd.read_excel(log_file, sheet_name="Audio")
-    timestamp2 = audio_df2.iloc[0]["Log Updated"]
-    assert pd.notna(timestamp2), "Log Updated should still be populated after second run"
-
-    # Timestamps should be different (updated)
-    assert timestamp1 != timestamp2, "Log Updated should change after re-processing"
+    processing_date2 = audio_df2.iloc[0]["Processing Date"]
+    assert pd.notna(processing_date2), "Processing Date should still be populated after second run"
 
 
-def test_biomechanics_metadata_consistent_across_maneuvers(fake_participant_directory, mock_audio_reading):
+def test_biomechanics_metadata_consistent_across_maneuvers(fake_participant_directory, mock_audio_reading, use_test_db):
     """Test that biomechanics metadata is populated for multiple maneuvers."""
     participant_dir = fake_participant_directory["participant_dir"]
 

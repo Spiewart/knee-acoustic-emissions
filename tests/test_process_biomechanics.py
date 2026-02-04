@@ -194,8 +194,8 @@ def test_get_walking_start_time(fake_participant_directory) -> None:
         pass_speed="slow",
     )
 
-    # Should be 19.28 seconds (from fixture)
-    assert start_time == pd.to_timedelta(19.28, "s")
+    # Should be 14.0 seconds (from fixture)
+    assert start_time == pd.to_timedelta(14.0, "s")
 
     # Get the start time for Normal Speed Pass 2
     start_time = get_walking_start_time(
@@ -204,8 +204,8 @@ def test_get_walking_start_time(fake_participant_directory) -> None:
         pass_speed="normal",
     )
 
-    # Should be 144.13 seconds (from fixture)
-    assert start_time == pd.to_timedelta(144.13, "s")
+    # Should be 22.0 seconds (from fixture)
+    assert start_time == pd.to_timedelta(22.0, "s")
 
 
 def test_get_walking_start_time_not_found(fake_participant_directory) -> None:
@@ -400,8 +400,8 @@ def test_get_non_walk_start_time_sit_to_stand(
         maneuver="sit_to_stand",
     )
 
-    # Should be 5.0 seconds (from fixture)
-    assert start_time == pd.to_timedelta(5.0, "s")
+    # Should be 6.0 seconds (from fixture)
+    assert start_time == pd.to_timedelta(6.0, "s")
 
 
 def test_get_non_walk_start_time_flexion_extension(
@@ -420,8 +420,8 @@ def test_get_non_walk_start_time_flexion_extension(
         maneuver="flexion_extension",
     )
 
-    # Should be 2.0 seconds (from fixture)
-    assert start_time == pd.to_timedelta(2.0, "s")
+    # Should be 4.0 seconds (from fixture)
+    assert start_time == pd.to_timedelta(4.0, "s")
 
 
 def test_import_biomechanics_sit_to_stand(fake_participant_directory) -> None:

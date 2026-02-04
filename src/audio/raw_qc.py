@@ -75,10 +75,41 @@ list of (start_time, end_time) tuples indicating sections that did not pass QC.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import List, Tuple
 
 import numpy as np
 import pandas as pd
+
+
+@dataclass(frozen=True)
+class DropoutThresholds:
+    """Default thresholds for signal dropout detection.
+
+    These thresholds are calibrated for acoustic emission sensor data with DC offset
+    (e.g., sensors that output ~1.5V at baseline, not 0V).
+
+    Based on statistical analysis of participant recordings where:
+    - Normal signal RMS: 1.491-1.608V (median 1.499V)
+    - Normal signal variance: 0.000001-0.345 (median 0.00138)
+    - True dropout: Bottom 1% of windows (RMS < 1.496, Variance < 0.00000013)
+
+    Thresholds set conservatively to flag only clear sensor malfunction:
+    - RMS drops significantly below normal baseline
+    - Variance essentially zero (flat/stuck sensor)
+
+    For other audio types (speech, music, etc.), create custom thresholds
+    appropriate for your signal characteristics.
+    """
+    silence_threshold: float = 1.45  # Maximum RMS for silence detection
+    flatline_threshold: float = 0.000001  # Maximum variance for flatline detection
+    window_size_s: float = 0.5  # Sliding window size in seconds
+    min_dropout_duration_s: float = 0.1  # Minimum continuous dropout to report
+
+
+# Global default thresholds for dropout detection
+# Override by passing custom values to detection functions
+DEFAULT_DROPOUT_THRESHOLDS = DropoutThresholds()
 
 
 def _convert_time_to_seconds(df: pd.DataFrame, time_col: str) -> np.ndarray:
@@ -116,29 +147,42 @@ def detect_signal_dropout(
     time_col: str = "tt",
     audio_channels: list[str] | None = None,
     *,
-    silence_threshold: float = 0.001,
-    flatline_threshold: float = 0.0001,
-    window_size_s: float = 0.5,
-    min_dropout_duration_s: float = 0.1,
+    silence_threshold: float | None = None,
+    flatline_threshold: float | None = None,
+    window_size_s: float | None = None,
+    min_dropout_duration_s: float | None = None,
 ) -> List[Tuple[float, float]]:
     """Detect signal dropout (silence or flatline) in audio channels.
 
-    Signal dropout is identified when:
-    1. Signal amplitude is below silence_threshold (near-zero voltage)
-    2. Signal variance is below flatline_threshold (unchanging/stuck sensor)
+    For acoustic emission sensor data with DC offset (e.g., walking recordings),
+    this detects when:
+    1. Signal amplitude drops significantly below baseline (~1.5V for AE sensors)
+    2. Signal variance becomes essentially zero (sensor stuck/flat)
+
+    NOTE: Thresholds are calibrated for acoustic emission sensors with ~1.5V DC
+    offset. For other audio types, pass custom thresholds appropriate for your data.
 
     Args:
         df: Audio DataFrame with time and channel data
         time_col: Name of time column
         audio_channels: List of channel names to check (default: ch1-ch4)
-        silence_threshold: Maximum RMS amplitude for silence detection
-        flatline_threshold: Maximum variance for flatline detection
-        window_size_s: Size of sliding window for detection (seconds)
-        min_dropout_duration_s: Minimum continuous dropout duration to report
+        silence_threshold: Maximum RMS amplitude for silence detection (default: from DEFAULT_DROPOUT_THRESHOLDS)
+        flatline_threshold: Maximum variance for flatline detection (default: from DEFAULT_DROPOUT_THRESHOLDS)
+        window_size_s: Size of sliding window for detection (seconds, default: from DEFAULT_DROPOUT_THRESHOLDS)
+        min_dropout_duration_s: Minimum continuous dropout duration to report (default: from DEFAULT_DROPOUT_THRESHOLDS)
 
     Returns:
         List of (start_time, end_time) tuples indicating dropout periods
     """
+    # Use centralized defaults if not provided
+    if silence_threshold is None:
+        silence_threshold = DEFAULT_DROPOUT_THRESHOLDS.silence_threshold
+    if flatline_threshold is None:
+        flatline_threshold = DEFAULT_DROPOUT_THRESHOLDS.flatline_threshold
+    if window_size_s is None:
+        window_size_s = DEFAULT_DROPOUT_THRESHOLDS.window_size_s
+    if min_dropout_duration_s is None:
+        min_dropout_duration_s = DEFAULT_DROPOUT_THRESHOLDS.min_dropout_duration_s
     if audio_channels is None:
         audio_channels = ["ch1", "ch2", "ch3", "ch4"]
 
@@ -191,16 +235,18 @@ def detect_artifactual_noise(
     spike_threshold_sigma: float = 5.0,
     spike_window_s: float = 0.01,
     min_artifact_duration_s: float = 0.01,
-    detect_periodic_noise: bool = True,
+    detect_periodic_noise: bool = False,
     periodic_noise_threshold: float = 0.3,
 ) -> List[Tuple[float, float]]:
     """Detect artifactual noise (spikes, outliers) in audio channels.
 
-    Detects two types of artifacts:
-    1. One-off or time-limited spikes: Intermittent background noise (e.g.,
-       someone talking, glass falling) detected via local statistical thresholds.
-    2. Periodic background noise: Consistent noise at specific frequencies (e.g.,
-       fans, motors) detected via spectral analysis (Welch's method).
+    Detects one-off or time-limited spikes via local statistical thresholds
+    (e.g., someone talking, glass falling).
+
+    NOTE: Periodic noise detection is disabled by default because acoustic
+    emission signals naturally have sharp spectral peaks at specific frequencies
+    (from impact and movement sounds) which can be mistakenly flagged as
+    periodic background noise. Periodic detection causes too many false positives.
 
     Args:
         df: Audio DataFrame with time and channel data
@@ -271,23 +317,32 @@ def run_raw_audio_qc(
     time_col: str = "tt",
     audio_channels: list[str] | None = None,
     *,
-    silence_threshold: float = 0.001,
-    flatline_threshold: float = 0.0001,
+    silence_threshold: float | None = None,
+    flatline_threshold: float | None = None,
     spike_threshold_sigma: float = 5.0,
-    dropout_window_s: float = 0.5,
+    dropout_window_s: float | None = None,
     spike_window_s: float = 0.01,
-    min_dropout_duration_s: float = 0.1,
+    min_dropout_duration_s: float | None = None,
     min_artifact_duration_s: float = 0.01,
-    detect_periodic_noise: bool = True,
+    detect_periodic_noise: bool = False,
     periodic_noise_threshold: float = 0.3,
 ) -> Tuple[List[Tuple[float, float]], List[Tuple[float, float]]]:
     """Run comprehensive raw audio QC checks.
+
+    Uses DEFAULT_DROPOUT_THRESHOLDS for any threshold parameters not explicitly provided.
 
     Detects signal dropout and artifactual noise in raw audio recordings.
 
     Artifactual noise detection includes:
     - One-off or time-limited spikes (intermittent background noise)
-    - Periodic background noise at specific frequencies (fans, motors)
+
+    NOTE: Periodic noise detection is disabled by default because acoustic
+    emission signals naturally have sharp spectral peaks at specific frequencies
+    that cause false positives.
+
+    NOTE: Dropout thresholds are set conservatively to avoid false positives
+    on normal quiet periods in walking recordings. Only flags truly silent/missing
+    signal, not natural signal variations.
 
     Args:
         df: Audio DataFrame with time and channel data
@@ -337,27 +392,47 @@ def detect_signal_dropout_per_mic(
     time_col: str = "tt",
     audio_channels: list[str] | None = None,
     *,
-    silence_threshold: float = 0.001,
-    flatline_threshold: float = 0.0001,
-    window_size_s: float = 0.5,
-    min_dropout_duration_s: float = 0.1,
+    silence_threshold: float | None = None,
+    flatline_threshold: float | None = None,
+    window_size_s: float | None = None,
+    min_dropout_duration_s: float | None = None,
 ) -> dict[str, List[Tuple[float, float]]]:
     """Detect signal dropout per microphone channel.
 
     Returns bad intervals for each channel separately, allowing per-mic QC assessment.
 
+    For acoustic emission sensor data with DC offset (e.g., walking recordings where
+    sensor output is biased around 1.5V), dropout is detected when:
+    1. RMS amplitude drops significantly below the signal baseline (~1.5 for AE sensors)
+    2. Variance becomes essentially zero (signal is completely flat/stuck)
+
+    Default thresholds are calibrated for acoustic emission walking data where:
+    - Normal signal RMS: 1.491-1.608 (median 1.499)
+    - Normal signal variance: 0.000001-0.345 (median 0.00138)
+    - True dropout: RMS < 1.45 AND variance < 0.000001 (bottom 1-5% of data)
+
     Args:
         df: Audio DataFrame with time and channel data
         time_col: Name of time column
         audio_channels: List of channel names to check (default: ch1-ch4)
-        silence_threshold: Maximum RMS amplitude for silence detection
-        flatline_threshold: Maximum variance for flatline detection
-        window_size_s: Size of sliding window for detection (seconds)
-        min_dropout_duration_s: Minimum continuous dropout duration to report
+        silence_threshold: Maximum RMS amplitude for silence detection (default: from DEFAULT_DROPOUT_THRESHOLDS)
+        flatline_threshold: Maximum variance for flatline detection (default: from DEFAULT_DROPOUT_THRESHOLDS)
+        window_size_s: Size of sliding window for detection (seconds, default: from DEFAULT_DROPOUT_THRESHOLDS)
+        min_dropout_duration_s: Minimum continuous dropout duration to report (default: from DEFAULT_DROPOUT_THRESHOLDS)
 
     Returns:
         Dictionary mapping channel name to list of (start_time, end_time) tuples
     """
+    # Use centralized defaults if not provided
+    if silence_threshold is None:
+        silence_threshold = DEFAULT_DROPOUT_THRESHOLDS.silence_threshold
+    if flatline_threshold is None:
+        flatline_threshold = DEFAULT_DROPOUT_THRESHOLDS.flatline_threshold
+    if window_size_s is None:
+        window_size_s = DEFAULT_DROPOUT_THRESHOLDS.window_size_s
+    if min_dropout_duration_s is None:
+        min_dropout_duration_s = DEFAULT_DROPOUT_THRESHOLDS.min_dropout_duration_s
+
     if audio_channels is None:
         audio_channels = ["ch1", "ch2", "ch3", "ch4"]
 
@@ -403,6 +478,28 @@ def detect_signal_dropout_per_mic(
     return per_mic_intervals
 
 
+def _classify_artifact_type(
+    intervals: List[Tuple[float, float]],
+    *,
+    intermittent_threshold_s: float = 1.0,
+) -> List[str]:
+    """Classify artifacts as 'Intermittent' or 'Continuous' based on duration.
+
+    Args:
+        intervals: List of (start_time, end_time) tuples
+        intermittent_threshold_s: Max duration (seconds) to classify as intermittent
+
+    Returns:
+        List of artifact type strings ('Intermittent' or 'Continuous') per interval
+    """
+    types = []
+    for start, end in intervals:
+        duration = end - start
+        artifact_type = "Intermittent" if duration < intermittent_threshold_s else "Continuous"
+        types.append(artifact_type)
+    return types
+
+
 def detect_artifactual_noise_per_mic(
     df: pd.DataFrame,
     time_col: str = "tt",
@@ -411,12 +508,12 @@ def detect_artifactual_noise_per_mic(
     spike_threshold_sigma: float = 5.0,
     spike_window_s: float = 0.01,
     min_artifact_duration_s: float = 0.01,
-    detect_periodic_noise: bool = True,
+    detect_periodic_noise: bool = False,
     periodic_noise_threshold: float = 0.3,
-) -> dict[str, List[Tuple[float, float]]]:
+) -> tuple[dict[str, List[Tuple[float, float]]], dict[str, List[str]]]:
     """Detect artifactual noise per microphone channel.
 
-    Returns bad intervals for each channel separately, allowing per-mic QC assessment.
+    Returns bad intervals and artifact types for each channel separately, allowing per-mic QC assessment.
     Detects both one-off spikes and periodic background noise.
 
     Args:
@@ -431,7 +528,9 @@ def detect_artifactual_noise_per_mic(
                                   higher = less sensitive (default: 0.3)
 
     Returns:
-        Dictionary mapping channel name to list of (start_time, end_time) tuples
+        Tuple of (intervals_dict, types_dict) where:
+        - intervals_dict: Channel name -> list of (start_time, end_time) tuples
+        - types_dict: Channel name -> list of artifact types ('Intermittent' or 'Continuous')
     """
     if audio_channels is None:
         audio_channels = ["ch1", "ch2", "ch3", "ch4"]
@@ -483,7 +582,11 @@ def detect_artifactual_noise_per_mic(
 
         per_mic_intervals[ch] = intervals
 
-    return per_mic_intervals
+    # Classify artifact types for each channel
+    per_mic_types = {ch: _classify_artifact_type(intervals)
+                     for ch, intervals in per_mic_intervals.items()}
+
+    return per_mic_intervals, per_mic_types
 
 
 def run_raw_audio_qc_per_mic(
@@ -491,14 +594,14 @@ def run_raw_audio_qc_per_mic(
     time_col: str = "tt",
     audio_channels: list[str] | None = None,
     *,
-    silence_threshold: float = 0.001,
-    flatline_threshold: float = 0.0001,
+    silence_threshold: float | None = None,
+    flatline_threshold: float | None = None,
     spike_threshold_sigma: float = 5.0,
-    dropout_window_s: float = 0.5,
+    dropout_window_s: float | None = None,
     spike_window_s: float = 0.01,
-    min_dropout_duration_s: float = 0.1,
+    min_dropout_duration_s: float | None = None,
     min_artifact_duration_s: float = 0.01,
-    detect_periodic_noise: bool = True,
+    detect_periodic_noise: bool = False,
     periodic_noise_threshold: float = 0.3,
 ) -> dict[str, List[Tuple[float, float]]]:
     """Run comprehensive raw audio QC checks per microphone.
@@ -506,12 +609,16 @@ def run_raw_audio_qc_per_mic(
     Detects signal dropout and artifactual noise in raw audio recordings,
     returning results separately for each microphone channel.
 
+    NOTE: Dropout thresholds are set conservatively to avoid false positives
+    on normal quiet periods in walking recordings. Only flags truly silent/missing
+    signal, not natural signal variations.
+
     Args:
         df: Audio DataFrame with time and channel data
         time_col: Name of time column
         audio_channels: List of channel names to check (default: ch1-ch4)
-        silence_threshold: Maximum RMS amplitude for silence detection
-        flatline_threshold: Maximum variance for flatline detection
+        silence_threshold: Maximum RMS amplitude for silence detection (default: 0.01)
+        flatline_threshold: Maximum variance for flatline detection (default: 0.001)
         spike_threshold_sigma: Number of standard deviations for spike detection
         dropout_window_s: Window size for dropout detection (seconds)
         spike_window_s: Window size for spike detection (seconds)
@@ -535,7 +642,7 @@ def run_raw_audio_qc_per_mic(
         min_dropout_duration_s=min_dropout_duration_s,
     )
 
-    artifact_per_mic = detect_artifactual_noise_per_mic(
+    artifact_per_mic, artifact_types_per_mic = detect_artifactual_noise_per_mic(
         df,
         time_col=time_col,
         audio_channels=audio_channels,

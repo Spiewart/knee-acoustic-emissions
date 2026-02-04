@@ -35,7 +35,7 @@ def read_audio_board_file(fname: str, output_folder: Optional[str] = None) -> pd
     output_folder : Optional[str]
         Folder where the .mat output will be written. If None, the
         output is saved next to the input file.
-    
+
     Returns
     -------
     pd.DataFrame
@@ -162,7 +162,7 @@ def read_audio_board_file(fname: str, output_folder: Optional[str] = None) -> pd
             }
         )
 
-    # Save channel data as a pandas DataFrame (pickle) and write metadata to JSON
+    # Save channel data as a pandas DataFrame (pickle)
     outname, _ = os.path.splitext(os.path.basename(fname))
     fname_out = os.path.join(output_folder, outname + ".pkl")
 
@@ -184,46 +184,34 @@ def read_audio_board_file(fname: str, output_folder: Optional[str] = None) -> pd
     # Save DataFrame to a pickle file
     df.to_pickle(fname_out)
 
-    # Save metadata (non-array values) to JSON for easy access
-    meta = {}
-    for k, v in file_audio.items():
-        if k in ("tt", "ch1", "ch2", "ch3", "ch4", "tt_blocks"):
-            continue
-        # Convert numpy scalars to native types where possible
-        if isinstance(v, (np.generic,)):
-            try:
-                meta[k] = v.item()
-                continue
-            except (AttributeError, TypeError, ValueError) as e:
-                # Not convertible via .item(); skip to next serialization attempt
-                logging.debug("Failed to convert numpy scalar for key %s: %s", k, e)
-        # Convert datetimes to ISO strings
-        if isinstance(v, (datetime,)):
-            meta[k] = v.isoformat()
-            continue
-        # Lists, ints, strings are JSON serializable; otherwise try cast
-        try:
-            json.dumps(v)
-            meta[k] = v
-        except (TypeError, OverflowError) as e:
-            logging.debug("Value for key %s not JSON serializable: %s", k, e)
-            try:
-                meta[k] = str(v)
-            except (TypeError, ValueError) as e2:
-                logging.exception("Failed to cast value to string for key %s: %s", k, e2)
-                meta[k] = None
+    print(f"Data saved to {fname_out}")
 
-    meta_fname = os.path.join(output_folder, outname + "_meta.json")
+    # Write metadata JSON alongside the pickle
+    meta_out = os.path.join(output_folder, outname + "_meta.json")
     try:
-        with open(meta_fname, "w", encoding="utf-8") as mf:
-            json.dump(meta, mf, ensure_ascii=False, indent=2)
-    except (OSError, TypeError) as e:
-        # If metadata can't be written, continue without failing the whole process but log details
-        logging.exception("Unable to write metadata JSON file: %s", e)
-        warnings.warn("Unable to write metadata JSON file")
+        meta_payload = {
+            "deviceSerial": file_audio.get("deviceSerial"),
+            "projectNum": file_audio.get("projectNum"),
+            "hwRevMajor": file_audio.get("hwRevMajor"),
+            "hwRevMinor": file_audio.get("hwRevMinor"),
+            "HP_Serial": file_audio.get("HP_Serial"),
+            "devFirmwareVersion": file_audio.get("devFirmwareVersion"),
+            "numSDBlocks": file_audio.get("numSDBlocks"),
+            "fileTime": fileTime_dt.isoformat() if isinstance(fileTime_dt, datetime) else None,
+            "matlabVersion": file_audio.get("matlabVersion"),
+            "fs": file_audio.get("fs"),
+            "numBits": file_audio.get("numBits"),
+            "startTime": file_audio.get("startTime"),
+            "stopTime": file_audio.get("stopTime"),
+            "firstSampTime": file_audio.get("firstSampTime"),
+            "firstSampRaw": file_audio.get("firstSampRaw"),
+            "secondSampRaw": file_audio.get("secondSampRaw"),
+        }
+        with open(meta_out, "w", encoding="utf-8") as f:
+            json.dump(meta_payload, f, indent=2)
+    except (OSError, TypeError, ValueError) as exc:
+        logging.warning("Failed to write metadata JSON %s: %s", meta_out, exc)
 
-    print(f"Data saved to {fname_out} and {meta_fname}")
-    
     # Return the DataFrame for immediate use
     return df
 

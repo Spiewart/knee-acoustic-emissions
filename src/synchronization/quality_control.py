@@ -216,10 +216,10 @@ def _build_cycle_metadata_context(
             }
             maneuver_key = maneuver_map.get(maneuver, maneuver)
 
-            # Construct the log filepath
-            log_path = maneuver_dir / f"processing_log_{study_id}_{knee_label}_{maneuver_key}.xlsx"
-
-            log = ManeuverProcessingLog.load_from_excel(log_path)
+            # TODO: Query database directly for audio QC intervals
+            # For now, skip loading Excel logs
+            # log_path = maneuver_dir / f"processing_log_{study_id}_{knee_label}_{maneuver_key}.xlsx"
+            log = None
 
             if log:
                 # Load audio QC bad intervals (all mics)
@@ -700,7 +700,11 @@ def perform_sync_qc(
     logger.info(f"Maneuver: {maneuver}, Speed: {speed}")
 
     # Extract movement cycles
-    cycles = extract_movement_cycles(synced_df, maneuver=maneuver, speed=speed)
+    try:
+        cycles = extract_movement_cycles(synced_df, maneuver=maneuver, speed=speed)
+    except ValueError as exc:
+        logger.warning("Skipping cycle extraction: %s", exc)
+        return [], [], output_dir or synced_pkl_path.parent
     logger.info(f"Extracted {len(cycles)} movement cycles")
 
     if not cycles:
@@ -1146,7 +1150,9 @@ def _create_cycle_plot(
         ax2.tick_params(axis="y", labelcolor="blue")
         ax2.grid(True, alpha=0.3)
         ax2.set_title(f"Acoustic Channels {title_suffix}", fontsize=12)
-        ax2.legend(loc="upper left", fontsize=8)
+        handles, labels = ax2.get_legend_handles_labels()
+        if handles:
+            ax2.legend(loc="upper left", fontsize=8)
 
         plt.tight_layout()
         fig.savefig(output_path, dpi=100, bbox_inches="tight")

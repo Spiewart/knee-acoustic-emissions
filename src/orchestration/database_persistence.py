@@ -17,7 +17,12 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from src.db.repository import Repository
-from src.metadata import AudioProcessing, BiomechanicsImport, MovementCycle, Synchronization
+from src.metadata import (
+    AudioProcessing,
+    BiomechanicsImport,
+    MovementCycle,
+    Synchronization,
+)
 
 logger = logging.getLogger(__name__)
 

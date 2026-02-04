@@ -327,12 +327,18 @@ def _detect_stomp_by_frequency_content(
 
     # Compute STFT for time-frequency representation
     try:
+        nperseg = min(window_samples, len(combined_signal))
+        if nperseg < 2:
+            return float(search_tt[0]), 0.0
+
+        noverlap = max(0, min(window_samples - hop_samples, nperseg - 1))
+
         frequencies, times, Sxx = scipy_signal.spectrogram(
             combined_signal,
             sr,
             window='hamming',
-            nperseg=window_samples,
-            noverlap=window_samples - hop_samples,
+            nperseg=nperseg,
+            noverlap=noverlap,
             scaling='spectrum'
         )
     except Exception as e:

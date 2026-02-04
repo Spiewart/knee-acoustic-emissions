@@ -4,9 +4,11 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.audio.raw_qc import (detect_artifactual_noise_per_mic,
-                              detect_signal_dropout_per_mic,
-                              run_raw_audio_qc_per_mic)
+from src.audio.raw_qc import (
+    detect_artifactual_noise_per_mic,
+    detect_signal_dropout_per_mic,
+    run_raw_audio_qc_per_mic,
+)
 
 
 def test_detect_signal_dropout_per_mic():
@@ -24,8 +26,13 @@ def test_detect_signal_dropout_per_mic():
     # Add dropout to ch1 between 2-3 seconds
     df.loc[(df['tt'] >= 2.0) & (df['tt'] <= 3.0), 'ch1'] = 0.0
 
-    # Run per-mic dropout detection
-    per_mic_dropout = detect_signal_dropout_per_mic(df)
+    # Run per-mic dropout detection with thresholds appropriate for sine wave data
+    # (sine wave centered at 0 with amplitude ~1, unlike the AE sensor data with DC offset at 1.5)
+    per_mic_dropout = detect_signal_dropout_per_mic(
+        df,
+        silence_threshold=0.1,  # For sine wave, 0.1 is appropriate
+        flatline_threshold=0.001,  # For sine wave noise, 0.001 variance threshold
+    )
 
     # Check that ch1 has dropout intervals
     assert 'ch1' in per_mic_dropout
@@ -62,7 +69,7 @@ def test_detect_artifactual_noise_per_mic():
     df.loc[spike_mask, 'ch2'] += 10.0  # Add large spikes
 
     # Run per-mic artifact detection (disable periodic noise detection for this test)
-    per_mic_artifacts = detect_artifactual_noise_per_mic(df, detect_periodic_noise=False)
+    per_mic_artifacts, artifact_types = detect_artifactual_noise_per_mic(df, detect_periodic_noise=False)
 
     # Check that artifact is around 5-6 seconds
     if per_mic_artifacts['ch2']:
@@ -74,6 +81,13 @@ def test_detect_artifactual_noise_per_mic():
                 break
         assert found_expected_artifact, \
             f"Should find artifact around 5-6s, got intervals: {per_mic_artifacts['ch2']}"
+
+    # Check that artifact types are provided and valid
+    assert isinstance(artifact_types, dict)
+    assert 'ch2' in artifact_types
+    for artifact_type in artifact_types['ch2']:
+        assert artifact_type in ['Intermittent', 'Continuous'], \
+            f"Artifact type should be Intermittent or Continuous, got {artifact_type}"
 
 
 def test_run_raw_audio_qc_per_mic_combined():

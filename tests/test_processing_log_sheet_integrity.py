@@ -1,15 +1,67 @@
-"""Integration tests for processing log sheet integrity and update behavior.
-
-These tests ensure that:
-1. Method Agreement Span persists through save/load and update cycles
-2. Movement Cycles sheet has correct columns (Knee, not Knee Side)
-3. Log Updated timestamp is present in Movement Cycles
-"""
+"""Report generator sheet integrity tests."""
 
 from datetime import datetime
 
 import numpy as np
 import pandas as pd
+
+from src.db.models import SynchronizationRecord
+from src.reports.report_generator import ReportGenerator
+
+
+def test_cycles_sheet_has_expected_columns(
+    db_session,
+    repository,
+    audio_processing_factory,
+    biomechanics_import_factory,
+    synchronization_factory,
+    movement_cycle_factory,
+    tmp_path,
+):
+    audio = audio_processing_factory(study="AOA", study_id=3001, knee="left", maneuver="walk")
+    audio_record = repository.save_audio_processing(audio)
+
+    biomech = biomechanics_import_factory(study="AOA", study_id=3001, knee="left", maneuver="walk")
+    biomech_record = repository.save_biomechanics_import(biomech, audio_processing_id=audio_record.id)
+
+    sync = synchronization_factory(
+        study="AOA",
+        study_id=3001,
+        audio_processing_id=audio_record.id,
+        biomechanics_import_id=biomech_record.id,
+        sync_file_name="AOA3001_walk_sync",
+    )
+    sync_record = repository.save_synchronization(
+        sync,
+        audio_processing_id=audio_record.id,
+        biomechanics_import_id=biomech_record.id,
+    )
+
+    cycle = movement_cycle_factory(
+        study="AOA",
+        study_id=3001,
+        audio_processing_id=audio_record.id,
+        biomechanics_import_id=biomech_record.id,
+        synchronization_id=sync_record.id,
+        cycle_file="AOA3001_walk_cycle_0",
+    )
+    repository.save_movement_cycle(
+        cycle,
+        audio_processing_id=audio_record.id,
+        biomechanics_import_id=biomech_record.id,
+        synchronization_id=sync_record.id,
+    )
+
+    report = ReportGenerator(db_session)
+    output_path = report.save_to_excel(
+        tmp_path / "sheet_integrity.xlsx",
+        participant_id=audio_record.participant_id,
+        maneuver="walk",
+        knee="left",
+    )
+
+    cycles = pd.read_excel(output_path, sheet_name="Cycles")
+    assert {"Cycle File", "Start Time (s)", "Duration (s)"}.issubset(cycles.columns)
 
 from src.metadata import Synchronization
 from src.orchestration.processing_log import (
@@ -22,316 +74,193 @@ from src.orchestration.processing_log import (
 class TestProcessingLogSheetIntegrity:
     """Test Excel sheet integrity through save/load/update cycles."""
 
-    def test_method_agreement_span_persists_through_updates(self, tmp_path):
-        """Test that method_agreement_span is preserved when updating existing records."""
-        maneuver_dir = tmp_path / "Left Knee" / "Walking"
-        maneuver_dir.mkdir(parents=True)
+    def test_method_agreement_span_persists_through_updates(
+        self,
+        db_session,
+        repository,
+        audio_processing_factory,
+        biomechanics_import_factory,
+        synchronization_factory,
+        movement_cycle_factory,
+        tmp_path,
+    ):
+        """Verify method_agreement_span persists through DB writes and report generation."""
+        audio = audio_processing_factory(study="AOA", study_id=1011, knee="left", maneuver="walk")
+        audio_record = repository.save_audio_processing(audio)
 
-        # Create initial log with sync record
-        log = ManeuverProcessingLog(
-            study_id="1011",
-            knee_side="Left",
-            maneuver="walk",
-            maneuver_directory=maneuver_dir,
-            log_created=datetime(2024, 1, 1),
-        )
+        biomech = biomechanics_import_factory(study="AOA", study_id=1011, knee="left", maneuver="walk")
+        biomech_record = repository.save_biomechanics_import(biomech, audio_processing_id=audio_record.id)
 
-        # Create synced dataframe with detection results
-        synced_df = pd.DataFrame({
-            'tt': np.arange(0, 10.0, 0.01),
-            'ch1': np.random.randn(1000),
-        })
-
-        # Create sync record with method_agreement_span
-        detection_results = {
-            "consensus_time": 5.0,
-            "rms_time": 4.8,
-            "onset_time": 5.1,
-            "freq_time": 5.2,
-            "consensus_methods": ["rms", "onset", "freq"],
-        }
-
-        sync_record = create_sync_record_from_data(
-            sync_file_name="test_sync",
-            synced_df=synced_df,
-            pass_number=1,
-            speed="normal",
-            detection_results=detection_results,
-            error=None,
-            audio_record=None,
-            biomech_record=None,
-            metadata={"maneuver": "walk"},
+        expected_span = 0.4
+        sync = synchronization_factory(
             study="AOA",
             study_id=1011,
-        )
-
-        # Verify method_agreement_span was calculated
-        expected_span = 5.2 - 4.8  # 0.4
-        assert abs(sync_record.method_agreement_span - expected_span) < 0.001, \
-            f"Initial method_agreement_span should be {expected_span}, got {sync_record.method_agreement_span}"
-
-        # Add to log and save
-        log.add_synchronization_record(sync_record)
-        excel_path = maneuver_dir / "test_log.xlsx"
-        log.save_to_excel(excel_path)
-
-        # Verify in Excel
-        sync_df = pd.read_excel(excel_path, sheet_name="Synchronization")
-        assert abs(sync_df["Method Agreement Span (s)"].iloc[0] - expected_span) < 0.001, \
-            f"Method Agreement Span should be {expected_span} in saved Excel"
-
-        # SIMULATE REPROCESSING: Load log and add cycles record
-        loaded_log = ManeuverProcessingLog.load_from_excel(excel_path)
-        assert loaded_log is not None, "Failed to load log from Excel"
-
-        # Verify method_agreement_span survived load
-        assert abs(loaded_log.synchronization_records[0].method_agreement_span - expected_span) < 0.001, \
-            f"Method Agreement Span should be {expected_span} after load, got {loaded_log.synchronization_records[0].method_agreement_span}"
-
-        # Create cycle data and cycles record (simulating cycle extraction)
-        cycle_data = pd.DataFrame({
-            'tt': np.arange(0, 1.0, 0.01),
-            'ch1': np.random.randn(100),
-        })
-
-        cycles_record = create_cycles_record_from_data(
-            sync_file_name="test_sync",
-            clean_cycles=[cycle_data],
-            outlier_cycles=[],
-            pass_number=1,
-            speed="normal",
-            output_dir=maneuver_dir,
-            plots_created=False,
-            error=None,
-            audio_record=None,
-            biomech_record=None,
-            sync_record=sync_record,
-            metadata={},
-            study="AOA",
-            study_id=1011,
-        )
-
-        # Verify cycles_record inherited method_agreement_span
-        assert abs(cycles_record.method_agreement_span - expected_span) < 0.001, \
-            f"Cycles record should inherit method_agreement_span={expected_span}, got {cycles_record.method_agreement_span}"
-
-        # Add cycles record to loaded log (simulating update)
-        loaded_log.add_movement_cycles_record(cycles_record)
-
-        # CRITICAL: Verify method_agreement_span in sync record wasn't lost
-        sync_rec_after_update = loaded_log.synchronization_records[0]
-        assert abs(sync_rec_after_update.method_agreement_span - expected_span) < 0.001, \
-            f"Method Agreement Span should still be {expected_span} after adding cycles, got {sync_rec_after_update.method_agreement_span}"
-
-        # Save updated log
-        loaded_log.save_to_excel(excel_path)
-
-        # Reload and verify method_agreement_span persists
-        final_log = ManeuverProcessingLog.load_from_excel(excel_path)
-        assert abs(final_log.synchronization_records[0].method_agreement_span - expected_span) < 0.001, \
-            f"Method Agreement Span should be {expected_span} after full cycle, got {final_log.synchronization_records[0].method_agreement_span}"
-
-        # Verify in final Excel
-        final_sync_df = pd.read_excel(excel_path, sheet_name="Synchronization")
-        assert abs(final_sync_df["Method Agreement Span (s)"].iloc[0] - expected_span) < 0.001, \
-            f"Method Agreement Span should be {expected_span} in final Excel"
-
-    def test_movement_cycles_has_correct_columns(self, tmp_path):
-        """Test that Movement Cycles sheet has 'Knee' but not 'Knee Side'."""
-        maneuver_dir = tmp_path / "Left Knee" / "Walking"
-        maneuver_dir.mkdir(parents=True)
-
-        log = ManeuverProcessingLog(
-            study_id="1011",
-            knee_side="Left",
-            maneuver="walk",
-            maneuver_directory=maneuver_dir,
-            log_created=datetime(2024, 1, 1),
-        )
-
-        # Create sync record
-        sync_record = Synchronization(
-            study="AOA",
-            study_id=1011,
-            linked_biomechanics=True,
-            biomechanics_file="test.xlsx",
-            biomechanics_type="Motion Analysis",
-            biomechanics_sync_method="stomp",
-            biomechanics_sample_rate=100.0,
-            audio_file_name="test_audio.bin",
-            device_serial="TEST123",
-            firmware_version=1,
-            file_time=datetime(2024, 1, 1),
-            file_size_mb=100.0,
-            recording_date=datetime(2024, 1, 1),
-            recording_time=datetime(2024, 1, 1, 10, 0, 0),
-            knee="left",
-            maneuver="walk",
-            pass_number=1,
-            speed="normal",
-            num_channels=4,
-            mic_1_position="IPM",
-            mic_2_position="IPL",
-            mic_3_position="SPM",
-            mic_4_position="SPL",
-            audio_sync_time=5.0,
-            bio_left_sync_time=10.0,
-            sync_offset=5.0,
-            aligned_audio_sync_time=10.0,
-            aligned_biomechanics_sync_time=10.0,
-            sync_method="consensus",
-            consensus_methods="RMS,Onset,Frequency",
+            audio_processing_id=audio_record.id,
+            biomechanics_import_id=biomech_record.id,
+            sync_file_name="test_sync.pkl",
+            method_agreement_span=expected_span,
+            consensus_methods="rms, onset, freq",
+            rms_time=4.8,
+            onset_time=5.1,
+            freq_time=5.2,
             consensus_time=5.0,
-            rms_time=5.0,
-            onset_time=5.0,
-            freq_time=5.0,
-            sync_file_name="test_sync",
-            processing_date=datetime(2024, 1, 1),
-            sync_duration=120.0,
-            total_cycles_extracted=0,
-            clean_cycles=0,
-            outlier_cycles=0,
+        )
+        sync_record = repository.save_synchronization(
+            sync,
+            audio_processing_id=audio_record.id,
+            biomechanics_import_id=biomech_record.id,
         )
 
-        # Create cycles record
-        cycle_data = pd.DataFrame({
-            'tt': np.arange(0, 1.0, 0.01),
-            'ch1': np.random.randn(100),
-        })
-
-        cycles_record = create_cycles_record_from_data(
-            sync_file_name="test_sync",
-            clean_cycles=[cycle_data],
-            outlier_cycles=[],
+        cycle = movement_cycle_factory(
+            study="AOA",
+            study_id=1011,
+            audio_processing_id=audio_record.id,
+            biomechanics_import_id=biomech_record.id,
+            synchronization_id=sync_record.id,
+            cycle_file="test_cycle_01.pkl",
             pass_number=1,
-            speed="normal",
-            output_dir=maneuver_dir,
-            plots_created=False,
-            error=None,
-            audio_record=None,
-            biomech_record=None,
-            sync_record=sync_record,
-            metadata={},
-            study="AOA",
-            study_id=1011,
+            speed="medium",
+            method_agreement_span=expected_span,
+        )
+        repository.save_movement_cycle(
+            cycle,
+            audio_processing_id=audio_record.id,
+            biomechanics_import_id=biomech_record.id,
+            synchronization_id=sync_record.id,
         )
 
-        log.add_movement_cycles_record(cycles_record)
+        db_sync = db_session.get(SynchronizationRecord, sync_record.id)
+        assert abs(db_sync.method_agreement_span - expected_span) < 0.001
 
-        # Save and check columns
-        excel_path = maneuver_dir / "test_log.xlsx"
-        log.save_to_excel(excel_path)
-
-        mc_df = pd.read_excel(excel_path, sheet_name="Movement Cycles")
-
-        # CRITICAL ASSERTIONS:
-        assert "Knee" in mc_df.columns, "Movement Cycles should have 'Knee' column"
-        assert "Knee Side" not in mc_df.columns, \
-            "Movement Cycles should NOT have redundant 'Knee Side' column"
-
-        # Verify knee value is present
-        assert mc_df["Knee"].iloc[0] == "left", \
-            f"Knee should be 'left', got {mc_df['Knee'].iloc[0]}"
-
-    def test_movement_cycles_has_log_updated(self, tmp_path):
-        """Test that Movement Cycles sheet has Log Updated timestamp."""
-        maneuver_dir = tmp_path / "Left Knee" / "Walking"
-        maneuver_dir.mkdir(parents=True)
-
-        log = ManeuverProcessingLog(
-            study_id="1011",
-            knee_side="Left",
+        report = ReportGenerator(db_session)
+        output_path = report.save_to_excel(
+            tmp_path / "test_log.xlsx",
+            participant_id=audio_record.participant_id,
             maneuver="walk",
-            maneuver_directory=maneuver_dir,
-            log_created=datetime(2024, 1, 1),
-        )
-
-        # Create sync record
-        sync_record = Synchronization(
-            study="AOA",
-            study_id=1011,
-            linked_biomechanics=True,
-            biomechanics_file="test.xlsx",
-            biomechanics_type="Motion Analysis",
-            biomechanics_sync_method="stomp",
-            biomechanics_sample_rate=100.0,
-            audio_file_name="test_audio.bin",
-            device_serial="TEST123",
-            firmware_version=1,
-            file_time=datetime(2024, 1, 1),
-            file_size_mb=100.0,
-            recording_date=datetime(2024, 1, 1),
-            recording_time=datetime(2024, 1, 1, 10, 0, 0),
             knee="left",
-            maneuver="walk",
-            pass_number=1,
-            speed="normal",
-            num_channels=4,
-            mic_1_position="IPM",
-            mic_2_position="IPL",
-            mic_3_position="SPM",
-            mic_4_position="SPL",
-            audio_sync_time=5.0,
-            bio_left_sync_time=10.0,
-            sync_offset=5.0,
-            aligned_audio_sync_time=10.0,
-            aligned_biomechanics_sync_time=10.0,
-            sync_method="consensus",
-            consensus_methods="RMS,Onset,Frequency",
-            consensus_time=5.0,
-            rms_time=5.0,
-            onset_time=5.0,
-            freq_time=5.0,
-            sync_file_name="test_sync",
-            processing_date=datetime(2024, 1, 1),
-            sync_duration=120.0,
-            total_cycles_extracted=0,
-            clean_cycles=0,
-            outlier_cycles=0,
         )
 
-        # Create cycles record
-        cycle_data = pd.DataFrame({
-            'tt': np.arange(0, 1.0, 0.01),
-            'ch1': np.random.randn(100),
-        })
+        sync_df = pd.read_excel(output_path, sheet_name="Synchronization")
+        assert abs(sync_df["Method Agreement Span"].iloc[0] - expected_span) < 0.001
 
-        cycles_record = create_cycles_record_from_data(
-            sync_file_name="test_sync",
-            clean_cycles=[cycle_data],
-            outlier_cycles=[],
-            pass_number=1,
-            speed="normal",
-            output_dir=maneuver_dir,
-            plots_created=False,
-            error=None,
-            audio_record=None,
-            biomech_record=None,
-            sync_record=sync_record,
-            metadata={},
+    def test_movement_cycles_has_correct_columns(
+        self,
+        db_session,
+        repository,
+        audio_processing_factory,
+        biomechanics_import_factory,
+        synchronization_factory,
+        movement_cycle_factory,
+        tmp_path,
+    ):
+        """Validate Movement Cycles sheet columns in DB-backed report."""
+        audio = audio_processing_factory(study="AOA", study_id=1011, knee="left", maneuver="walk")
+        audio_record = repository.save_audio_processing(audio)
+
+        biomech = biomechanics_import_factory(study="AOA", study_id=1011, knee="left", maneuver="walk")
+        biomech_record = repository.save_biomechanics_import(biomech, audio_processing_id=audio_record.id)
+
+        sync = synchronization_factory(
             study="AOA",
             study_id=1011,
+            audio_processing_id=audio_record.id,
+            biomechanics_import_id=biomech_record.id,
+            sync_file_name="test_sync.pkl",
+        )
+        sync_record = repository.save_synchronization(
+            sync,
+            audio_processing_id=audio_record.id,
+            biomechanics_import_id=biomech_record.id,
         )
 
-        log.add_movement_cycles_record(cycles_record)
+        cycle = movement_cycle_factory(
+            study="AOA",
+            study_id=1011,
+            audio_processing_id=audio_record.id,
+            biomechanics_import_id=biomech_record.id,
+            synchronization_id=sync_record.id,
+            cycle_file="test_cycle_01.pkl",
+            pass_number=1,
+            speed="medium",
+        )
+        repository.save_movement_cycle(
+            cycle,
+            audio_processing_id=audio_record.id,
+            biomechanics_import_id=biomech_record.id,
+            synchronization_id=sync_record.id,
+        )
 
-        # Save and check Log Updated
-        excel_path = maneuver_dir / "test_log.xlsx"
-        log.save_to_excel(excel_path)
+        report = ReportGenerator(db_session)
+        output_path = report.save_to_excel(
+            tmp_path / "test_log.xlsx",
+            participant_id=audio_record.participant_id,
+            maneuver="walk",
+            knee="left",
+        )
 
-        mc_df = pd.read_excel(excel_path, sheet_name="Movement Cycles")
+        mc_df = pd.read_excel(output_path, sheet_name="Cycles")
+        assert "Movement Cycle ID" in mc_df.columns
+        assert "Participant ID" in mc_df.columns
+        assert "Processing Date" in mc_df.columns
 
-        # CRITICAL ASSERTIONS:
-        assert "Log Updated" in mc_df.columns, \
-            "Movement Cycles should have 'Log Updated' column"
+    def test_movement_cycles_has_log_updated(
+        self,
+        db_session,
+        repository,
+        audio_processing_factory,
+        biomechanics_import_factory,
+        synchronization_factory,
+        movement_cycle_factory,
+        tmp_path,
+    ):
+        """Test that Movement Cycles sheet has Processing Date timestamp."""
+        audio = audio_processing_factory(study="AOA", study_id=1011, knee="left", maneuver="walk")
+        audio_record = repository.save_audio_processing(audio)
 
-        log_updated_value = mc_df["Log Updated"].iloc[0]
-        assert pd.notna(log_updated_value), \
-            "Log Updated should have a value (not NaN)"
+        biomech = biomechanics_import_factory(study="AOA", study_id=1011, knee="left", maneuver="walk")
+        biomech_record = repository.save_biomechanics_import(biomech, audio_processing_id=audio_record.id)
 
-        # Should be a datetime
-        assert isinstance(pd.to_datetime(log_updated_value), pd.Timestamp), \
-            "Log Updated should be a valid datetime"
+        sync = synchronization_factory(
+            study="AOA",
+            study_id=1011,
+            audio_processing_id=audio_record.id,
+            biomechanics_import_id=biomech_record.id,
+            sync_file_name="test_sync.pkl",
+        )
+        sync_record = repository.save_synchronization(
+            sync,
+            audio_processing_id=audio_record.id,
+            biomechanics_import_id=biomech_record.id,
+        )
+
+        cycle = movement_cycle_factory(
+            study="AOA",
+            study_id=1011,
+            audio_processing_id=audio_record.id,
+            biomechanics_import_id=biomech_record.id,
+            synchronization_id=sync_record.id,
+            cycle_file="test_cycle_01.pkl",
+            pass_number=1,
+            speed="medium",
+        )
+        repository.save_movement_cycle(
+            cycle,
+            audio_processing_id=audio_record.id,
+            biomechanics_import_id=biomech_record.id,
+            synchronization_id=sync_record.id,
+        )
+
+        report = ReportGenerator(db_session)
+        output_path = report.save_to_excel(
+            tmp_path / "test_log.xlsx",
+            participant_id=audio_record.participant_id,
+            maneuver="walk",
+            knee="left",
+        )
+
+        mc_df = pd.read_excel(output_path, sheet_name="Cycles")
+        assert "Processing Date" in mc_df.columns
+        assert not pd.isnull(mc_df["Processing Date"].iloc[0])
 
 
 class TestMethodAgreementSpanCalculation:
@@ -359,6 +288,7 @@ class TestMethodAgreementSpanCalculation:
 
         sync_record = create_sync_record_from_data(
             sync_file_name="test_sync",
+            audio_stomp_time=5.0,
             synced_df=synced_df,
             pass_number=1,
             speed="normal",
@@ -397,6 +327,7 @@ class TestMethodAgreementSpanCalculation:
 
         sync_record = create_sync_record_from_data(
             sync_file_name="test_sync",
+            audio_stomp_time=5.0,
             synced_df=synced_df,
             detection_results=detection_results,
             audio_record=None,
@@ -435,6 +366,7 @@ class TestMethodAgreementSpanCalculation:
 
         sync_record = create_sync_record_from_data(
             sync_file_name="test_sync",
+            audio_stomp_time=5.0,
             synced_df=synced_df,
             detection_results=detection_results,
             audio_record=None,
@@ -473,6 +405,7 @@ class TestMethodAgreementSpanCalculation:
 
         sync_record = create_sync_record_from_data(
             sync_file_name="test_sync",
+            audio_stomp_time=5.0,
             synced_df=synced_df,
             detection_results=detection_results,
             audio_record=None,
@@ -509,6 +442,7 @@ class TestMethodAgreementSpanCalculation:
 
         sync_record = create_sync_record_from_data(
             sync_file_name="test_sync",
+            audio_stomp_time=5.0,
             synced_df=synced_df,
             detection_results=detection_results,
             audio_record=None,
@@ -545,6 +479,7 @@ class TestMethodAgreementSpanCalculation:
 
         sync_record = create_sync_record_from_data(
             sync_file_name="test_sync",
+            audio_stomp_time=5.0,
             synced_df=synced_df,
             detection_results=detection_results,
             audio_record=None,
@@ -587,61 +522,53 @@ class TestMethodAgreementSpanCalculation:
         assert abs(cycles_record.method_agreement_span - expected_span) < 0.001, \
             f"Cycles record should inherit method_agreement_span={expected_span}, got {cycles_record.method_agreement_span}"
 
-    def test_method_agreement_span_in_excel_output(self, tmp_path):
+    def test_method_agreement_span_in_excel_output(
+        self,
+        db_session,
+        repository,
+        audio_processing_factory,
+        biomechanics_import_factory,
+        synchronization_factory,
+        tmp_path,
+    ):
         """Test that method_agreement_span appears correctly in Excel output."""
-        maneuver_dir = tmp_path / "Left Knee" / "Walking"
-        maneuver_dir.mkdir(parents=True)
+        audio = audio_processing_factory(study="AOA", study_id=1011, knee="left", maneuver="walk")
+        audio_record = repository.save_audio_processing(audio)
 
-        log = ManeuverProcessingLog(
-            study_id="1011",
-            knee_side="Left",
-            maneuver="walk",
-            maneuver_directory=maneuver_dir,
-            log_created=datetime(2024, 1, 1),
-        )
+        biomech = biomechanics_import_factory(study="AOA", study_id=1011, knee="left", maneuver="walk")
+        biomech_record = repository.save_biomechanics_import(biomech, audio_processing_id=audio_record.id)
 
-        synced_df = pd.DataFrame({
-            'tt': np.arange(0, 10.0, 0.01),
-            'ch1': np.random.randn(1000),
-        })
-
-        # Create sync with measurable method disagreement
-        detection_results = {
-            "consensus_time": 5.0,
-            "rms_time": 4.6,      # 0.4s early
-            "onset_time": 5.0,    # On time
-            "freq_time": 5.3,     # 0.3s late
-            "consensus_methods": ["rms", "onset", "freq"],
-        }
-
-        sync_record = create_sync_record_from_data(
-            sync_file_name="test_sync",
-            synced_df=synced_df,
-            detection_results=detection_results,
-            audio_record=None,
-            biomech_record=None,
-            metadata={"pass_number": 1, "speed": "normal"},
+        expected_span = 0.7
+        sync = synchronization_factory(
             study="AOA",
             study_id=1011,
-            pass_number=1,
-            speed="normal",
+            audio_processing_id=audio_record.id,
+            biomechanics_import_id=biomech_record.id,
+            sync_file_name="test_sync.pkl",
+            method_agreement_span=expected_span,
+            consensus_methods="rms, onset, freq",
+            rms_time=4.6,
+            onset_time=5.0,
+            freq_time=5.3,
+            consensus_time=5.0,
+        )
+        repository.save_synchronization(
+            sync,
+            audio_processing_id=audio_record.id,
+            biomechanics_import_id=biomech_record.id,
         )
 
-        log.add_synchronization_record(sync_record)
+        report = ReportGenerator(db_session)
+        output_path = report.save_to_excel(
+            tmp_path / "test_log.xlsx",
+            participant_id=audio_record.participant_id,
+            maneuver="walk",
+            knee="left",
+        )
 
-        # Save and verify in Excel
-        excel_path = maneuver_dir / "test_log.xlsx"
-        log.save_to_excel(excel_path)
+        sync_df = pd.read_excel(output_path, sheet_name="Synchronization")
+        actual_span = sync_df["Method Agreement Span"].iloc[0]
+        assert abs(actual_span - expected_span) < 0.001
 
-        sync_df = pd.read_excel(excel_path, sheet_name="Synchronization")
-
-        expected_span = 5.3 - 4.6  # 0.7
-        actual_span = sync_df["Method Agreement Span (s)"].iloc[0]
-
-        assert abs(actual_span - expected_span) < 0.001, \
-            f"Excel should show method_agreement_span={expected_span}, got {actual_span}"
-
-        # Verify consensus methods are also present
         consensus_methods = sync_df["Consensus Methods"].iloc[0]
-        assert "rms" in consensus_methods and "onset" in consensus_methods and "freq" in consensus_methods, \
-            f"Excel should show all three consensus methods, got {consensus_methods}"
+        assert "rms" in consensus_methods and "onset" in consensus_methods and "freq" in consensus_methods

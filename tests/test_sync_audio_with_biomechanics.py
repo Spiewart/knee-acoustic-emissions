@@ -24,7 +24,7 @@ def test_get_stomp_time(fake_participant_directory):
 
     # Test left foot stomp time
     left_stomp_time = get_stomp_time(bio_meta, foot="left")
-    expected_left_time = pd.to_timedelta(16.23, unit="s").to_pytimedelta()
+    expected_left_time = pd.to_timedelta(12.00, unit="s").to_pytimedelta()
     assert left_stomp_time == expected_left_time, (
         f"Left stomp time mismatch: expected {expected_left_time}, "
         f"got {left_stomp_time}"
@@ -32,7 +32,7 @@ def test_get_stomp_time(fake_participant_directory):
 
     # Test right foot stomp time
     right_stomp_time = get_stomp_time(bio_meta, foot="right")
-    expected_right_time = pd.to_timedelta(17.48, unit="s").to_pytimedelta()
+    expected_right_time = pd.to_timedelta(13.00, unit="s").to_pytimedelta()
     assert right_stomp_time == expected_right_time, (
         f"Right stomp time mismatch: expected {expected_right_time}, "
         f"got {right_stomp_time}"

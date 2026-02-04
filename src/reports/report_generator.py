@@ -1,0 +1,610 @@
+"""Database-backed Excel report generation.
+
+Queries the database to populate all Excel sheets on-demand.
+This is the single source of truth for all reporting.
+"""
+
+import logging
+from datetime import datetime
+from pathlib import Path
+from typing import Dict, List, Optional
+
+import pandas as pd
+from sqlalchemy.orm import Session
+
+logger = logging.getLogger(__name__)
+
+
+class ReportGenerator:
+    """Generates Excel reports by querying the database.
+
+    Supports generating sheets for:
+    - Summary (statistics and metrics)
+    - Audio Processing
+    - Biomechanics Import
+    - Synchronization
+    - Movement Cycles
+
+    All data is queried on-demand from the database.
+    """
+
+    def __init__(self, session: Session):
+        """Initialize report generator with database session.
+
+        Args:
+            session: SQLAlchemy session for database queries
+        """
+        self.session = session
+
+    def _coerce_excel_compatible(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Ensure DataFrame contains Excel-compatible datetime values.
+
+        Excel does not support timezone-aware datetimes. Convert any timezone-aware
+        datetime columns (or objects) to naive UTC timestamps.
+        """
+        if df.empty:
+            return df
+
+        df = df.copy()
+        for col in df.columns:
+            series = df[col]
+            if isinstance(series.dtype, pd.DatetimeTZDtype):
+                df[col] = series.dt.tz_convert(None)
+            elif pd.api.types.is_object_dtype(series):
+                df[col] = series.apply(
+                    lambda v: v.replace(tzinfo=None)
+                    if isinstance(v, datetime) and v.tzinfo is not None
+                    else v
+                )
+        return df
+
+    @staticmethod
+    def _format_list_for_excel(value) -> Optional[str]:
+        """Convert list to comma-separated string for Excel.
+
+        PostgreSQL ARRAY columns return as Python lists, but pandas/Excel
+        will convert these to string representations like "['value']".
+        This method properly converts them to readable strings like "value".
+
+        Args:
+            value: List, string, or other value
+
+        Returns:
+            Comma-separated string or None
+        """
+        if value is None:
+            return None
+        if isinstance(value, list):
+            if not value:
+                return None
+            # Join list items with comma
+            return ", ".join(str(v) for v in value)
+        # Already a string or other type
+        return value
+
+    def generate_audio_sheet(self, participant_id: int, maneuver: str,
+                           knee: str) -> pd.DataFrame:
+        """Query database and generate Audio Processing sheet.
+
+        Args:
+            participant_id: Participant ID
+            maneuver: Maneuver code (walk, sts, fe)
+            knee: Knee side (left, right)
+
+        Returns:
+            DataFrame with audio processing data
+        """
+        from src.db.models import AudioProcessingRecord
+
+        query = self.session.query(AudioProcessingRecord).filter(
+            AudioProcessingRecord.participant_id == participant_id,
+            AudioProcessingRecord.maneuver == maneuver,
+            AudioProcessingRecord.knee == knee,
+        )
+
+        records = query.all()
+
+        data = []
+        for record in records:
+            # Get biomechanics info if linked
+            biomech_record = None
+            if record.biomechanics_import_id:
+                from src.db.models import BiomechanicsImportRecord
+                biomech_record = self.session.query(BiomechanicsImportRecord).filter(
+                    BiomechanicsImportRecord.id == record.biomechanics_import_id
+                ).first()
+
+            # Get participant number to show in Excel (not database ID)
+            participant_record = record.participant
+            participant_number = participant_record.study_id if participant_record else record.participant_id
+
+            # Parse recording datetime from audio file name (most reliable source)
+            from src.orchestration.processing_log import _parse_audio_filename
+            audio_file_name = record.audio_file_name
+            if audio_file_name.endswith("_with_freq"):
+                audio_file_name = audio_file_name.replace("_with_freq", "")
+            if audio_file_name.lower().endswith(".bin"):
+                audio_file_name = Path(audio_file_name).stem
+            _, recording_dt_parsed = _parse_audio_filename(audio_file_name)
+            recording_datetime = (
+                recording_dt_parsed
+                or record.recording_date
+                or record.recording_time
+                or record.file_time
+            )
+            recording_timezone = getattr(record, "recording_timezone", None) or "UTC"
+
+            data.append({
+                'Audio Processing ID': record.id,
+                'Participant ID': participant_number,
+                'Knee': record.knee,
+                'Maneuver': record.maneuver,
+                'Audio File Name': audio_file_name,
+                'Device Serial': record.device_serial,
+                'Firmware Version': record.firmware_version,
+                'Recording Datetime': recording_datetime,
+                'Recording Timezone': recording_timezone,
+                'Recording Length (s)': record.duration_seconds,
+                'File Size MB': record.file_size_mb,
+                'Num Channels': record.num_channels,
+                'Sample Rate': record.sample_rate,
+                'Linked Biomechanics': record.biomechanics_import_id is not None,
+                'Biomechanics Type': biomech_record.biomechanics_type if biomech_record else None,
+                'Biomechanics Sync Method': biomech_record.biomechanics_sync_method if biomech_record else None,
+                'Biomechanics Sample Rate (Hz)': biomech_record.biomechanics_sample_rate if biomech_record else None,
+                'Biomechanics Import ID': record.biomechanics_import_id,
+                'Mic 1 Position': record.mic_1_position,
+                'Mic 2 Position': record.mic_2_position,
+                'Mic 3 Position': record.mic_3_position,
+                'Mic 4 Position': record.mic_4_position,
+                'Processing Date': record.processing_date,
+                'Processing Status': record.processing_status,
+                'QC Fail': record.qc_signal_dropout or record.qc_artifact,
+                'QC Fail Segments': record.qc_fail_segments,
+                'QC Fail Segments Ch1': record.qc_fail_segments_ch1,
+                'QC Fail Segments Ch2': record.qc_fail_segments_ch2,
+                'QC Fail Segments Ch3': record.qc_fail_segments_ch3,
+                'QC Fail Segments Ch4': record.qc_fail_segments_ch4,
+                'QC Signal Dropout': record.qc_signal_dropout,
+                'QC Signal Dropout Segments': record.qc_signal_dropout_segments,
+                'QC Signal Dropout Ch1': record.qc_signal_dropout_ch1,
+                'QC Signal Dropout Segments Ch1': record.qc_signal_dropout_segments_ch1,
+                'QC Signal Dropout Ch2': record.qc_signal_dropout_ch2,
+                'QC Signal Dropout Segments Ch2': record.qc_signal_dropout_segments_ch2,
+                'QC Signal Dropout Ch3': record.qc_signal_dropout_ch3,
+                'QC Signal Dropout Segments Ch3': record.qc_signal_dropout_segments_ch3,
+                'QC Signal Dropout Ch4': record.qc_signal_dropout_ch4,
+                'QC Signal Dropout Segments Ch4': record.qc_signal_dropout_segments_ch4,
+                'QC Artifact': record.qc_artifact,
+                'QC Artifact Segments': record.qc_artifact_segments,
+                'QC Artifact Ch1': record.qc_artifact_ch1,
+                'QC Artifact Segments Ch1': record.qc_artifact_segments_ch1,
+                'QC Artifact Ch2': record.qc_artifact_ch2,
+                'QC Artifact Segments Ch2': record.qc_artifact_segments_ch2,
+                'QC Artifact Ch3': record.qc_artifact_ch3,
+                'QC Artifact Segments Ch3': record.qc_artifact_segments_ch3,
+                'QC Artifact Ch4': record.qc_artifact_ch4,
+                'QC Artifact Segments Ch4': record.qc_artifact_segments_ch4,
+                'QC Artifact Type': self._format_list_for_excel(record.qc_artifact_type),
+                'QC Artifact Type Ch1': self._format_list_for_excel(record.qc_artifact_type_ch1),
+                'QC Artifact Type Ch2': self._format_list_for_excel(record.qc_artifact_type_ch2),
+                'QC Artifact Type Ch3': self._format_list_for_excel(record.qc_artifact_type_ch3),
+                'QC Artifact Type Ch4': self._format_list_for_excel(record.qc_artifact_type_ch4),
+                'Audio QC Version': record.audio_qc_version,
+            })
+
+        if not data:
+            return pd.DataFrame()
+
+        df = pd.DataFrame(data)
+
+        base_columns = [
+            "Audio Processing ID",
+            "Participant ID",
+            "Knee",
+            "Maneuver",
+            "Audio File Name",
+            "Device Serial",
+            "Firmware Version",
+            "Recording Datetime",
+            "Recording Timezone",
+            "Recording Length (s)",
+            "File Size MB",
+            "Num Channels",
+            "Sample Rate",
+            "Linked Biomechanics",
+            "Biomechanics Type",
+            "Biomechanics Sync Method",
+            "Biomechanics Sample Rate (Hz)",
+            "Biomechanics Import ID",
+            "Mic 1 Position",
+            "Mic 2 Position",
+            "Mic 3 Position",
+            "Mic 4 Position",
+            "Processing Date",
+            "Processing Status",
+        ]
+
+        qc_columns = [
+            "QC Fail",
+            "QC Fail Segments",
+            "QC Fail Segments Ch1",
+            "QC Fail Segments Ch2",
+            "QC Fail Segments Ch3",
+            "QC Fail Segments Ch4",
+            "QC Signal Dropout",
+            "QC Signal Dropout Segments",
+            "QC Signal Dropout Ch1",
+            "QC Signal Dropout Segments Ch1",
+            "QC Signal Dropout Ch2",
+            "QC Signal Dropout Segments Ch2",
+            "QC Signal Dropout Ch3",
+            "QC Signal Dropout Segments Ch3",
+            "QC Signal Dropout Ch4",
+            "QC Signal Dropout Segments Ch4",
+            "QC Artifact",
+            "QC Artifact Segments",
+            "QC Artifact Ch1",
+            "QC Artifact Segments Ch1",
+            "QC Artifact Ch2",
+            "QC Artifact Segments Ch2",
+            "QC Artifact Ch3",
+            "QC Artifact Segments Ch3",
+            "QC Artifact Ch4",
+            "QC Artifact Segments Ch4",
+            "QC Artifact Type",
+            "QC Artifact Type Ch1",
+            "QC Artifact Type Ch2",
+            "QC Artifact Type Ch3",
+            "QC Artifact Type Ch4",
+            "Audio QC Version",
+        ]
+
+        ordered_cols = [c for c in base_columns if c in df.columns]
+        ordered_cols += [c for c in qc_columns if c in df.columns]
+        ordered_cols += [c for c in df.columns if c not in ordered_cols]
+
+        return df[ordered_cols]
+
+    def generate_biomechanics_sheet(self, participant_id: int, maneuver: str,
+                                   knee: str) -> pd.DataFrame:
+        """Query database and generate Biomechanics Import sheet.
+
+        Args:
+            participant_id: Participant ID
+            maneuver: Maneuver code (walk, sts, fe)
+            knee: Knee side (left, right)
+
+        Returns:
+            DataFrame with biomechanics import data
+        """
+        from src.db.models import BiomechanicsImportRecord
+
+        query = self.session.query(BiomechanicsImportRecord).filter(
+            BiomechanicsImportRecord.participant_id == participant_id,
+            BiomechanicsImportRecord.maneuver == maneuver,
+            BiomechanicsImportRecord.knee == knee,
+        )
+
+        records = query.all()
+
+        data = []
+        for record in records:
+            # Get participant number to show in Excel (not database ID)
+            participant_record = record.participant
+            participant_number = participant_record.study_id if participant_record else record.participant_id
+
+            data.append({
+                'Biomechanics Import ID': record.id,
+                'Participant ID': participant_number,
+                'Knee': record.knee,
+                'Maneuver': record.maneuver,
+                'Biomechanics File': record.biomechanics_file,
+                'Sheet Name': record.sheet_name,
+                'Biomechanics Type': record.biomechanics_type,
+                'Sync Method': record.biomechanics_sync_method,
+                'Sample Rate': record.biomechanics_sample_rate,
+                'Num Sub-Recordings': record.num_sub_recordings,
+                'Num Passes': record.num_passes,
+                'Duration (s)': record.duration_seconds,
+                'Num Data Points': record.num_data_points,
+                'Biomech QC Version': record.biomech_qc_version,
+                'QC Fail': record.biomechanics_qc_fail,
+                'QC Notes': record.biomechanics_qc_notes,
+                'Processing Date': record.processing_date,
+                'Processing Status': record.processing_status,
+            })
+
+        if not data:
+            return pd.DataFrame()
+
+        df = pd.DataFrame(data)
+        if "Sync File" in df.columns:
+            df = df[df["Sync File"].notna()].drop_duplicates(subset=["Sync File"])
+        return df
+
+    def generate_synchronization_sheet(self, participant_id: int, maneuver: str,
+                                      knee: str) -> pd.DataFrame:
+        """Query database and generate Synchronization sheet.
+
+        Args:
+            participant_id: Participant ID
+            maneuver: Maneuver code (walk, sts, fe)
+            knee: Knee side (left, right)
+
+        Returns:
+            DataFrame with synchronization data
+        """
+        from src.db.models import AudioProcessingRecord, SynchronizationRecord
+
+        query = (
+            self.session.query(SynchronizationRecord)
+            .join(
+                AudioProcessingRecord,
+                SynchronizationRecord.audio_processing_id == AudioProcessingRecord.id,
+            )
+            .filter(
+                SynchronizationRecord.participant_id == participant_id,
+                AudioProcessingRecord.maneuver == maneuver,
+                AudioProcessingRecord.knee == knee,
+            )
+            .order_by(
+                SynchronizationRecord.pass_number,
+                SynchronizationRecord.id,
+            )
+        )
+
+        records = query.all()
+
+        data = []
+        for record in records:
+            # Get participant number to show in Excel (not database ID)
+            participant_record = record.participant
+            participant_number = participant_record.study_id if participant_record else record.participant_id
+
+            data.append({
+                'Synchronization ID': record.id,
+                'Participant ID': participant_number,
+                'Pass Number': record.pass_number,
+                'Speed': record.speed,
+                'Audio Processing ID': record.audio_processing_id,
+                'Biomechanics Import ID': record.biomechanics_import_id,
+                'Sync File': record.sync_file_name,
+                'Audio Sync Time': record.audio_sync_time,
+                'Bio Left Sync Time': record.bio_left_sync_time,
+                'Bio Right Sync Time': record.bio_right_sync_time,
+                'Sync Offset': record.sync_offset,
+                'Aligned Audio Sync Time': record.aligned_audio_sync_time,
+                'Aligned Biomechanics Sync Time': record.aligned_biomechanics_sync_time,
+                'Sync Method': record.sync_method,
+                'Consensus Methods': record.consensus_methods,
+                'Consensus Time': record.consensus_time,
+                'RMS Time': record.rms_time,
+                'Onset Time': record.onset_time,
+                'Freq Time': record.freq_time,
+                'Audio Stomp Method': record.audio_stomp_method,
+                'Selected Audio Sync Time': record.selected_audio_sync_time,
+                'Contra Selected Audio Sync Time': record.contra_selected_audio_sync_time,
+                'Sync Duration': record.sync_duration,
+                'Total Cycles Extracted': record.total_cycles_extracted,
+                'Clean Cycles': record.clean_cycles,
+                'Outlier Cycles': record.outlier_cycles,
+                'Mean Cycle Duration': record.mean_cycle_duration_s,
+                'Median Cycle Duration': record.median_cycle_duration_s,
+                'Min Cycle Duration': record.min_cycle_duration_s,
+                'Max Cycle Duration': record.max_cycle_duration_s,
+                'Method Agreement Span': record.method_agreement_span,
+                'Audio QC Version': record.audio_qc_version,
+                'Biomech QC Version': record.biomech_qc_version,
+                'Cycle QC Version': record.cycle_qc_version,
+                'QC Fail': record.sync_qc_fail,
+                'QC Notes': record.sync_qc_notes,
+                'Processing Date': record.processing_date,
+                'Processing Status': record.processing_status,
+            })
+
+        return pd.DataFrame(data) if data else pd.DataFrame()
+
+    def generate_movement_cycles_sheet(self, participant_id: int, maneuver: str,
+                                      knee: str) -> pd.DataFrame:
+        """Query database and generate Movement Cycles sheet.
+
+        Args:
+            participant_id: Participant ID
+            maneuver: Maneuver code (walk, sts, fe)
+            knee: Knee side (left, right)
+
+        Returns:
+            DataFrame with movement cycle data
+        """
+        from sqlalchemy import func, select
+        from sqlalchemy.orm import joinedload
+
+        from src.db.models import (
+            AudioProcessingRecord,
+            MovementCycleRecord,
+            SynchronizationRecord,
+        )
+
+        # Query movement cycles with related audio and sync data
+        query = self.session.query(MovementCycleRecord).join(
+            AudioProcessingRecord, MovementCycleRecord.audio_processing_id == AudioProcessingRecord.id
+        ).outerjoin(
+            SynchronizationRecord, MovementCycleRecord.synchronization_id == SynchronizationRecord.id
+        ).filter(
+            MovementCycleRecord.participant_id == participant_id,
+            AudioProcessingRecord.maneuver == maneuver,
+            AudioProcessingRecord.knee == knee,
+        ).order_by(
+            func.coalesce(SynchronizationRecord.pass_number, 0),
+            MovementCycleRecord.cycle_index
+        )
+
+        records = query.all()
+
+        data = []
+        for record in records:
+            # Get sync data if available
+            sync_record = record.synchronization
+            pass_number = sync_record.pass_number if sync_record else None
+            speed = sync_record.speed if sync_record else None
+
+            # Get participant number to show in Excel (not database ID)
+            participant_record = record.participant
+            participant_number = participant_record.study_id if participant_record else record.participant_id
+
+            data.append({
+                'Movement Cycle ID': record.id,
+                'Participant ID': participant_number,
+                'Pass Number': pass_number,
+                'Speed': speed,
+                'Cycle Index': record.cycle_index,
+                'Is Outlier': record.is_outlier,
+                'Audio Processing ID': record.audio_processing_id,
+                'Synchronization ID': record.synchronization_id,
+                'Cycle File': record.cycle_file,
+                'Start Time': record.start_time_s,
+                'Start Time (s)': record.start_time_s,
+                'End Time': record.end_time_s,
+                'End Time (s)': record.end_time_s,
+                'Duration': record.duration_s,
+                'Duration (s)': record.duration_s,
+                'Audio Start Time': record.audio_start_time,
+                'Audio End Time': record.audio_end_time,
+                'Bio Start Time': record.bio_start_time,
+                'Bio End Time': record.bio_end_time,
+                'Biomechanics QC Fail': record.biomechanics_qc_fail,
+                'Sync QC Fail': record.sync_qc_fail,
+                'Processing Date': record.created_at,
+            })
+
+        return pd.DataFrame(data) if data else pd.DataFrame()
+
+    def generate_summary_sheet(self, participant_id: int, maneuver: str,
+                             knee: str) -> pd.DataFrame:
+        """Generate summary statistics sheet from database queries.
+
+        Args:
+            participant_id: Participant ID
+            maneuver: Maneuver code (walk, sts, fe)
+            knee: Knee side (left, right)
+
+        Returns:
+            DataFrame with summary statistics
+        """
+        from sqlalchemy import func
+
+        from src.db.models import (
+            AudioProcessingRecord,
+            BiomechanicsImportRecord,
+            MovementCycleRecord,
+            SynchronizationRecord,
+        )
+
+        audio_count = self.session.query(AudioProcessingRecord).filter(
+            AudioProcessingRecord.participant_id == participant_id,
+            AudioProcessingRecord.maneuver == maneuver,
+            AudioProcessingRecord.knee == knee,
+        ).count()
+
+        biomech_count = self.session.query(BiomechanicsImportRecord).filter(
+            BiomechanicsImportRecord.participant_id == participant_id,
+            BiomechanicsImportRecord.maneuver == maneuver,
+            BiomechanicsImportRecord.knee == knee,
+        ).count()
+
+        sync_count = self.session.query(
+            func.count(func.distinct(SynchronizationRecord.sync_file_name))
+        ).join(
+            AudioProcessingRecord,
+            SynchronizationRecord.audio_processing_id == AudioProcessingRecord.id,
+        ).filter(
+            SynchronizationRecord.participant_id == participant_id,
+            AudioProcessingRecord.maneuver == maneuver,
+            AudioProcessingRecord.knee == knee,
+            SynchronizationRecord.sync_file_name.isnot(None),
+        ).scalar()
+
+        if sync_count is None:
+            sync_count = 0
+
+        cycle_count = self.session.query(MovementCycleRecord).join(
+            AudioProcessingRecord,
+            MovementCycleRecord.audio_processing_id == AudioProcessingRecord.id,
+        ).filter(
+            MovementCycleRecord.participant_id == participant_id,
+            AudioProcessingRecord.maneuver == maneuver,
+            AudioProcessingRecord.knee == knee,
+        ).count()
+
+        # Get participant number for display
+        from src.db.models import ParticipantRecord
+        participant_record = self.session.query(ParticipantRecord).filter(
+            ParticipantRecord.id == participant_id
+        ).first()
+        participant_number = participant_record.study_id if participant_record else participant_id
+
+        summary_data = {
+            'Metric': [
+                'Participant ID',
+                'Knee',
+                'Maneuver',
+                'Audio Records',
+                'Biomechanics Records',
+                'Synchronization Records',
+                'Movement Cycles',
+                'Generated',
+            ],
+            'Value': [
+                participant_number,
+                knee,
+                maneuver,
+                audio_count,
+                biomech_count,
+                sync_count,
+                cycle_count,
+                datetime.now().isoformat(),
+            ]
+        }
+
+        return pd.DataFrame(summary_data)
+
+    def save_to_excel(self, output_path: Path, participant_id: int,
+                     maneuver: str, knee: str) -> Path:
+        """Generate all sheets and save to Excel file.
+
+        Args:
+            output_path: Path to save Excel file
+            participant_id: Participant ID
+            maneuver: Maneuver code
+            knee: Knee side
+
+        Returns:
+            Path to generated Excel file
+        """
+        output_path = Path(output_path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        logger.info(f"Generating Excel report: {output_path}")
+
+        # Generate all sheets
+        sheets = {
+            'Summary': self.generate_summary_sheet(participant_id, maneuver, knee),
+            'Audio': self.generate_audio_sheet(participant_id, maneuver, knee),
+            'Biomechanics': self.generate_biomechanics_sheet(participant_id, maneuver, knee),
+            'Synchronization': self.generate_synchronization_sheet(participant_id, maneuver, knee),
+            'Cycles': self.generate_movement_cycles_sheet(participant_id, maneuver, knee),
+        }
+
+        # Write to Excel
+        with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
+            for sheet_name, df in sheets.items():
+                if not df.empty:
+                    df = self._coerce_excel_compatible(df)
+                    df.to_excel(writer, sheet_name=sheet_name, index=False)
+                    logger.debug(f"Wrote {len(df)} rows to '{sheet_name}' sheet")
+                else:
+                    logger.debug(f"No data for '{sheet_name}' sheet")
+
+        logger.info(f"Report saved: {output_path}")
+        return output_path

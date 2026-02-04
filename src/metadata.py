@@ -11,6 +11,7 @@ Each model represents a standalone entity:
 This structure eliminates data redundancy and enables efficient relational queries.
 """
 
+import dataclasses
 from datetime import datetime
 from typing import Any, Dict, List, Literal, Optional
 
@@ -22,7 +23,6 @@ from src.qc_versions import (
     get_biomech_qc_version,
     get_cycle_qc_version,
 )
-
 
 # ============================================================================
 # BASE CLASS - Keep minimal
@@ -46,13 +46,6 @@ class StudyMetadata:
             raise ValueError("study_id must be non-negative")
         return value
 
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary for export."""
-        return {
-            "Study": self.study,
-            "Study ID": self.study_id,
-        }
-
 
 # ============================================================================
 # STANDALONE MODELS - No inheritance beyond StudyMetadata
@@ -64,7 +57,7 @@ class AudioProcessing(StudyMetadata):
 
     Represents an audio file with all associated QC information.
     Does NOT contain biomechanics or synchronization data.
-    
+
     Optional FK to biomechanics_import_id indicates which biomechanics file
     was recorded simultaneously with this audio (if any).
     """
@@ -82,6 +75,7 @@ class AudioProcessing(StudyMetadata):
     # ===== Recording Metadata =====
     recording_date: datetime = Field(...)
     recording_time: datetime = Field(...)
+    recording_timezone: str = Field(default="UTC")
 
     # ===== Maneuver Identification =====
     knee: Literal["right", "left"] = Field(...)
@@ -131,19 +125,19 @@ class AudioProcessing(StudyMetadata):
 
     # ===== Artifact QC =====
     qc_artifact: bool = False
-    qc_artifact_type: Optional[Literal["intermittent", "continuous"]] = None
+    qc_artifact_type: Optional[List[Literal["Intermittent", "Continuous"]]] = None
     qc_artifact_segments: List[tuple] = Field(default_factory=list)
     qc_artifact_ch1: bool = False
-    qc_artifact_type_ch1: Optional[Literal["intermittent", "continuous"]] = None
+    qc_artifact_type_ch1: Optional[List[Literal["Intermittent", "Continuous"]]] = None
     qc_artifact_segments_ch1: List[tuple] = Field(default_factory=list)
     qc_artifact_ch2: bool = False
-    qc_artifact_type_ch2: Optional[Literal["intermittent", "continuous"]] = None
+    qc_artifact_type_ch2: Optional[List[Literal["Intermittent", "Continuous"]]] = None
     qc_artifact_segments_ch2: List[tuple] = Field(default_factory=list)
     qc_artifact_ch3: bool = False
-    qc_artifact_type_ch3: Optional[Literal["intermittent", "continuous"]] = None
+    qc_artifact_type_ch3: Optional[List[Literal["Intermittent", "Continuous"]]] = None
     qc_artifact_segments_ch3: List[tuple] = Field(default_factory=list)
     qc_artifact_ch4: bool = False
-    qc_artifact_type_ch4: Optional[Literal["intermittent", "continuous"]] = None
+    qc_artifact_type_ch4: Optional[List[Literal["Intermittent", "Continuous"]]] = None
     qc_artifact_segments_ch4: List[tuple] = Field(default_factory=list)
 
     # ===== QC Status (auto-populated from segments) =====
@@ -231,7 +225,9 @@ class AudioProcessing(StudyMetadata):
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for export."""
-        result = super().to_dict()
+        # Use dataclasses.asdict for Pydantic dataclasses
+        result = dataclasses.asdict(self)
+        # Add friendly column names for Excel export
         result.update({
             "Audio File": self.audio_file_name,
             "Device Serial": self.device_serial,
@@ -255,6 +251,43 @@ class AudioProcessing(StudyMetadata):
             "Audio QC Version": self.audio_qc_version,
             "Audio QC Not Passed": self.qc_not_passed,
             "Biomechanics Import ID": self.biomechanics_import_id,
+            # Raw field names for backwards compatibility
+            "QC_not_passed": self.qc_not_passed,
+            "QC_not_passed_mic_1": self.qc_not_passed_mic_1,
+            "QC_not_passed_mic_2": self.qc_not_passed_mic_2,
+            "QC_not_passed_mic_3": self.qc_not_passed_mic_3,
+            "QC_not_passed_mic_4": self.qc_not_passed_mic_4,
+            # QC fields
+            "QC Fail Segments": self.qc_fail_segments,
+            "QC Fail Segments Ch1": self.qc_fail_segments_ch1,
+            "QC Fail Segments Ch2": self.qc_fail_segments_ch2,
+            "QC Fail Segments Ch3": self.qc_fail_segments_ch3,
+            "QC Fail Segments Ch4": self.qc_fail_segments_ch4,
+            "QC Signal Dropout": self.qc_signal_dropout,
+            "QC Signal Dropout Segments": self.qc_signal_dropout_segments,
+            "QC Signal Dropout Ch1": self.qc_signal_dropout_ch1,
+            "QC Signal Dropout Segments Ch1": self.qc_signal_dropout_segments_ch1,
+            "QC Signal Dropout Ch2": self.qc_signal_dropout_ch2,
+            "QC Signal Dropout Segments Ch2": self.qc_signal_dropout_segments_ch2,
+            "QC Signal Dropout Ch3": self.qc_signal_dropout_ch3,
+            "QC Signal Dropout Segments Ch3": self.qc_signal_dropout_segments_ch3,
+            "QC Signal Dropout Ch4": self.qc_signal_dropout_ch4,
+            "QC Signal Dropout Segments Ch4": self.qc_signal_dropout_segments_ch4,
+            "QC Artifact": self.qc_artifact,
+            "QC Artifact Type": self.qc_artifact_type,
+            "QC Artifact Segments": self.qc_artifact_segments,
+            "QC Artifact Ch1": self.qc_artifact_ch1,
+            "QC Artifact Type Ch1": self.qc_artifact_type_ch1,
+            "QC Artifact Segments Ch1": self.qc_artifact_segments_ch1,
+            "QC Artifact Ch2": self.qc_artifact_ch2,
+            "QC Artifact Type Ch2": self.qc_artifact_type_ch2,
+            "QC Artifact Segments Ch2": self.qc_artifact_segments_ch2,
+            "QC Artifact Ch3": self.qc_artifact_ch3,
+            "QC Artifact Type Ch3": self.qc_artifact_type_ch3,
+            "QC Artifact Segments Ch3": self.qc_artifact_segments_ch3,
+            "QC Artifact Ch4": self.qc_artifact_ch4,
+            "QC Artifact Type Ch4": self.qc_artifact_type_ch4,
+            "QC Artifact Segments Ch4": self.qc_artifact_segments_ch4,
         })
         return result
 
@@ -265,7 +298,7 @@ class BiomechanicsImport(StudyMetadata):
 
     Represents a biomechanics file import with all associated metadata and QC.
     Does NOT contain synchronization data.
-    
+
     Optional FK to audio_processing_id indicates which audio file was recorded
     simultaneously with this biomechanics data (if any).
     """
@@ -369,31 +402,6 @@ class BiomechanicsImport(StudyMetadata):
             raise ValueError("duration_seconds must be non-negative")
         return value
 
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary for export."""
-        result = super().to_dict()
-        result.update({
-            "Biomechanics File": self.biomechanics_file,
-            "Sheet Name": self.sheet_name,
-            "Biomechanics Type": self.biomechanics_type,
-            "Knee": self.knee,
-            "Maneuver": self.maneuver,
-            "Pass Number": self.pass_number,
-            "Speed": self.speed,
-            "Biomechanics Sync Method": self.biomechanics_sync_method,
-            "Biomechanics Sample Rate (Hz)": self.biomechanics_sample_rate,
-            "Num Sub-Recordings": self.num_sub_recordings,
-            "Duration (s)": self.duration_seconds,
-            "Num Data Points": self.num_data_points,
-            "Num Passes": self.num_passes,
-            "Processing Date": self.processing_date,
-            "Processing Status": self.processing_status,
-            "Error Message": self.error_message,
-            "Biomechanics QC Fail": self.biomechanics_qc_fail,
-            "Audio Processing ID": self.audio_processing_id,
-        })
-        return result
-
 
 @dataclass(kw_only=True)
 class Synchronization(StudyMetadata):
@@ -484,27 +492,6 @@ class Synchronization(StudyMetadata):
             raise ValueError("cycle counts must be non-negative")
         return value
 
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary for export."""
-        result = super().to_dict()
-        result.update({
-            "Audio Processing ID": self.audio_processing_id,
-            "Biomechanics Import ID": self.biomechanics_import_id,
-            "Sync File": self.sync_file_name,
-            "Processing Date": self.processing_date,
-            "Processing Status": self.processing_status,
-            "Error Message": self.error_message,
-            "Sync Duration (s)": self.sync_duration,
-            "Total Cycles Extracted": self.total_cycles_extracted,
-            "Clean Cycles": self.clean_cycles,
-            "Outlier Cycles": self.outlier_cycles,
-            "Audio Sync Time": self.audio_sync_time,
-            "Sync Offset": self.sync_offset,
-            "Sync Method": self.sync_method,
-            "Sync QC Fail": self.sync_qc_fail,
-        })
-        return result
-
 
 @dataclass(kw_only=True)
 class MovementCycle(StudyMetadata):
@@ -512,7 +499,7 @@ class MovementCycle(StudyMetadata):
 
     Represents a single extracted movement cycle.
     Uses foreign keys to reference AudioProcessing, BiomechanicsImport, and Synchronization.
-    
+
     If synchronization_id is set, pass_number and speed must also be set and should
     match the associated Synchronization record (validated by repository layer).
     """
@@ -605,7 +592,7 @@ class MovementCycle(StudyMetadata):
     @model_validator(mode="after")
     def validate_walk_metadata_with_sync(self):
         """Validate walk metadata is present when synchronization_id is set.
-        
+
         If this cycle is part of a Synchronization, it must have pass_number and speed set.
         The repository layer will validate these match the actual Synchronization record.
         """
@@ -615,27 +602,3 @@ class MovementCycle(StudyMetadata):
                     "pass_number and speed are required when synchronization_id is set"
                 )
         return self
-
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary for export."""
-        result = super().to_dict()
-        result.update({
-            "Audio Processing ID": self.audio_processing_id,
-            "Biomechanics Import ID": self.biomechanics_import_id,
-            "Synchronization ID": self.synchronization_id,
-            "Cycle File": self.cycle_file,
-            "Cycle Index": self.cycle_index,
-            "Is Outlier": self.is_outlier,
-            "Start Time (s)": self.start_time_s,
-            "End Time (s)": self.end_time_s,
-            "Duration (s)": self.duration_s,
-            "Audio Start Time": self.audio_start_time,
-            "Audio End Time": self.audio_end_time,
-            "Bio Start Time": self.bio_start_time,
-            "Bio End Time": self.bio_end_time,
-            "Biomechanics QC Fail": self.biomechanics_qc_fail,
-            "Sync QC Fail": self.sync_qc_fail,
-            "Pass Number": self.pass_number,
-            "Speed": self.speed,
-        })
-        return result

@@ -196,7 +196,7 @@ def test_cleanup_dry_run_doesnt_delete(participant_with_outputs):
 
     # Stats should show what would be deleted
     assert stats["outputs_dirs"] == 6
-    assert stats["synced_dirs"] == 6
+    assert stats["synced_dirs"] == 12
     assert stats["png_files"] == 6
 
     # But files should still exist

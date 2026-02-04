@@ -9,7 +9,11 @@ def test_biomechanics_record_normalizes_maneuver():
         recordings=[],
         sheet_name="Sheet1",
         maneuver="sit_to_stand",
-        error=Exception("fail"),
+        biomechanics_type="Motion Analysis",
+        knee="left",
+        biomechanics_sync_method="stomp",
+        biomechanics_sample_rate=100.0,
+        study_id=1001,
     )
 
     assert record.maneuver == "sts"
