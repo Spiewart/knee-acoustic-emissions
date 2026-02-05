@@ -320,7 +320,7 @@ class ManeuverProcessor:
                     "audio_stomp_time": audio_stomp,
                     "bio_left_stomp_time": bio_left,
                     "bio_right_stomp_time": bio_right,
-                    "knee_side": self.knee_side,
+                    "knee_side": self.knee_side.lower(),
                     "pass_number": sync_data.pass_number,
                     "speed": sync_data.speed,
                     "detection_results": detection_results,
@@ -398,18 +398,31 @@ class ManeuverProcessor:
                     sync_data.record.total_cycles_extracted = len(clean_cycles) + len(outlier_cycles)
                     sync_data.record.clean_cycles = len(clean_cycles)
                     sync_data.record.outlier_cycles = len(outlier_cycles)
-                    
+
                     # Calculate cycle duration statistics from ALL cycles (clean + outliers)
                     all_cycles = clean_cycles + outlier_cycles
                     if all_cycles:
                         cycle_durations = []
                         for cycle in all_cycles:
-                            # Extract duration from cycle metadata
-                            if hasattr(cycle, 'duration_s'):
-                                cycle_durations.append(cycle.duration_s)
-                            elif isinstance(cycle, dict) and 'duration_s' in cycle:
-                                cycle_durations.append(cycle['duration_s'])
-                        
+                            duration_value = None
+                            if hasattr(cycle, "duration_s"):
+                                duration_value = cycle.duration_s
+                            elif isinstance(cycle, dict):
+                                duration_value = cycle.get("duration_s") or cycle.get("duration_seconds")
+                            elif isinstance(cycle, pd.DataFrame):
+                                if "tt" in cycle.columns and len(cycle) > 1:
+                                    delta = cycle["tt"].iloc[-1] - cycle["tt"].iloc[0]
+                                    if hasattr(delta, "total_seconds"):
+                                        duration_value = delta.total_seconds()
+                                    else:
+                                        try:
+                                            duration_value = float(delta)
+                                        except (TypeError, ValueError):
+                                            duration_value = None
+
+                            if duration_value is not None:
+                                cycle_durations.append(float(duration_value))
+
                         if cycle_durations:
                             import statistics
                             sync_data.record.mean_cycle_duration_s = statistics.mean(cycle_durations)

@@ -15,11 +15,7 @@ import pandas as pd
 from sqlalchemy import select
 
 from src.db.models import ParticipantRecord, StudyRecord
-from src.metadata import (
-    AudioProcessing,
-    BiomechanicsImport,
-    Synchronization,
-)
+from src.metadata import AudioProcessing, BiomechanicsImport, Synchronization
 from src.orchestration.cli_db_helpers import close_db_session, create_db_session
 
 logger = logging.getLogger(__name__)
@@ -661,8 +657,9 @@ def create_sync_record_from_data(
     detection_results = detection_results or {}
     metadata = metadata or {}
 
-    # Validate knee_side
-    if knee_side not in ["left", "right"]:
+    # Validate knee_side (normalize to lowercase)
+    knee_side_lower = knee_side.lower()
+    if knee_side_lower not in ["left", "right"]:
         raise ValueError(f"knee_side must be 'left' or 'right', got: {knee_side}")
 
     speed_value = speed
@@ -690,7 +687,7 @@ def create_sync_record_from_data(
     participant_number = study_id or metadata.get("study_id") or (audio_record.study_id if audio_record else 1)
 
     # Calculate bio_sync_offset based on knee_side
-    bio_stomp_time = bio_left_stomp_time if knee_side == "left" else bio_right_stomp_time
+    bio_stomp_time = bio_left_stomp_time if knee_side_lower == "left" else bio_right_stomp_time
     bio_sync_offset = (
         _timedelta_to_seconds(audio_stomp_time - bio_stomp_time)
         if audio_stomp_time is not None and bio_stomp_time is not None
@@ -704,7 +701,7 @@ def create_sync_record_from_data(
         biomechanics_import_id=int(biomechanics_import_id),
         pass_number=pass_number,
         speed=speed_value,
-        knee=knee_side,
+        knee=knee_side_lower,
         # Biomechanics sync times (biomechanics is synced to audio: audio t=0 = sync t=0)
         bio_left_sync_time=_timedelta_to_seconds(bio_left_stomp_time),
         bio_right_sync_time=_timedelta_to_seconds(bio_right_stomp_time),

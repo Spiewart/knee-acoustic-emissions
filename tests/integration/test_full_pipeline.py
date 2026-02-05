@@ -13,6 +13,7 @@ Note: These tests use the sync entrypoint since the fake_participant_directory
 fixture creates pre-built pkl files, not real .bin files.
 """
 
+import re
 from pathlib import Path
 
 import pandas as pd
@@ -200,6 +201,63 @@ class TestFullPipelineWalkingMultiplePassesAndSpeeds:
         if "Pass Number" in sync_df.columns:
             pass_numbers = sync_df["Pass Number"].dropna().unique()
             # Once implemented: assert len(pass_numbers) > 0
+
+    def test_walking_cycle_stats_per_sync_record(self, fake_participant_directory, use_test_db, monkeypatch):
+        """Cycle stats should be populated per sync record for walking passes."""
+        participant_dir = fake_participant_directory["participant_dir"]
+
+        def fake_perform_sync_qc(
+            synced_pkl_path,
+            output_dir,
+            maneuver,
+            speed,
+            acoustic_threshold,
+            create_plots,
+            bad_audio_segments,
+        ):
+            stem = Path(synced_pkl_path).stem
+            match = re.search(r"pass(\d+)", stem, re.IGNORECASE)
+            pass_num = int(match.group(1)) if match else 0
+            base_duration = 0.75 + (pass_num * 0.1)
+            cycles = [
+                pd.DataFrame({"tt": [0.0, base_duration]}),
+                pd.DataFrame({"tt": [0.0, base_duration + 0.05]}),
+            ]
+            return cycles, [], output_dir
+
+        monkeypatch.setattr(
+            "src.synchronization.quality_control.perform_sync_qc",
+            fake_perform_sync_qc,
+        )
+
+        success = process_participant(
+            participant_dir,
+            entrypoint="sync",
+            knee="left",
+            maneuver="walk",
+        )
+
+        assert success
+
+        log_path = participant_dir / "Left Knee" / "Walking" / "processing_log_1011_left_walk.xlsx"
+        sync_df = pd.read_excel(log_path, sheet_name="Synchronization")
+
+        assert len(sync_df) > 1, "Walking should produce multiple sync records"
+
+        required_columns = [
+            "Total Cycles Extracted",
+            "Mean Cycle Duration",
+            "Median Cycle Duration",
+        ]
+        for col in required_columns:
+            assert col in sync_df.columns, f"Missing cycle stat column: {col}"
+
+        assert (sync_df["Total Cycles Extracted"].fillna(0) > 0).all()
+
+        mean_durations = sync_df["Mean Cycle Duration"].dropna().tolist()
+        assert mean_durations, "Expected mean cycle durations to be populated"
+        unique_means = {round(value, 3) for value in mean_durations}
+        assert len(unique_means) > 1, "Expected different cycle stats per walking pass"
 
 
 class TestSyncDataValidation:

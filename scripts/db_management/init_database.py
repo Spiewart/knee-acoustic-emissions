@@ -29,13 +29,14 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-# Add parent directory to path
-sys.path.insert(0, str(Path(__file__).parent.parent))
+# Add repo root to path
+repo_root = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(repo_root))
 
 # Load environment variables from .env.local
 from dotenv import load_dotenv
 
-load_dotenv(Path(__file__).parent.parent / ".env.local")
+load_dotenv(repo_root / ".env.local")
 
 from src.db import Base, get_engine, get_session, init_db
 from src.db.models import AudioProcessingRecord, ParticipantRecord, StudyRecord

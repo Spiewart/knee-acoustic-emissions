@@ -25,20 +25,20 @@ depends_on: Union[str, Sequence[str], None] = None
 def upgrade() -> None:
     """Rename audio sync fields for consistency."""
     # Rename selected_audio_sync_time to audio_selected_sync_time
-    op.alter_column('synchronization', 'selected_audio_sync_time',
+    op.alter_column('synchronizations', 'selected_audio_sync_time',
                    new_column_name='audio_selected_sync_time')
 
     # Rename contra_selected_audio_sync_time to contra_audio_selected_sync_time
-    op.alter_column('synchronization', 'contra_selected_audio_sync_time',
+    op.alter_column('synchronizations', 'contra_selected_audio_sync_time',
                    new_column_name='contra_audio_selected_sync_time')
 
 
 def downgrade() -> None:
     """Reverse the field renames."""
     # Reverse: audio_selected_sync_time back to selected_audio_sync_time
-    op.alter_column('synchronization', 'audio_selected_sync_time',
+    op.alter_column('synchronizations', 'audio_selected_sync_time',
                    new_column_name='selected_audio_sync_time')
 
     # Reverse: contra_audio_selected_sync_time back to contra_selected_audio_sync_time
-    op.alter_column('synchronization', 'contra_audio_selected_sync_time',
+    op.alter_column('synchronizations', 'contra_audio_selected_sync_time',
                    new_column_name='contra_selected_audio_sync_time')
