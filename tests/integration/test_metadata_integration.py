@@ -29,8 +29,8 @@ class TestSynchronizationFields:
         assert "sync_file_name" in fields
         assert "processing_date" in fields
         assert "sync_method" in fields
-        assert "audio_sync_time" in fields
-        assert "sync_offset" in fields
+        assert "aligned_sync_time" in fields
+        assert "bio_sync_offset" in fields
 
     def test_does_not_have_audio_file_fields(self):
         fields = Synchronization.__dataclass_fields__
@@ -95,12 +95,12 @@ class TestInstantiation:
             sync_file_name="sync.h5",
             processing_date=datetime(2024, 1, 1, 12, 0, 0),
             processing_status="success",
-            audio_sync_time=1.5,
+            aligned_sync_time=1.5,
             sync_method="consensus",
         )
 
         assert sync.sync_file_name == "sync.h5"
-        assert sync.audio_sync_time == 1.5
+        assert sync.aligned_sync_time == 1.5
         assert sync.audio_processing_id == 1
         assert sync.biomechanics_import_id == 2
 

@@ -666,6 +666,116 @@ When creating change documentation:
 
 ---
 
+## Database Management
+
+### PostgreSQL with Alembic Migrations
+
+This project uses PostgreSQL for data persistence and **Alembic** for schema version control.
+
+**📖 Complete guide**: [docs/POSTGRES_OPERATION.md](docs/POSTGRES_OPERATION.md)
+
+#### Quick Setup
+
+1. **Install PostgreSQL** (see [docs/POSTGRES_SETUP.md](docs/POSTGRES_SETUP.md))
+2. **Create databases**:
+   ```bash
+   createdb acoustic_emissions
+   createdb acoustic_emissions_test
+   ```
+
+3. **Configure `.env.local`** in project root:
+   ```bash
+   AE_DATABASE_URL=postgresql+psycopg://USERNAME@localhost:5432/acoustic_emissions
+   AE_TEST_DATABASE_URL=postgresql+psycopg://USERNAME@localhost:5432/acoustic_emissions_test
+   ```
+
+4. **Apply migrations**:
+   ```bash
+   workon kae_processing
+   alembic upgrade head
+   ```
+
+#### Git Worktree Setup
+
+**⚠️ IMPORTANT**: When working in git worktrees, `.env.local` is not present (it's in `.gitignore`).
+
+**Solution - Create a symlink**:
+```bash
+# From inside your worktree directory
+ln -s /path/to/main/repo/.env.local .env.local
+
+# Example:
+# ln -s ~/acoustic_emissions_processing/.env.local .env.local
+```
+
+This keeps your database configuration synchronized with the main repository.
+
+#### Database Schema Models
+
+**Database ORM Models** (`src/db/models.py`):
+- `ParticipantRecord` - Study participants
+- `AudioProcessingRecord` - Audio processing metadata
+- `BiomechanicsImportRecord` - Biomechanics import tracking
+- `SynchronizationRecord` - Audio-biomechanics synchronization
+- `MovementCyclesRecord` - Movement cycle extraction
+- `MovementCycleRecord` - Individual cycles
+
+**Pydantic Validation Models** (`src/metadata.py`):
+- Mirror database models with validation rules
+- Used for data validation before persistence
+- Include field validators and conditional requirements
+
+#### Common Alembic Commands
+
+```bash
+# Check current migration version
+alembic current
+
+# Apply all migrations
+alembic upgrade head
+
+# View migration history
+alembic history --verbose
+
+# Rollback one migration
+alembic downgrade -1
+
+# Create new migration (after modifying models)
+alembic revision --autogenerate -m "description"
+```
+
+#### For AI Assistants: Schema Changes
+
+When modifying database schema:
+
+1. **Update ORM model** in `src/db/models.py`
+2. **Update Pydantic model** in `src/metadata.py` (with validators)
+3. **Generate migration**: `alembic revision --autogenerate -m "description"`
+4. **Review migration file** in `alembic/versions/` (autogenerate may miss complex changes)
+5. **Test migration**:
+   ```bash
+   alembic upgrade head   # Apply
+   alembic downgrade -1   # Test rollback
+   alembic upgrade head   # Reapply
+   ```
+6. **Update all affected code**:
+   - Repository methods (`src/db/repository.py`)
+   - Processing log helpers (`src/orchestration/processing_log.py`)
+   - Report generators (`src/reports/report_generator.py`)
+   - Excel I/O methods
+7. **Update tests**:
+   - Factory fixtures in `tests/conftest.py`
+   - Unit tests for new fields
+   - Integration tests for database workflows
+8. **Update documentation**:
+   - Migration notes in `alembic/versions/` file
+   - Schema change documentation if major
+   - Update `docs/POSTGRES_OPERATION.md` if needed
+
+**Critical**: Always include both `upgrade()` and `downgrade()` in migration files.
+
+---
+
 ## Contact & Questions
 
 For questions about the project structure, data models, or implementation details, refer to the existing code, docstrings, and tests. The codebase is self-documenting with comprehensive type hints and validation.

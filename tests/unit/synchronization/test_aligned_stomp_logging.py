@@ -24,10 +24,10 @@ def test_stomp_offset_calculation(db_session, repository, synchronization_factor
 
     # Create a synchronization record with specific stomp times
     sync_data = synchronization_factory(
-        audio_sync_time=5.0,
+        aligned_sync_time=5.0,
         bio_left_sync_time=10.0,
         bio_right_sync_time=12.0,
-        sync_offset=5.0,  # bio_left - audio = 10 - 5 = 5
+        bio_sync_offset=5.0,  # bio_left - audio = 10 - 5 = 5
     )
 
     # Save via repository with actual foreign key IDs
@@ -40,9 +40,9 @@ def test_stomp_offset_calculation(db_session, repository, synchronization_factor
     db_session.commit()
 
     # Verify stored values
-    assert sync_record.audio_sync_time == pytest.approx(5.0)
+    assert sync_record.aligned_sync_time == pytest.approx(5.0)
     assert sync_record.bio_left_sync_time == pytest.approx(10.0)
-    assert sync_record.sync_offset == pytest.approx(5.0)
+    assert sync_record.bio_sync_offset == pytest.approx(5.0)
     assert sync_record.bio_right_sync_time == pytest.approx(12.0)
 
 
@@ -62,12 +62,10 @@ def test_aligned_stomp_times(db_session, repository, synchronization_factory, au
     db_session.commit()
 
     sync_data = synchronization_factory(
-        audio_sync_time=5.0,
+        aligned_sync_time=10.0,  # Combined aligned time for both audio and bio
         bio_left_sync_time=10.0,
         bio_right_sync_time=None,
-        sync_offset=5.0,
-        aligned_audio_sync_time=10.0,  # 5.0 + 5.0
-        aligned_biomechanics_sync_time=10.0,
+        bio_sync_offset=5.0,
     )
 
     sync_record = repository.save_synchronization(
@@ -78,8 +76,7 @@ def test_aligned_stomp_times(db_session, repository, synchronization_factory, au
 
     db_session.commit()
 
-    assert sync_record.aligned_audio_sync_time == pytest.approx(10.0)
-    assert sync_record.aligned_biomechanics_sync_time == pytest.approx(10.0)
+    assert sync_record.aligned_sync_time == pytest.approx(10.0)
 
 
 def test_aligned_stomp_times_right_knee(db_session, repository, synchronization_factory, audio_processing_factory, biomechanics_import_factory):
@@ -94,12 +91,10 @@ def test_aligned_stomp_times_right_knee(db_session, repository, synchronization_
     db_session.commit()
 
     sync_data = synchronization_factory(
-        audio_sync_time=3.0,
+        aligned_sync_time=8.0,  # Combined aligned time
         bio_left_sync_time=10.0,  # Not used for right knee
         bio_right_sync_time=8.0,
-        sync_offset=5.0,  # 8.0 - 3.0
-        aligned_audio_sync_time=8.0,  # 3.0 + 5.0
-        aligned_biomechanics_sync_time=8.0,  # right knee stomp
+        bio_sync_offset=5.0,  # 8.0 - 3.0
     )
 
     sync_record = repository.save_synchronization(
@@ -110,9 +105,8 @@ def test_aligned_stomp_times_right_knee(db_session, repository, synchronization_
 
     db_session.commit()
 
-    assert sync_record.sync_offset == pytest.approx(5.0)
-    assert sync_record.aligned_audio_sync_time == pytest.approx(8.0)
-    assert sync_record.aligned_biomechanics_sync_time == pytest.approx(8.0)
+    assert sync_record.bio_sync_offset == pytest.approx(5.0)
+    assert sync_record.aligned_sync_time == pytest.approx(8.0)
 
 
 def test_stomp_offset_with_different_methods(db_session, repository, synchronization_factory, audio_processing_factory, biomechanics_import_factory):
@@ -128,9 +122,9 @@ def test_stomp_offset_with_different_methods(db_session, repository, synchroniza
 
     # Consensus method with RMS time set
     sync_consensus = synchronization_factory(
-        audio_sync_time=2.0,
+        aligned_sync_time=2.0,
         bio_left_sync_time=7.0,
-        sync_offset=5.0,
+        bio_sync_offset=5.0,
         sync_method="consensus",
         rms_time=2.0,
     )
@@ -143,8 +137,8 @@ def test_stomp_offset_with_different_methods(db_session, repository, synchroniza
 
     db_session.commit()
 
-    assert record_consensus.sync_method == "consensus"
-    assert record_consensus.sync_offset == pytest.approx(5.0)
+    assert record_consensus.selected_stomp_method == "consensus"
+    assert record_consensus.bio_sync_offset == pytest.approx(5.0)
     assert record_consensus.rms_time == pytest.approx(2.0)
 
     # Create second prerequisite set for biomechanics method
@@ -158,9 +152,9 @@ def test_stomp_offset_with_different_methods(db_session, repository, synchroniza
 
     # Biomechanics method
     sync_biomech = synchronization_factory(
-        audio_sync_time=1.5,
+        aligned_sync_time=1.5,
         bio_left_sync_time=6.5,
-        sync_offset=5.0,
+        bio_sync_offset=5.0,
         sync_method="biomechanics",
         sync_file_name="test_sync_biomech.pkl",
     )
@@ -174,4 +168,4 @@ def test_stomp_offset_with_different_methods(db_session, repository, synchroniza
     db_session.commit()
 
     assert record_biomech.sync_method == "biomechanics"
-    assert record_biomech.sync_offset == pytest.approx(5.0)
+    assert record_biomech.bio_sync_offset == pytest.approx(5.0)

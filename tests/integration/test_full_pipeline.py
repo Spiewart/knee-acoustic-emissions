@@ -57,11 +57,9 @@ class TestFullPipelineSyncSheetPopulation:
 
         # Verify key sync time columns exist and are not all zeros
         sync_time_columns = [
-            "Audio Sync Time",
+            "Aligned Sync Time",
             "Bio Left Sync Time",
-            "Sync Offset",
-            "Aligned Audio Sync Time",
-            "Aligned Biomechanics Sync Time"
+            "Bio Sync Offset",
         ]
 
         for col in sync_time_columns:
@@ -72,9 +70,9 @@ class TestFullPipelineSyncSheetPopulation:
         # but if sync succeeded, we should have actual time values
         row = sync_df.iloc[0]
         if row.get("Processing Status") == "success":
-            # For successful sync, at least audio_sync_time should be set
-            audio_sync = row.get("Audio Sync Time")
-            assert pd.notna(audio_sync), "Audio sync time should be populated for successful sync"
+            # For successful sync, at least aligned_sync_time should be set
+            aligned_sync = row.get("Aligned Sync Time")
+            assert pd.notna(aligned_sync), "Aligned sync time should be populated for successful sync"
             # Note: May be 0.0 if stomp is at time 0, but should not be NaN
 
     def test_sync_sheet_has_cycle_extraction_stats_for_fe(self, fake_participant_directory, use_test_db):
@@ -248,8 +246,8 @@ class TestSyncDataValidation:
 
             # If no biomechanics, sync times should be None (NaN in pandas)
             # NOT 0.0 which implies "synced at time zero"
-            if "Audio Sync Time (s)" in sync_df.columns:
-                audio_sync_time = sync_df.iloc[0].get("Audio Sync Time (s)")
+            if "Aligned Sync Time" in sync_df.columns:
+                aligned_sync_time = sync_df.iloc[0].get("Aligned Sync Time")
                 # Should be NaN, not 0
                 # Note: This test documents expected behavior once proper None handling is implemented
 
@@ -300,7 +298,7 @@ class TestFullPipelineEndToEnd:
             # Validate Synchronization sheet has data
             sync_df = pd.read_excel(log_path, sheet_name="Synchronization")
             assert len(sync_df) > 0, f"Synchronization sheet empty for {knee} {maneuver}"
-            assert "Audio Sync Time" in sync_df.columns, f"Missing sync columns for {knee} {maneuver}"
+            assert "Aligned Sync Time" in sync_df.columns, f"Missing sync columns for {knee} {maneuver}"
 
             # Validate Cycles sheet exists (or skip gracefully if no cycles extracted)
             import openpyxl

@@ -840,6 +840,7 @@ def synchronization_factory():
             "aligned_audio_sync_time": 10.0,
             "aligned_biomechanics_sync_time": 10.0,
             "sync_method": "consensus",
+            "selected_stomp_method": "consensus",
             "consensus_methods": "rms, onset, freq",
             "consensus_time": 5.0,
             "rms_time": 5.0,
