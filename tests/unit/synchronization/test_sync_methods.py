@@ -136,7 +136,7 @@ def test_get_audio_stomp_time_dual_knee_selection():
         return_details=True,
     )
     # Energy ratio fails → falls back to consensus; ensure consensus is used
-    assert right_details["audio_stomp_method"] == "consensus"
+    assert right_details["selected_stomp_method"] == "consensus"
     assert abs(right_detected.total_seconds() - right_details["consensus_time"]) < 0.05, \
         (
             "Right detection should match consensus when energy ratio fails; "

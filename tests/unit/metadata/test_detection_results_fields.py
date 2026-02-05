@@ -1,4 +1,4 @@
-"""Tests for detection_results fields: audio_stomp_method, selected_time, contra_selected_time."""
+"""Tests for detection_results fields: selected_stomp_method, bio_selected_time, contra_bio_selected_time."""
 
 from datetime import timedelta
 
@@ -63,12 +63,12 @@ def test_consensus_method_fields():
     )
 
     # Verify fields exist and have expected values
-    assert 'audio_stomp_method' in detection_results
-    assert detection_results['audio_stomp_method'] == 'consensus'
-    assert 'selected_time' in detection_results
-    assert detection_results['selected_time'] is None  # Not populated in consensus mode
-    assert 'contra_selected_time' in detection_results
-    assert detection_results['contra_selected_time'] is None  # Not populated in consensus mode
+    assert 'selected_stomp_method' in detection_results
+    assert detection_results['selected_stomp_method'] == 'consensus'
+    assert 'bio_selected_time' in detection_results
+    assert detection_results['bio_selected_time'] is None  # Not populated in consensus mode
+    assert 'contra_bio_selected_time' in detection_results
+    assert detection_results['contra_bio_selected_time'] is None  # Not populated in consensus mode
 
 
 def test_biomechanics_guided_method_fields():
@@ -99,20 +99,20 @@ def test_biomechanics_guided_method_fields():
         return_details=True
     )
 
-    # Verify method is biomechanics-guided (energy ratio should pass)
-    assert detection_results['audio_stomp_method'] == 'biomechanics-guided', \
-        f"Expected biomechanics-guided but got {detection_results['audio_stomp_method']}. " \
+    # Verify method is biomechanics (energy ratio should pass)
+    assert detection_results['selected_stomp_method'] == 'biomechanics', \
+        f"Expected biomechanics but got {detection_results['selected_stomp_method']}. " \
         f"Energy ratio validation may have failed."
 
-    # Verify selected_time is populated and close to right stomp
-    assert detection_results['selected_time'] is not None
-    assert abs(detection_results['selected_time'] - 2.0) < 0.3, \
-        f"Selected time {detection_results['selected_time']} not close to 2.0s"
+    # Verify bio_selected_time is populated and close to right stomp
+    assert detection_results['bio_selected_time'] is not None
+    assert abs(detection_results['bio_selected_time'] - 2.0) < 0.3, \
+        f"Selected time {detection_results['bio_selected_time']} not close to 2.0s"
 
-    # Verify contra_selected_time is populated and close to left stomp
-    assert detection_results['contra_selected_time'] is not None
-    assert abs(detection_results['contra_selected_time'] - 3.5) < 0.3, \
-        f"Contra time {detection_results['contra_selected_time']} not close to 3.5s"
+    # Verify contra_bio_selected_time is populated and close to left stomp
+    assert detection_results['contra_bio_selected_time'] is not None
+    assert abs(detection_results['contra_bio_selected_time'] - 3.5) < 0.3, \
+        f"Contra time {detection_results['contra_bio_selected_time']} not close to 3.5s"
 
     # Verify energy_ratio is populated and passes threshold
     assert detection_results['energy_ratio'] is not None
@@ -136,11 +136,11 @@ def test_biomechanics_guided_method_fields():
         return_details=True
     )
 
-    assert detection_results['audio_stomp_method'] == 'biomechanics-guided'
-    assert detection_results['selected_time'] is not None
-    assert abs(detection_results['selected_time'] - 3.5) < 0.3
-    assert detection_results['contra_selected_time'] is not None
-    assert abs(detection_results['contra_selected_time'] - 2.0) < 0.3
+    assert detection_results['selected_stomp_method'] == 'biomechanics'
+    assert detection_results['bio_selected_time'] is not None
+    assert abs(detection_results['bio_selected_time'] - 3.5) < 0.3
+    assert detection_results['contra_bio_selected_time'] is not None
+    assert abs(detection_results['contra_bio_selected_time'] - 2.0) < 0.3
 
 
 def test_fallback_to_consensus_fields():
@@ -166,9 +166,9 @@ def test_fallback_to_consensus_fields():
     )
 
     # Should fallback to consensus when no valid pair found
-    assert detection_results['audio_stomp_method'] == 'consensus'
-    assert detection_results['selected_time'] is None
-    assert detection_results['contra_selected_time'] is None
+    assert detection_results['selected_stomp_method'] == 'consensus'
+    assert detection_results['bio_selected_time'] is None
+    assert detection_results['contra_bio_selected_time'] is None
 
 
 def test_all_standard_fields_still_present():
@@ -195,7 +195,7 @@ def test_all_standard_fields_still_present():
         'consensus_time', 'rms_time', 'rms_energy',
         'onset_time', 'onset_magnitude',
         'freq_time', 'freq_energy',
-        'audio_stomp_method', 'selected_time', 'contra_selected_time'
+        'selected_stomp_method', 'bio_selected_time', 'contra_bio_selected_time'
     ]
 
     for field in expected_fields:
