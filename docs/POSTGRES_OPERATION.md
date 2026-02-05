@@ -1,44 +1,64 @@
 # PostgreSQL Database Operations
 
-This guide provides comprehensive instructions for managing the PostgreSQL database for acoustic emissions processing, including setup, schema management, migrations, data inspection, backup/restore, and troubleshooting.
+This guide provides comprehensive instructions for managing the PostgreSQL database for acoustic emissions processing, including setup, schema management with **Alembic**, migrations, data inspection, backup/restore, and troubleshooting.
 
 ## Table of Contents
 
 1. [Quick Reference](#quick-reference)
 2. [Initial Setup](#initial-setup)
-3. [Database Schema Management](#database-schema-management)
-4. [Data Inspection and Queries](#data-inspection-and-queries)
-5. [Backup and Restore](#backup-and-restore)
-6. [Schema Migrations](#schema-migrations)
-7. [Testing Database](#testing-database)
-8. [Troubleshooting](#troubleshooting)
-9. [Related Documentation](#related-documentation)
+3. [Schema Management with Alembic](#schema-management-with-alembic) ⭐ NEW
+4. [Database Schema Management](#database-schema-management)
+5. [Data Inspection and Queries](#data-inspection-and-queries)
+6. [Backup and Restore](#backup-and-restore)
+7. [Legacy Migrations](#legacy-migrations)
+8. [Testing Database](#testing-database)
+9. [Troubleshooting](#troubleshooting)
+10. [Related Documentation](#related-documentation)
 
 ---
 
 ## Quick Reference
 
-### Common Commands
+### Common Commands (Alembic - Recommended)
 
 ```bash
-# Initialize fresh database (drops all data!)
+# Check current migration status
+alembic current
+
+# Apply all migrations
+alembic upgrade head
+
+# View migration history
+alembic history --verbose
+
+# Rollback one migration
+alembic downgrade -1
+
+# Create new migration
+alembic revision --autogenerate -m "description"
+```
+
+### Legacy Commands (Deprecated)
+
+```bash
+# ⚠️ DEPRECATED: Initialize fresh database (drops all data!)
+# Use: alembic upgrade head instead
 python init_fresh_db.py
 
-# Initialize database (creates missing tables only)
+# ⚠️ DEPRECATED: Initialize database (creates missing tables only)
+# Use: alembic upgrade head instead
 python scripts/init_database.py --init
 
-# Test database connection
+# Test database connection (still valid)
 python scripts/init_database.py --test-connection
+```
 
-# Create sample data for testing
-python scripts/init_database.py --sample
+### Database Inspection
 
+```bash
 # View database schema and record counts
 psql $AE_DATABASE_URL -c "\dt"
 psql $AE_DATABASE_URL -c "SELECT COUNT(*) FROM audio_processing;"
-
-# Apply migration
-psql $AE_DATABASE_URL -f scripts/migrations/001_add_biomechanics_import_id.sql
 ```
 
 ---
@@ -92,7 +112,29 @@ postgresql+psycopg://USER:PASSWORD@HOST:PORT/DATABASE
 
 See [.env.example](.env.example) for reference.
 
-### 4. Initialize Database Schema
+### 4. Initialize Database Schema (Alembic)
+
+**Recommended: Use Alembic for all schema initialization and updates**
+
+```bash
+# Activate virtual environment
+workon kae_processing
+
+# Apply all migrations to create schema
+alembic upgrade head
+
+# Verify schema was created
+psql $AE_DATABASE_URL -c "\dt"
+```
+
+**What this does:**
+- Creates all tables with current schema
+- Tracks migration history in `alembic_version` table
+- Enables proper version control for future schema changes
+
+### 4b. Legacy Initialization (Deprecated)
+
+**⚠️ These methods are deprecated - use Alembic instead**
 
 **Option A: Fresh initialization (for new databases)**
 
@@ -135,6 +177,176 @@ Testing database connection...
      • Participants: 0
      • Audio files: 0
 ```
+
+---
+
+## Schema Management with Alembic
+
+**Alembic is now the recommended way to manage database schema changes.** It provides version control for your database schema, similar to Git for code.
+
+### Why Alembic?
+
+- **Version Control**: Track all schema changes in migration files
+- **Reversible**: Downgrade to previous schema versions if needed
+- **Auditable**: See exactly what changed and when
+- **Collaborative**: Multiple developers can work on schema changes
+- **Production-Safe**: Test migrations before applying to production
+
+### Alembic Workflow
+
+#### 1. Check Current Status
+
+```bash
+# View current migration version
+alembic current
+
+# View migration history
+alembic history --verbose
+
+# See if you're up to date
+alembic history | head -n 5
+```
+
+#### 2. Apply Migrations
+
+```bash
+# Apply all pending migrations
+alembic upgrade head
+
+# Apply one migration at a time
+alembic upgrade +1
+
+# Upgrade to specific revision
+alembic upgrade <revision_id>
+```
+
+#### 3. Rollback Migrations
+
+```bash
+# Downgrade one migration
+alembic downgrade -1
+
+# Downgrade to specific revision
+alembic downgrade <revision_id>
+
+# Downgrade everything (DANGEROUS!)
+alembic downgrade base
+```
+
+### Creating New Migrations
+
+When you modify database models in `src/db/models.py`:
+
+#### Auto-Generate Migration
+
+```bash
+# Generate migration from model changes
+alembic revision --autogenerate -m "add_new_column_to_audio"
+
+# Review the generated file in alembic/versions/
+# File will be named: <revision>_add_new_column_to_audio.py
+```
+
+**⚠️ Important**: Always review auto-generated migrations! Alembic may:
+- Miss some changes (complex alterations)
+- Generate unnecessary operations
+- Need manual adjustments for data migrations
+
+#### Manual Migration
+
+```bash
+# Create empty migration template
+alembic revision -m "custom_data_migration"
+
+# Edit the generated file to add your changes
+```
+
+### Migration Best Practices
+
+1. **Always backup before migrating production**:
+   ```bash
+   pg_dump acoustic_emissions > backup_$(date +%Y%m%d).sql
+   ```
+
+2. **Test migrations on development first**:
+   ```bash
+   # Test upgrade
+   alembic upgrade head
+   
+   # Test downgrade
+   alembic downgrade -1
+   alembic upgrade head
+   ```
+
+3. **Include both upgrade() and downgrade()**:
+   ```python
+   def upgrade():
+       op.add_column('table', sa.Column('new_col', sa.String()))
+   
+   def downgrade():
+       op.drop_column('table', 'new_col')
+   ```
+
+4. **Use descriptive migration messages**:
+   ```bash
+   # Good
+   alembic revision -m "add_audio_sync_time_columns"
+   
+   # Bad
+   alembic revision -m "changes"
+   ```
+
+5. **One logical change per migration**
+
+### Current Migrations
+
+**b68cac4282f5** - `refactor_synchronization_fields` (Current)
+- Refactored synchronization table fields
+- Removed redundant audio sync time fields  
+- Added support for multiple stomp detection methods
+- Added optional audio sync time fields per leg
+- See [SYNCHRONIZATION_SCHEMA_CHANGES.md](../SYNCHRONIZATION_SCHEMA_CHANGES.md) for details
+
+### Alembic Configuration
+
+The Alembic configuration is in:
+- `alembic.ini` - Main configuration file
+- `alembic/env.py` - Environment setup (uses `AE_DATABASE_URL`)
+- `alembic/versions/` - Migration scripts
+
+**Environment Variable**: Alembic automatically uses `AE_DATABASE_URL` from your environment.
+
+### Troubleshooting Alembic
+
+#### "Can't locate revision identified by 'xyz'"
+
+Your database is out of sync. Options:
+```bash
+# Option 1: Start fresh (DESTROYS DATA!)
+dropdb acoustic_emissions && createdb acoustic_emissions
+alembic upgrade head
+
+# Option 2: Stamp current version manually
+alembic stamp head  # Use with caution!
+```
+
+#### Migration Conflicts
+
+Multiple developers creating migrations:
+```bash
+# List all branches
+alembic branches
+
+# Merge conflicting branches
+alembic merge <rev1> <rev2> -m "merge_branches"
+```
+
+#### Auto-generate Doesn't Detect Changes
+
+Some changes require manual migrations:
+- Renaming columns (detected as drop + add)
+- Data migrations
+- Complex constraint changes
 
 ---
 
@@ -436,9 +648,15 @@ echo "Backup completed: ae_backup_$DATE.sql.gz"
 
 ---
 
-## Schema Migrations
+## Legacy Migrations (SQL Files)
 
-### When to Use Migrations
+**⚠️ DEPRECATED**: This section describes the old SQL-based migration system. **Use Alembic instead** (see [Schema Management with Alembic](#schema-management-with-alembic) above).
+
+### Historical Context
+
+Before Alembic, schema changes were managed with manual SQL migration files in `scripts/migrations/`. These are preserved for reference but should not be used for new changes.
+
+### When to Use SQL Migrations (Rare)
 
 Use migrations when you need to:
 - Add columns to existing tables
@@ -783,6 +1001,11 @@ psql $AE_DATABASE_URL < rescue_backup.sql
 ---
 
 ## Related Documentation
+
+### Database and Schema Management
+- **[SYNCHRONIZATION_SCHEMA_CHANGES.md](../SYNCHRONIZATION_SCHEMA_CHANGES.md)** - Recent synchronization table refactoring ⭐ NEW
+- **[Alembic Documentation](https://alembic.sqlalchemy.org/)** - Official Alembic migration tool
+- **[SQLAlchemy ORM](https://docs.sqlalchemy.org/en/20/orm/)** - SQLAlchemy ORM documentation
 
 ### PostgreSQL Setup and Configuration
 - [POSTGRES_SETUP.md](POSTGRES_SETUP.md) - PostgreSQL installation for macOS/Windows

@@ -61,7 +61,7 @@ Database Setup
 
 This project uses PostgreSQL for processing logs and report generation. **Schema management is now handled via Alembic migrations** for version control and reliable schema updates.
 
-**📖 For comprehensive database operations guide, see [DATABASE_USAGE.md](DATABASE_USAGE.md)**
+**📖 For comprehensive database operations guide, see [docs/POSTGRES_OPERATION.md](docs/POSTGRES_OPERATION.md)**
 
 ### Quick Setup
 
@@ -102,10 +102,9 @@ alembic upgrade head
 
 ### Additional Resources
 
-- **[DATABASE_USAGE.md](DATABASE_USAGE.md)** - Complete Alembic and database usage guide ⭐ NEW
+- **[docs/POSTGRES_OPERATION.md](docs/POSTGRES_OPERATION.md)** - Complete Alembic and database guide ⭐
 - **[SYNCHRONIZATION_SCHEMA_CHANGES.md](SYNCHRONIZATION_SCHEMA_CHANGES.md)** - Recent schema changes
-- **[POSTGRES_OPERATION.md](docs/POSTGRES_OPERATION.md)** - PostgreSQL operations (backup/restore, troubleshooting)
-- **[POSTGRES_SETUP.md](docs/POSTGRES_SETUP.md)** - PostgreSQL installation for macOS/Windows
+- **[docs/POSTGRES_SETUP.md](docs/POSTGRES_SETUP.md)** - PostgreSQL installation for macOS/Windows
 
 **⚠️ Important**: The `init_fresh_db.py` script is deprecated. Use `alembic upgrade head` instead for schema initialization and updates.
 
