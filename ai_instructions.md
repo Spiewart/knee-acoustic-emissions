@@ -323,6 +323,24 @@ The project uses the following dependencies:
 
 ### Installation Steps
 
+**Option 1: virtualenvwrapper (Project Maintainer Setup)**
+
+This project uses [virtualenvwrapper](https://virtualenvwrapper.readthedocs.io/en/latest/) for virtual environment management:
+
+```bash
+# Activate the virtual environment
+workon kae_processing
+
+# Dependencies should already be installed
+# If needed, reinstall:
+pip install -r requirements.txt
+pip install -r dev-requirements.txt
+```
+
+**Option 2: Standard venv (Alternative Setup)**
+
+Users can customize their preferred virtual environment setup:
+
 1. Create virtual environment:
    ```bash
    python -m venv .venv
@@ -340,6 +358,8 @@ The project uses the following dependencies:
    ```bash
    pip install -r dev-requirements.txt
    ```
+
+**Note for AI Assistants**: When running commands in this project, use `workon kae_processing` to activate the virtual environment. The project requires Python 3.12+ for modern type hint syntax (`type | None`).
 
 ---
 
