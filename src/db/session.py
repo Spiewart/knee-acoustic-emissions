@@ -2,7 +2,7 @@
 
 import os
 from contextlib import contextmanager
-from typing import Generator
+from typing import Generator, Optional
 
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
@@ -42,7 +42,7 @@ def get_engine(echo: bool = False) -> Engine:
     return create_engine(url, echo=echo, pool_pre_ping=True)
 
 
-def init_db(engine: Engine | None = None) -> None:
+def init_db(engine: Optional[Engine] = None) -> None:
     """Initialize database by creating all tables.
 
     Args:
@@ -54,7 +54,7 @@ def init_db(engine: Engine | None = None) -> None:
 
 
 @contextmanager
-def get_session(engine: Engine | None = None) -> Generator[Session, None, None]:
+def get_session(engine: Optional[Engine] = None) -> Generator[Session, None, None]:
     """Context manager for database sessions.
 
     Args:

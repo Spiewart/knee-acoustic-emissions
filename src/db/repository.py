@@ -727,6 +727,37 @@ class Repository:
 
         return list(self.session.execute(query).scalars().all())
 
+    def get_biomechanics_imports(
+        self,
+        study_name: Optional[str] = None,
+        participant_number: Optional[int] = None,
+        maneuver: Optional[str] = None,
+        knee: Optional[str] = None,
+    ) -> List[BiomechanicsImportRecord]:
+        """Query biomechanics import records with filters.
+
+        Args:
+            study_name: Filter by study name
+            participant_number: Filter by participant study_id
+            maneuver: Filter by maneuver
+            knee: Filter by knee
+
+        Returns:
+            List of matching biomechanics import records
+        """
+        query = select(BiomechanicsImportRecord).join(ParticipantRecord)
+
+        if study_name:
+            query = query.join(StudyRecord).where(StudyRecord.name == study_name)
+        if participant_number is not None:
+            query = query.where(ParticipantRecord.study_id == participant_number)
+        if maneuver:
+            query = query.where(BiomechanicsImportRecord.maneuver == maneuver)
+        if knee:
+            query = query.where(BiomechanicsImportRecord.knee == knee)
+
+        return list(self.session.execute(query).scalars().all())
+
     def get_synchronization_records(
         self,
         study_name: Optional[str] = None,

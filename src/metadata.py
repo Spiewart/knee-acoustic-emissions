@@ -148,7 +148,7 @@ class AudioProcessing(StudyMetadata):
     qc_not_passed_mic_4: bool = False
 
     # ===== Processing Metadata =====
-    processing_date: datetime = Field(...)
+    processing_date: datetime = Field(default_factory=datetime.now)
     processing_status: Literal["not_processed", "success", "error"] = "not_processed"
     error_message: Optional[str] = None
     duration_seconds: Optional[float] = None
@@ -472,7 +472,7 @@ class Synchronization(StudyMetadata):
     sync_qc_fail: bool = False
 
     # ===== Processing Metadata =====
-    processing_date: datetime = Field(...)
+    processing_date: datetime = Field(default_factory=datetime.now)
     processing_status: Literal["not_processed", "success", "error"] = "not_processed"
     error_message: Optional[str] = None
 

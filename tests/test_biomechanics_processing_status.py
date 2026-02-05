@@ -1,5 +1,6 @@
 """Test that biomechanics records are saved with correct processing_status."""
 
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -27,6 +28,7 @@ def test_biomechanics_processing_status_persists(db_session):
         duration_seconds=30.0,
         num_data_points=3000,
         num_passes=3,
+        processing_date=datetime(2024, 1, 1, 12, 0, 0),
         processing_status="success",  # This should be saved
     )
 
@@ -67,6 +69,7 @@ def test_biomechanics_processing_status_update(db_session):
         duration_seconds=90.0,
         num_data_points=9000,
         num_passes=9,
+        processing_date=datetime(2024, 1, 1, 12, 0, 0),
         processing_status="not_processed",
     )
 
