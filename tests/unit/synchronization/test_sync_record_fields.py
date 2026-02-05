@@ -17,12 +17,10 @@ def _create_test_record(**kwargs):
         "audio_processing_id": 1,
         "biomechanics_import_id": 1,
         "pass_number": 1,
-        "speed": "comfortable",  # Changed from "normal"
-        "audio_sync_time": 0.0,
+        "speed": "comfortable",
         "bio_left_sync_time": 0.0,
-        "sync_offset": 0.0,
-        "aligned_audio_sync_time": 0.0,
-        "aligned_biomechanics_sync_time": 0.0,
+        "bio_sync_offset": 0.0,
+        "aligned_sync_time": 0.0,
         "sync_method": "consensus",
         "consensus_time": 0.0,
         "rms_time": 0.0,
@@ -47,26 +45,31 @@ def _create_test_record(**kwargs):
 def test_synchronization_has_biomech_guided_fields():
     """Test that Synchronization has new fields for biomechanics-guided detection."""
     record = _create_test_record(
-        audio_stomp_method="biomechanics-guided",
-        selected_audio_sync_time=2.5,
-        contra_selected_audio_sync_time=3.8,
+        selected_stomp_method="biomechanics",
+        stomp_detection_methods=["biomechanics"],
+        bio_selected_sync_time=2.5,
+        contra_bio_selected_sync_time=3.8,
     )
 
-    assert record.audio_stomp_method == "biomechanics-guided"
-    assert record.selected_audio_sync_time == 2.5
-    assert record.contra_selected_audio_sync_time == 3.8
+    assert record.selected_stomp_method == "biomechanics"
+    assert record.stomp_detection_methods == ["biomechanics"]
+    assert record.bio_selected_sync_time == 2.5
+    assert record.contra_bio_selected_sync_time == 3.8
 
 def test_synchronization_fields_include_new_values():
     """Test that new fields are populated on the model."""
     record = _create_test_record(
-        audio_stomp_method="biomechanics-guided",
-        selected_audio_sync_time=2.5,
-        contra_selected_audio_sync_time=3.8,
+        selected_stomp_method="biomechanics",
+        stomp_detection_methods=["consensus", "biomechanics"],
+        bio_selected_sync_time=2.5,
+        contra_bio_selected_sync_time=3.8,
     )
 
-    assert record.audio_stomp_method == "biomechanics-guided"
-    assert record.selected_audio_sync_time == 2.5
-    assert record.contra_selected_audio_sync_time == 3.8
+    assert record.selected_stomp_method == "biomechanics"
+    assert "biomechanics" in record.stomp_detection_methods
+    assert "consensus" in record.stomp_detection_methods
+    assert record.bio_selected_sync_time == 2.5
+    assert record.contra_bio_selected_sync_time == 3.8
 
 
 def test_create_sync_record_populates_new_fields_from_detection_results():
@@ -89,9 +92,10 @@ def test_create_sync_record_populates_new_fields_from_detection_results():
         'onset_magnitude': 100.0,
         'freq_time': 2.0,
         'freq_energy': 300.0,
-        'audio_stomp_method': 'biomechanics-guided',
-        'selected_time': 2.5,
-        'contra_selected_time': 3.8,
+        'selected_stomp_method': 'biomechanics',
+        'stomp_detection_methods': ['biomechanics'],
+        'bio_selected_time': 2.5,
+        'contra_bio_selected_time': 3.8,
     }
 
     record = create_sync_record_from_data(
@@ -104,9 +108,10 @@ def test_create_sync_record_populates_new_fields_from_detection_results():
     )
 
     # Verify new fields are populated
-    assert record.audio_stomp_method == "biomechanics-guided"
-    assert record.selected_audio_sync_time == 2.5
-    assert record.contra_selected_audio_sync_time == 3.8
+    assert record.selected_stomp_method == "biomechanics"
+    assert record.stomp_detection_methods == ['biomechanics']
+    assert record.bio_selected_sync_time == 2.5
+    assert record.contra_bio_selected_sync_time == 3.8
 
 
 
@@ -115,9 +120,10 @@ def test_synchronization_biomech_guided_can_be_none():
     record = _create_test_record()
 
     # These should default to None
-    assert record.audio_stomp_method is None
-    assert record.selected_audio_sync_time is None
-    assert record.contra_selected_audio_sync_time is None
+    assert record.selected_stomp_method is None
+    assert record.stomp_detection_methods is None
+    assert record.bio_selected_sync_time is None
+    assert record.contra_bio_selected_sync_time is None
 
 
 
@@ -149,9 +155,9 @@ def test_create_sync_record_consensus_without_biomech_guided():
     )
 
     # Biomech-guided fields should be None
-    assert record.audio_stomp_method is None
-    assert record.selected_audio_sync_time is None
-    assert record.contra_selected_audio_sync_time is None
+    assert record.selected_stomp_method is None
+    assert record.bio_selected_sync_time is None
+    assert record.contra_bio_selected_sync_time is None
 
     # But consensus fields should be populated
     assert record.consensus_time == 2.0
@@ -191,6 +197,48 @@ def test_synchronization_consensus_method_agreement_span_calculation():
     assert record.method_agreement_span == pytest.approx(0.2, abs=0.01)
     # Verify consensus_methods is stored
     assert record.consensus_methods == "rms, onset, freq"
+
+
+def test_synchronization_audio_sync_times():
+    """Test audio sync time fields (time between mic on and participant stopping)."""
+    record = _create_test_record(
+        audio_sync_time_left=5.2,
+        audio_sync_time_right=5.8,
+        audio_sync_offset=0.6,
+    )
+    
+    assert record.audio_sync_time_left == 5.2
+    assert record.audio_sync_time_right == 5.8
+    assert record.audio_sync_offset == 0.6
+
+
+def test_synchronization_audio_based_sync_fields():
+    """Test audio-based sync fields (different from bio-based)."""
+    record = _create_test_record(
+        selected_stomp_method="audio",
+        stomp_detection_methods=["audio", "consensus"],
+        selected_audio_sync_time=3.5,
+        contra_selected_audio_sync_time=4.2,
+    )
+    
+    assert record.selected_stomp_method == "audio"
+    assert "audio" in record.stomp_detection_methods
+    assert record.selected_audio_sync_time == 3.5
+    assert record.contra_selected_audio_sync_time == 4.2
+
+
+def test_synchronization_multiple_detection_methods():
+    """Test using multiple stomp detection methods."""
+    record = _create_test_record(
+        stomp_detection_methods=["audio", "consensus", "biomechanics"],
+        selected_stomp_method="consensus",
+    )
+    
+    assert len(record.stomp_detection_methods) == 3
+    assert "audio" in record.stomp_detection_methods
+    assert "consensus" in record.stomp_detection_methods
+    assert "biomechanics" in record.stomp_detection_methods
+    assert record.selected_stomp_method == "consensus"
 
 
 

@@ -420,12 +420,11 @@ class Synchronization(StudyMetadata):
     speed: Optional[Literal["slow", "fast", "medium", "comfortable"]] = None
 
     # ===== Stomp Time Data (Core Synchronization Results) =====
-    audio_sync_time: Optional[float] = None
+    # Note: Biomechanics is synchronized to audio data (audio time 0 = sync time 0)
     bio_left_sync_time: Optional[float] = None
     bio_right_sync_time: Optional[float] = None
-    sync_offset: Optional[float] = None
-    aligned_audio_sync_time: Optional[float] = None
-    aligned_biomechanics_sync_time: Optional[float] = None
+    bio_sync_offset: Optional[float] = None  # Biomechanics sync offset between legs
+    aligned_sync_time: Optional[float] = None  # Unified aligned sync time on merged dataframes
 
     # ===== Sync Method Details =====
     sync_method: Optional[Literal["consensus", "biomechanics"]] = None
@@ -436,15 +435,27 @@ class Synchronization(StudyMetadata):
     freq_time: Optional[float] = None
 
     # ===== Biomechanics-Guided Detection (Optional) =====
-    selected_audio_sync_time: Optional[float] = None
-    contra_selected_audio_sync_time: Optional[float] = None
+    bio_selected_sync_time: Optional[float] = None  # Renamed from selected_audio_sync_time
+    contra_bio_selected_sync_time: Optional[float] = None  # Renamed from contra_selected_audio_sync_time
 
     # ===== Audio-Visual Sync (Optional) =====
     audio_visual_sync_time: Optional[float] = None
     audio_visual_sync_time_contralateral: Optional[float] = None
+    
+    # ===== Audio Sync Times (Optional) =====
+    # Time between turning microphones on and participant stopping for each leg
+    audio_sync_time_left: Optional[float] = None
+    audio_sync_time_right: Optional[float] = None
+    audio_sync_offset: Optional[float] = None  # Required if both left and right are present
+    
+    # ===== Audio-Based Sync Fields (Optional) =====
+    # Different from bio-based sync - required if 'audio' in stomp_detection_methods
+    selected_audio_sync_time: Optional[float] = None
+    contra_selected_audio_sync_time: Optional[float] = None
 
     # ===== Detection Method Details =====
-    audio_stomp_method: Optional[str] = None
+    stomp_detection_methods: Optional[List[Literal["audio", "consensus", "biomechanics"]]] = None
+    selected_stomp_method: Optional[Literal["audio", "consensus", "biomechanics"]] = None
 
     # ===== Pickle File Storage =====
     sync_file_name: str = Field(...)
@@ -463,12 +474,7 @@ class Synchronization(StudyMetadata):
     max_cycle_duration_s: Optional[float] = None
     method_agreement_span: Optional[float] = None
 
-    # ===== QC Version Tracking =====
-    audio_qc_version: int = Field(default_factory=get_audio_qc_version)
-    biomech_qc_version: int = Field(default_factory=get_biomech_qc_version)
-    cycle_qc_version: int = Field(default_factory=get_cycle_qc_version)
-
-    # ===== QC Status =====
+    # ===== QC Status (removed individual QC version fields - QC done at other stages) =====
     sync_qc_fail: bool = False
 
     # ===== Processing Metadata =====
