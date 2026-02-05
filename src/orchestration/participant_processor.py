@@ -15,10 +15,8 @@ from src.metadata import AudioProcessing, BiomechanicsImport, Synchronization
 from src.orchestration.processing_log import (
     KneeProcessingLog,
     ManeuverProcessingLog,
-    _infer_biomechanics_type_from_study,
     create_audio_record_from_data,
     create_biomechanics_record_from_data,
-    create_cycles_record_from_data,
     create_sync_record_from_data,
 )
 from src.synchronization.sync import load_audio_data
@@ -327,12 +325,8 @@ class ManeuverProcessor:
                     "speed": sync_data.speed,
                     "detection_results": detection_results,
                     "audio_record": self.audio.record if self.audio else None,
-                    "biomech_record": self.biomechanics.record,
                     "metadata": {},
                 }
-                # Ensure biomechanics_type is set (either from participant or inferred from study)
-                biomechanics_type = self.biomechanics_type if self.biomechanics_type is not None else _infer_biomechanics_type_from_study(self.study_id)
-                sync_kwargs["biomechanics_type"] = biomechanics_type
 
                 sync_data.record = create_sync_record_from_data(**sync_kwargs)
 
@@ -361,7 +355,6 @@ class ManeuverProcessor:
                 return True  # Not a failure
 
         try:
-            from src.orchestration.processing_log import create_cycles_record_from_data
             from src.synchronization.quality_control import perform_sync_qc
 
             logging.info(f"Processing {self.knee_side} {self.maneuver_key} cycles stage")
@@ -401,27 +394,34 @@ class ManeuverProcessor:
                         f"from {sync_data.output_path.name}"
                     )
 
-                    # Create cycles record with cycle details
-                    cycles_record = create_cycles_record_from_data(
-                        sync_file_name=sync_data.output_path.stem,
-                        clean_cycles=clean_cycles,
-                        outlier_cycles=outlier_cycles,
-                        output_dir=qc_output_dir,
-                        plots_created=True,
-                        error=None,
-                        audio_record=self.audio.record if self.audio else None,
-                        biomech_record=self.biomechanics.record if self.biomechanics else None,
-                        sync_record=sync_data.record,
-                        metadata={},
-                        study="AOA",  # TODO: Get from context
-                        study_id=int(self.study_id),
-                    )
+                    # Update sync record with cycle statistics
+                    sync_data.record.total_cycles_extracted = len(clean_cycles) + len(outlier_cycles)
+                    sync_data.record.clean_cycles = len(clean_cycles)
+                    sync_data.record.outlier_cycles = len(outlier_cycles)
+                    
+                    # Calculate cycle duration statistics from ALL cycles (clean + outliers)
+                    all_cycles = clean_cycles + outlier_cycles
+                    if all_cycles:
+                        cycle_durations = []
+                        for cycle in all_cycles:
+                            # Extract duration from cycle metadata
+                            if hasattr(cycle, 'duration_s'):
+                                cycle_durations.append(cycle.duration_s)
+                            elif isinstance(cycle, dict) and 'duration_s' in cycle:
+                                cycle_durations.append(cycle['duration_s'])
+                        
+                        if cycle_durations:
+                            import statistics
+                            sync_data.record.mean_cycle_duration_s = statistics.mean(cycle_durations)
+                            sync_data.record.median_cycle_duration_s = statistics.median(cycle_durations)
+                            sync_data.record.min_cycle_duration_s = min(cycle_durations)
+                            sync_data.record.max_cycle_duration_s = max(cycle_durations)
 
-                    # Store cycle record in CycleData
+                    # Store cycle record in CycleData (using the updated sync record)
                     cycle_data = CycleData(
                         synced_file_path=sync_data.output_path,
                         output_dir=qc_output_dir,
-                        record=cycles_record,
+                        record=sync_data.record,  # Use the updated sync record directly
                         sync_file_stem=sync_data.output_path.stem,
                     )
                     self.cycle_data.append(cycle_data)

@@ -15,8 +15,6 @@ Usage from command line:
     python process_participant_directory.py /path/to/studies --log output.log
 """
 
-from __future__ import annotations
-
 import argparse
 import json
 import logging
@@ -34,10 +32,8 @@ from src.orchestration.processing_log import (
     ManeuverProcessingLog,
     create_audio_record_from_data,
     create_biomechanics_record_from_data,
-    create_cycles_record_from_data,
     create_sync_record_from_data,
 )
-from src.synchronization.quality_control import find_synced_files, perform_sync_qc
 from src.synchronization.sync import (
     get_audio_stomp_time,
     get_bio_end_time,

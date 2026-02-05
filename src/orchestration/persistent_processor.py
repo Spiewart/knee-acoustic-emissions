@@ -16,10 +16,6 @@ from typing import Literal, Optional
 
 from sqlalchemy.orm import Session
 
-from src.orchestration.database_persistence import (
-    OrchestrationDatabasePersistence,
-    RecordTracker,
-)
 from src.orchestration.dual_write_persistence import DualWritePersistence
 from src.orchestration.participant_processor import ParticipantProcessor
 

@@ -4,15 +4,12 @@ This module provides metadata tracking for participant processing. All data is s
 in the PostgreSQL database, and reports are generated on-demand by querying the DB.
 """
 
-from __future__ import annotations
-
-import json
 import logging
 import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import pandas as pd
 from sqlalchemy import select
@@ -21,7 +18,6 @@ from src.db.models import ParticipantRecord, StudyRecord
 from src.metadata import (
     AudioProcessing,
     BiomechanicsImport,
-    MovementCycle,
     Synchronization,
 )
 from src.orchestration.cli_db_helpers import close_db_session, create_db_session
@@ -639,23 +635,35 @@ def create_sync_record_from_data(
     sync_file_name: str,
     synced_df: pd.DataFrame,
     audio_stomp_time: Optional[float],
+    knee_side: str,  # Required: "left" or "right"
     bio_left_stomp_time: Optional[float] = None,
     bio_right_stomp_time: Optional[float] = None,
-    knee_side: Optional[str] = None,
     pass_number: Optional[int] = None,
     speed: Optional[str] = None,
     detection_results: Optional[Dict] = None,
     audio_record: Optional[AudioProcessing] = None,
-    biomech_record: Optional[BiomechanicsImport] = None,
     metadata: Optional[Dict] = None,
     study: Optional[str] = None,
     study_id: Optional[int] = None,
-    biomechanics_type: Optional[str] = None,
     **kwargs,
 ) -> Synchronization:
-    """Create Synchronization record from sync data and detection results."""
+    """Create Synchronization record from sync data and detection results.
+
+    Args:
+        sync_file_name: Name of synchronization file
+        synced_df: Synchronized dataframe
+        audio_stomp_time: Audio stomp time
+        knee_side: Side of knee being processed ("left" or "right") - REQUIRED
+        bio_left_stomp_time: Left biomechanics stomp time
+        bio_right_stomp_time: Right biomechanics stomp time
+        ... other parameters
+    """
     detection_results = detection_results or {}
     metadata = metadata or {}
+
+    # Validate knee_side
+    if knee_side not in ["left", "right"]:
+        raise ValueError(f"knee_side must be 'left' or 'right', got: {knee_side}")
 
     speed_value = speed
     if speed_value and speed_value.lower() == "normal":
@@ -681,6 +689,14 @@ def create_sync_record_from_data(
     study_name = study or metadata.get("study") or (audio_record.study if audio_record else None) or "AOA"
     participant_number = study_id or metadata.get("study_id") or (audio_record.study_id if audio_record else 1)
 
+    # Calculate bio_sync_offset based on knee_side
+    bio_stomp_time = bio_left_stomp_time if knee_side == "left" else bio_right_stomp_time
+    bio_sync_offset = (
+        _timedelta_to_seconds(audio_stomp_time - bio_stomp_time)
+        if audio_stomp_time is not None and bio_stomp_time is not None
+        else None
+    )
+
     return Synchronization(
         study=study_name,
         study_id=int(participant_number),
@@ -688,10 +704,11 @@ def create_sync_record_from_data(
         biomechanics_import_id=int(biomechanics_import_id),
         pass_number=pass_number,
         speed=speed_value,
+        knee=knee_side,
         # Biomechanics sync times (biomechanics is synced to audio: audio t=0 = sync t=0)
         bio_left_sync_time=_timedelta_to_seconds(bio_left_stomp_time),
         bio_right_sync_time=_timedelta_to_seconds(bio_right_stomp_time),
-        bio_sync_offset=_timedelta_to_seconds(audio_stomp_time - bio_left_stomp_time) if audio_stomp_time is not None and bio_left_stomp_time is not None else None,
+        bio_sync_offset=bio_sync_offset,
         aligned_sync_time=_timedelta_to_seconds(detection_results.get("consensus_time") or audio_stomp_time),
         # Sync method details
         sync_method=detection_results.get("selected_stomp_method") if detection_results.get("selected_stomp_method") else ("biomechanics" if detection_results.get("audio_stomp_method") else "consensus"),
@@ -711,9 +728,9 @@ def create_sync_record_from_data(
         audio_sync_time_left=_timedelta_to_seconds(detection_results.get("audio_sync_time_left")),
         audio_sync_time_right=_timedelta_to_seconds(detection_results.get("audio_sync_time_right")),
         audio_sync_offset=_timedelta_to_seconds(detection_results.get("audio_sync_offset")),
-        # Audio-based sync times (different from bio-based)
-        selected_audio_sync_time=_timedelta_to_seconds(detection_results.get("selected_audio_sync_time")),
-        contra_selected_audio_sync_time=_timedelta_to_seconds(detection_results.get("contra_selected_audio_sync_time")),
+        # Audio-based sync times (different from bio-based) - renamed for consistency
+        audio_selected_sync_time=_timedelta_to_seconds(detection_results.get("audio_selected_sync_time") or detection_results.get("selected_audio_sync_time")),
+        contra_audio_selected_sync_time=_timedelta_to_seconds(detection_results.get("contra_audio_selected_sync_time") or detection_results.get("contra_selected_audio_sync_time")),
         # File and processing
         sync_file_name=sync_file_name,
         sync_file_path=str(kwargs.get("sync_file_path")) if kwargs.get("sync_file_path") else None,
@@ -723,44 +740,15 @@ def create_sync_record_from_data(
         total_cycles_extracted=0,
         clean_cycles=0,
         outlier_cycles=0,
+        # Cycle statistics - will be populated during cycle extraction
+        mean_cycle_duration_s=None,
+        median_cycle_duration_s=None,
+        min_cycle_duration_s=None,
+        max_cycle_duration_s=None,
         **{k: v for k, v in kwargs.items() if k in Synchronization.__dataclass_fields__},
     )
 
 
-def create_cycles_record_from_data(
-    sync_file_name: str,
-    clean_cycles: list,
-    outlier_cycles: list,
-    output_dir: Optional[Path],
-    plots_created: bool,
-    error: Optional[str],
-    audio_record: Optional[AudioProcessing] = None,
-    biomech_record: Optional[BiomechanicsImport] = None,
-    sync_record: Optional[Synchronization] = None,
-    metadata: Optional[Dict] = None,
-    study: Optional[str] = None,
-    study_id: Optional[int] = None,
-    **kwargs,
-) -> Synchronization:
-    """Create a synchronization record updated with cycle QC summary."""
-    base_sync = sync_record
-    if base_sync is None:
-        base_sync = create_sync_record_from_data(
-            sync_file_name=sync_file_name,
-            synced_df=pd.DataFrame(),
-            audio_stomp_time=None,
-            metadata=metadata,
-            study=study,
-            study_id=study_id,
-        )
-
-    base_sync.total_cycles_extracted = len(clean_cycles) + len(outlier_cycles)
-    base_sync.clean_cycles = len(clean_cycles)
-    base_sync.outlier_cycles = len(outlier_cycles)
-    base_sync.processing_status = "success" if error is None else "error"
-    base_sync.error_message = error
-    base_sync.processing_date = datetime.now()
-    return base_sync
 
 def _timedelta_to_seconds(value) -> Optional[float]:
     """Convert various time formats to seconds (float).

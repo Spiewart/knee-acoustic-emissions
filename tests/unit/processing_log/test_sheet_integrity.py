@@ -66,7 +66,6 @@ def test_cycles_sheet_has_expected_columns(
 from src.metadata import Synchronization
 from src.orchestration.processing_log import (
     ManeuverProcessingLog,
-    create_cycles_record_from_data,
     create_sync_record_from_data,
 )
 
@@ -290,6 +289,7 @@ class TestMethodAgreementSpanCalculation:
             sync_file_name="test_sync",
             audio_stomp_time=5.0,
             synced_df=synced_df,
+            knee_side="left",
             pass_number=1,
             speed="normal",
             detection_results=detection_results,
@@ -329,6 +329,7 @@ class TestMethodAgreementSpanCalculation:
             sync_file_name="test_sync",
             audio_stomp_time=5.0,
             synced_df=synced_df,
+            knee_side="left",
             detection_results=detection_results,
             audio_record=None,
             biomech_record=None,
@@ -368,6 +369,7 @@ class TestMethodAgreementSpanCalculation:
             sync_file_name="test_sync",
             audio_stomp_time=5.0,
             synced_df=synced_df,
+            knee_side="left",
             detection_results=detection_results,
             audio_record=None,
             biomech_record=None,
@@ -407,6 +409,7 @@ class TestMethodAgreementSpanCalculation:
             sync_file_name="test_sync",
             audio_stomp_time=5.0,
             synced_df=synced_df,
+            knee_side="left",
             detection_results=detection_results,
             audio_record=None,
             biomech_record=None,
@@ -444,6 +447,7 @@ class TestMethodAgreementSpanCalculation:
             sync_file_name="test_sync",
             audio_stomp_time=5.0,
             synced_df=synced_df,
+            knee_side="left",
             detection_results=detection_results,
             audio_record=None,
             biomech_record=None,
@@ -481,6 +485,7 @@ class TestMethodAgreementSpanCalculation:
             sync_file_name="test_sync",
             audio_stomp_time=5.0,
             synced_df=synced_df,
+            knee_side="left",
             detection_results=detection_results,
             audio_record=None,
             biomech_record=None,
@@ -495,32 +500,22 @@ class TestMethodAgreementSpanCalculation:
         assert abs(sync_record.method_agreement_span - expected_span) < 0.001, \
             f"Sync record method_agreement_span should be {expected_span}"
 
-        # Create cycles record from sync record
+        # Update sync record with cycle data (simulating what participant_processor does)
         cycle_data = pd.DataFrame({
             'tt': np.arange(0, 1.0, 0.01),
             'ch1': np.random.randn(100),
         })
 
-        cycles_record = create_cycles_record_from_data(
-            sync_file_name="test_sync",
-            clean_cycles=[cycle_data],
-            outlier_cycles=[],
-            pass_number=1,
-            speed="normal",
-            output_dir=maneuver_dir,
-            plots_created=False,
-            error=None,
-            audio_record=None,
-            biomech_record=None,
-            sync_record=sync_record,
-            metadata={},
-            study="AOA",
-            study_id=1011,
-        )
+        # Directly update sync record with cycle statistics
+        clean_cycles = [cycle_data]
+        outlier_cycles = []
+        sync_record.total_cycles_extracted = len(clean_cycles) + len(outlier_cycles)
+        sync_record.clean_cycles = len(clean_cycles)
+        sync_record.outlier_cycles = len(outlier_cycles)
 
-        # Cycles record should inherit method_agreement_span
-        assert abs(cycles_record.method_agreement_span - expected_span) < 0.001, \
-            f"Cycles record should inherit method_agreement_span={expected_span}, got {cycles_record.method_agreement_span}"
+        # Sync record should preserve method_agreement_span after update
+        assert abs(sync_record.method_agreement_span - expected_span) < 0.001, \
+            f"Sync record should preserve method_agreement_span={expected_span} after cycle update, got {sync_record.method_agreement_span}"
 
     def test_method_agreement_span_in_excel_output(
         self,

@@ -400,8 +400,8 @@ class ReportGenerator:
                 'Audio Sync Offset': record.audio_sync_offset,
 
                 # Audio-based sync times (different from bio-based)
-                'Selected Audio Sync Time': record.selected_audio_sync_time,
-                'Contra Selected Audio Sync Time': record.contra_selected_audio_sync_time,
+                'Audio Selected Sync Time': record.audio_selected_sync_time,
+                'Contra Audio Selected Sync Time': record.contra_audio_selected_sync_time,
 
                 # Cycle statistics
                 'Sync Duration': record.sync_duration,

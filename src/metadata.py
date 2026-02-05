@@ -435,8 +435,8 @@ class Synchronization(StudyMetadata):
     freq_time: Optional[float] = None
 
     # ===== Biomechanics-Guided Detection (Optional) =====
-    bio_selected_sync_time: Optional[float] = None  # Renamed from selected_audio_sync_time
-    contra_bio_selected_sync_time: Optional[float] = None  # Renamed from contra_selected_audio_sync_time
+    bio_selected_sync_time: Optional[float] = None  # Renamed from audio_selected_sync_time
+    contra_bio_selected_sync_time: Optional[float] = None  # Renamed from contra_audio_selected_sync_time
 
     # ===== Audio-Visual Sync (Optional) =====
     audio_visual_sync_time: Optional[float] = None
@@ -450,8 +450,8 @@ class Synchronization(StudyMetadata):
 
     # ===== Audio-Based Sync Fields (Optional) =====
     # Different from bio-based sync - required if 'audio' in stomp_detection_methods
-    selected_audio_sync_time: Optional[float] = None
-    contra_selected_audio_sync_time: Optional[float] = None
+    audio_selected_sync_time: Optional[float] = None
+    contra_audio_selected_sync_time: Optional[float] = None
 
     # ===== Detection Method Details =====
     stomp_detection_methods: Optional[List[Literal["audio", "consensus", "biomechanics"]]] = None
@@ -504,7 +504,7 @@ class Synchronization(StudyMetadata):
 
         Rules:
         - bio_selected_sync_time and contra_bio_selected_sync_time required if 'biomechanics' in stomp_detection_methods
-        - selected_audio_sync_time and contra_selected_audio_sync_time required if 'audio' in stomp_detection_methods
+        - audio_selected_sync_time and contra_audio_selected_sync_time required if 'audio' in stomp_detection_methods
         - audio_sync_offset required if both audio_sync_time_left and audio_sync_time_right are present
         """
         # Check biomechanics detection method requirements
@@ -520,13 +520,13 @@ class Synchronization(StudyMetadata):
 
         # Check audio detection method requirements
         if self.stomp_detection_methods and 'audio' in self.stomp_detection_methods:
-            if self.selected_audio_sync_time is None:
+            if self.audio_selected_sync_time is None:
                 raise ValueError(
-                    "selected_audio_sync_time is required when 'audio' is in stomp_detection_methods"
+                    "audio_selected_sync_time is required when 'audio' is in stomp_detection_methods"
                 )
-            if self.contra_selected_audio_sync_time is None:
+            if self.contra_audio_selected_sync_time is None:
                 raise ValueError(
-                    "contra_selected_audio_sync_time is required when 'audio' is in stomp_detection_methods"
+                    "contra_audio_selected_sync_time is required when 'audio' is in stomp_detection_methods"
                 )
 
         # Check audio sync offset requirement

@@ -17,6 +17,7 @@ def test_create_sync_record_normalizes_speed():
         pass_number=1,
         speed="normal",
         audio_stomp_time=2.0,
+        knee_side="left",
         detection_results={"consensus_time": 2.0, "consensus_methods": ["rms", "onset"]},
     )
 

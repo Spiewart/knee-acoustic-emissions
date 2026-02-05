@@ -362,16 +362,16 @@ class SynchronizationRecord(Base):
     contra_bio_selected_sync_time = mapped_column(Float, nullable=True)  # Renamed from contra_selected_audio_sync_time
     audio_visual_sync_time = mapped_column(Float, nullable=True)
     audio_visual_sync_time_contralateral = mapped_column(Float, nullable=True)
-    
+
     # Audio sync times (optional - time between mic on and participant stopping for each leg)
     audio_sync_time_left = mapped_column(Float, nullable=True)
     audio_sync_time_right = mapped_column(Float, nullable=True)
     audio_sync_offset = mapped_column(Float, nullable=True)  # Required if both left and right are present
-    
+
     # Audio-based sync fields (new - different from bio-based)
-    selected_audio_sync_time = mapped_column(Float, nullable=True)  # Required if 'audio' in stomp_detection_methods
-    contra_selected_audio_sync_time = mapped_column(Float, nullable=True)  # Required if 'audio' in stomp_detection_methods
-    
+    audio_selected_sync_time = mapped_column(Float, nullable=True)  # Required if 'audio' in stomp_detection_methods
+    contra_audio_selected_sync_time = mapped_column(Float, nullable=True)  # Required if 'audio' in stomp_detection_methods
+
     # Detection method fields
     stomp_detection_methods = mapped_column(ARRAY(String), nullable=True)  # List of methods used: ['audio', 'consensus', 'biomechanics']
     selected_stomp_method = mapped_column(String(50), nullable=True)  # Single selected method (replaces audio_stomp_method)

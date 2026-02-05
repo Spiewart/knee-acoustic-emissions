@@ -487,8 +487,8 @@ class Repository:
             audio_sync_time_left=getattr(sync, 'audio_sync_time_left', None),
             audio_sync_time_right=getattr(sync, 'audio_sync_time_right', None),
             audio_sync_offset=getattr(sync, 'audio_sync_offset', None),
-            selected_audio_sync_time=getattr(sync, 'selected_audio_sync_time', None),
-            contra_selected_audio_sync_time=getattr(sync, 'contra_selected_audio_sync_time', None),
+            audio_selected_sync_time=getattr(sync, 'audio_selected_sync_time', None),
+            contra_audio_selected_sync_time=getattr(sync, 'contra_audio_selected_sync_time', None),
             audio_visual_sync_time=getattr(sync, 'audio_visual_sync_time', None),
             audio_visual_sync_time_contralateral=getattr(sync, 'audio_visual_sync_time_contralateral', None),
             sync_file_name=sync.sync_file_name,
@@ -547,10 +547,10 @@ class Repository:
             record.audio_sync_time_right = sync.audio_sync_time_right
         if hasattr(sync, 'audio_sync_offset'):
             record.audio_sync_offset = sync.audio_sync_offset
-        if hasattr(sync, 'selected_audio_sync_time'):
-            record.selected_audio_sync_time = sync.selected_audio_sync_time
-        if hasattr(sync, 'contra_selected_audio_sync_time'):
-            record.contra_selected_audio_sync_time = sync.contra_selected_audio_sync_time
+        if hasattr(sync, 'audio_selected_sync_time'):
+            record.audio_selected_sync_time = sync.audio_selected_sync_time
+        if hasattr(sync, 'contra_audio_selected_sync_time'):
+            record.contra_audio_selected_sync_time = sync.contra_audio_selected_sync_time
         if hasattr(sync, 'audio_visual_sync_time'):
             record.audio_visual_sync_time = sync.audio_visual_sync_time
         if hasattr(sync, 'audio_visual_sync_time_contralateral'):
