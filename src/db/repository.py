@@ -360,6 +360,7 @@ class Repository:
             existing.biomechanics_qc_fail = biomech.biomechanics_qc_fail
             existing.biomechanics_qc_notes = biomech.biomechanics_qc_notes
             existing.processing_date = biomech.processing_date
+            existing.processing_status = biomech.processing_status
             if audio_processing_id is not None:
                 existing.audio_processing_id = audio_processing_id
             existing.updated_at = datetime.now(timezone.utc)
@@ -384,6 +385,7 @@ class Repository:
                 biomechanics_qc_fail=biomech.biomechanics_qc_fail,
                 biomechanics_qc_notes=biomech.biomechanics_qc_notes,
                 processing_date=biomech.processing_date,
+                processing_status=biomech.processing_status,
                 audio_processing_id=audio_processing_id,
             )
             self.session.add(record)
