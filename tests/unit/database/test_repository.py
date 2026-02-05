@@ -380,7 +380,7 @@ class TestRepository:
         assert record.audio_processing_id == audio_record.id
         assert record.biomechanics_import_id == biomech_record.id
         assert record.sync_method == "consensus"
-        assert record.sync_offset == 5.0
+        assert record.bio_sync_offset == 5.0
 
     def test_query_audio_processing_records(self, repository):
         """Test querying audio processing records with filters."""
