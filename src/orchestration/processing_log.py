@@ -688,21 +688,33 @@ def create_sync_record_from_data(
         biomechanics_import_id=int(biomechanics_import_id),
         pass_number=pass_number,
         speed=speed_value,
-        audio_sync_time=_timedelta_to_seconds(audio_stomp_time),
+        # Biomechanics sync times (biomechanics is synced to audio: audio t=0 = sync t=0)
         bio_left_sync_time=_timedelta_to_seconds(bio_left_stomp_time),
         bio_right_sync_time=_timedelta_to_seconds(bio_right_stomp_time),
-        sync_offset=_timedelta_to_seconds(audio_stomp_time - bio_left_stomp_time) if audio_stomp_time is not None and bio_left_stomp_time is not None else None,
-        aligned_audio_sync_time=_timedelta_to_seconds(detection_results.get("consensus_time") or audio_stomp_time),
-        aligned_biomechanics_sync_time=_timedelta_to_seconds(detection_results.get("consensus_time") or audio_stomp_time),
-        sync_method="biomechanics" if detection_results.get("audio_stomp_method") else "consensus",
+        bio_sync_offset=_timedelta_to_seconds(audio_stomp_time - bio_left_stomp_time) if audio_stomp_time is not None and bio_left_stomp_time is not None else None,
+        aligned_sync_time=_timedelta_to_seconds(detection_results.get("consensus_time") or audio_stomp_time),
+        # Sync method details
+        sync_method=detection_results.get("selected_stomp_method") if detection_results.get("selected_stomp_method") else ("biomechanics" if detection_results.get("audio_stomp_method") else "consensus"),
         consensus_methods=", ".join(consensus_methods) if consensus_methods else None,
         consensus_time=_timedelta_to_seconds(detection_results.get("consensus_time")),
         rms_time=_timedelta_to_seconds(detection_results.get("rms_time")),
         onset_time=_timedelta_to_seconds(detection_results.get("onset_time")),
         freq_time=_timedelta_to_seconds(detection_results.get("freq_time")),
-        selected_audio_sync_time=_timedelta_to_seconds(detection_results.get("selected_time")),
-        contra_selected_audio_sync_time=_timedelta_to_seconds(detection_results.get("contra_selected_time")),
-        audio_stomp_method=detection_results.get("audio_stomp_method"),
+        method_agreement_span=method_agreement_span,
+        # Detection methods
+        stomp_detection_methods=detection_results.get("stomp_detection_methods"),
+        selected_stomp_method=detection_results.get("selected_stomp_method"),
+        # Biomechanics-based sync times
+        bio_selected_sync_time=_timedelta_to_seconds(detection_results.get("bio_selected_time") or detection_results.get("selected_time")),
+        contra_bio_selected_sync_time=_timedelta_to_seconds(detection_results.get("contra_bio_selected_time") or detection_results.get("contra_selected_time")),
+        # Audio sync times (optional - mic on to participant stopping)
+        audio_sync_time_left=_timedelta_to_seconds(detection_results.get("audio_sync_time_left")),
+        audio_sync_time_right=_timedelta_to_seconds(detection_results.get("audio_sync_time_right")),
+        audio_sync_offset=_timedelta_to_seconds(detection_results.get("audio_sync_offset")),
+        # Audio-based sync times (different from bio-based)
+        selected_audio_sync_time=_timedelta_to_seconds(detection_results.get("selected_audio_sync_time")),
+        contra_selected_audio_sync_time=_timedelta_to_seconds(detection_results.get("contra_selected_audio_sync_time")),
+        # File and processing
         sync_file_name=sync_file_name,
         sync_file_path=str(kwargs.get("sync_file_path")) if kwargs.get("sync_file_path") else None,
         sync_duration=_timedelta_to_seconds(synced_df["tt"].iloc[-1]) if "tt" in synced_df.columns and len(synced_df) > 0 else None,
@@ -711,7 +723,6 @@ def create_sync_record_from_data(
         total_cycles_extracted=0,
         clean_cycles=0,
         outlier_cycles=0,
-        method_agreement_span=method_agreement_span,
         **{k: v for k, v in kwargs.items() if k in Synchronization.__dataclass_fields__},
     )
 

@@ -469,23 +469,28 @@ class Repository:
             biomechanics_import_id=biomechanics_import_id,
             pass_number=sync.pass_number,
             speed=sync.speed,
-            audio_sync_time=sync.audio_sync_time,
             bio_left_sync_time=sync.bio_left_sync_time,
             bio_right_sync_time=sync.bio_right_sync_time,
-            sync_offset=sync.sync_offset,
-            aligned_audio_sync_time=sync.aligned_audio_sync_time,
-            aligned_biomechanics_sync_time=sync.aligned_biomechanics_sync_time,
+            bio_sync_offset=getattr(sync, 'bio_sync_offset', None),
+            aligned_sync_time=getattr(sync, 'aligned_sync_time', None),
             sync_method=sync.sync_method,
             consensus_methods=sync.consensus_methods,
             consensus_time=getattr(sync, "consensus_time", None),
             rms_time=sync.rms_time,
             onset_time=sync.onset_time,
             freq_time=sync.freq_time,
+            method_agreement_span=getattr(sync, "method_agreement_span", None),
+            stomp_detection_methods=getattr(sync, 'stomp_detection_methods', None),
+            selected_stomp_method=getattr(sync, 'selected_stomp_method', None),
+            bio_selected_sync_time=getattr(sync, 'bio_selected_sync_time', None),
+            contra_bio_selected_sync_time=getattr(sync, 'contra_bio_selected_sync_time', None),
+            audio_sync_time_left=getattr(sync, 'audio_sync_time_left', None),
+            audio_sync_time_right=getattr(sync, 'audio_sync_time_right', None),
+            audio_sync_offset=getattr(sync, 'audio_sync_offset', None),
             selected_audio_sync_time=getattr(sync, 'selected_audio_sync_time', None),
             contra_selected_audio_sync_time=getattr(sync, 'contra_selected_audio_sync_time', None),
             audio_visual_sync_time=getattr(sync, 'audio_visual_sync_time', None),
             audio_visual_sync_time_contralateral=getattr(sync, 'audio_visual_sync_time_contralateral', None),
-            audio_stomp_method=getattr(sync, 'audio_stomp_method', None),
             sync_file_name=sync.sync_file_name,
             sync_file_path=sync_file_path,
             sync_duration=sync.sync_duration,
@@ -496,7 +501,6 @@ class Repository:
             median_cycle_duration_s=getattr(sync, "median_cycle_duration_s", None),
             min_cycle_duration_s=getattr(sync, "min_cycle_duration_s", None),
             max_cycle_duration_s=getattr(sync, "max_cycle_duration_s", None),
-            method_agreement_span=getattr(sync, "method_agreement_span", None),
             sync_qc_fail=sync.sync_qc_fail,
             processing_date=sync.processing_date,
             processing_status=sync.processing_status,
@@ -518,18 +522,31 @@ class Repository:
         """
         record.pass_number = sync.pass_number
         record.speed = sync.speed
-        record.audio_sync_time = sync.audio_sync_time
         record.bio_left_sync_time = sync.bio_left_sync_time
         record.bio_right_sync_time = sync.bio_right_sync_time
-        record.sync_offset = sync.sync_offset
-        record.aligned_audio_sync_time = sync.aligned_audio_sync_time
-        record.aligned_biomechanics_sync_time = sync.aligned_biomechanics_sync_time
+        record.bio_sync_offset = getattr(sync, 'bio_sync_offset', None)
+        record.aligned_sync_time = getattr(sync, 'aligned_sync_time', None)
         record.sync_method = sync.sync_method
         record.consensus_methods = sync.consensus_methods
         record.consensus_time = getattr(sync, "consensus_time", None)
         record.rms_time = sync.rms_time
         record.onset_time = sync.onset_time
         record.freq_time = sync.freq_time
+        record.method_agreement_span = getattr(sync, "method_agreement_span", None)
+        if hasattr(sync, 'stomp_detection_methods'):
+            record.stomp_detection_methods = sync.stomp_detection_methods
+        if hasattr(sync, 'selected_stomp_method'):
+            record.selected_stomp_method = sync.selected_stomp_method
+        if hasattr(sync, 'bio_selected_sync_time'):
+            record.bio_selected_sync_time = sync.bio_selected_sync_time
+        if hasattr(sync, 'contra_bio_selected_sync_time'):
+            record.contra_bio_selected_sync_time = sync.contra_bio_selected_sync_time
+        if hasattr(sync, 'audio_sync_time_left'):
+            record.audio_sync_time_left = sync.audio_sync_time_left
+        if hasattr(sync, 'audio_sync_time_right'):
+            record.audio_sync_time_right = sync.audio_sync_time_right
+        if hasattr(sync, 'audio_sync_offset'):
+            record.audio_sync_offset = sync.audio_sync_offset
         if hasattr(sync, 'selected_audio_sync_time'):
             record.selected_audio_sync_time = sync.selected_audio_sync_time
         if hasattr(sync, 'contra_selected_audio_sync_time'):
@@ -538,8 +555,6 @@ class Repository:
             record.audio_visual_sync_time = sync.audio_visual_sync_time
         if hasattr(sync, 'audio_visual_sync_time_contralateral'):
             record.audio_visual_sync_time_contralateral = sync.audio_visual_sync_time_contralateral
-        if hasattr(sync, 'audio_stomp_method'):
-            record.audio_stomp_method = sync.audio_stomp_method
         record.sync_file_name = sync.sync_file_name
         record.sync_file_path = sync_file_path or record.sync_file_path
         record.sync_duration = sync.sync_duration

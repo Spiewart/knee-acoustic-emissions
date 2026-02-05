@@ -59,8 +59,7 @@ Prerequisites
 Database Setup
 --------------
 
-This project uses PostgreSQL for processing logs and report generation. Configure the database
-connection in `.env.local` and initialize the schema before running the pipeline.
+This project uses PostgreSQL for processing logs and report generation. **Schema management is now handled via Alembic migrations** for version control and reliable schema updates.
 
 **📖 For comprehensive database operations guide, see [docs/POSTGRES_OPERATION.md](docs/POSTGRES_OPERATION.md)**
 
@@ -74,16 +73,14 @@ Set `AE_DATABASE_URL` in `.env.local`:
 AE_DATABASE_URL=postgresql+psycopg://USERNAME@localhost:5432/acoustic_emissions
 ```
 
-**2) Initialize the schema**
+**2) Initialize the schema with Alembic**
 
-For new databases or complete reset:
 ```bash
-python init_fresh_db.py
-```
+# Activate virtual environment
+workon kae_processing
 
-Or to create missing tables only (preserves data):
-```bash
-python scripts/init_database.py --init
+# Apply all migrations to create/update schema
+alembic upgrade head
 ```
 
 **3) Test connection**
@@ -91,13 +88,25 @@ python scripts/init_database.py --init
 python scripts/init_database.py --test-connection
 ```
 
+### Updating Schema
+
+When pulling new code with schema changes:
+
+```bash
+# Check migration status
+alembic current
+
+# Apply new migrations
+alembic upgrade head
+```
+
 ### Additional Resources
 
-- **[POSTGRES_OPERATION.md](docs/POSTGRES_OPERATION.md)** - Complete database operations guide (setup, migrations, backup/restore, troubleshooting)
-- **[POSTGRES_SETUP.md](docs/POSTGRES_SETUP.md)** - PostgreSQL installation for macOS/Windows
+- **[docs/POSTGRES_OPERATION.md](docs/POSTGRES_OPERATION.md)** - Complete Alembic and database guide ⭐
+- **[SYNCHRONIZATION_SCHEMA_CHANGES.md](SYNCHRONIZATION_SCHEMA_CHANGES.md)** - Recent schema changes
+- **[docs/POSTGRES_SETUP.md](docs/POSTGRES_SETUP.md)** - PostgreSQL installation for macOS/Windows
 
-If you see errors like `column audio_processing.recording_timezone does not exist`, your database
-schema is out of date. See [POSTGRES_OPERATION.md](docs/POSTGRES_OPERATION.md#schema-migrations) for migration instructions.
+**⚠️ Important**: The `init_fresh_db.py` script is deprecated. Use `alembic upgrade head` instead for schema initialization and updates.
 
 Quick Start
 -----------

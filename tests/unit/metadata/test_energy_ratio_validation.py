@@ -1,4 +1,4 @@
-"""Tests for energy ratio validation in biomechanics-guided stomp detection.
+"""Tests for energy ratio validation in biomechanics stomp detection.
 
 This module tests the critical sanity check that ensures the recorded knee's
 stomp peak is sufficiently louder than the contralateral leg's peak. This validation
@@ -57,7 +57,7 @@ def create_synthetic_audio_with_two_stomps(
 
 
 class TestEnergyRatioValidation:
-    """Test suite for energy ratio validation in biomechanics-guided peak pair selection."""
+    """Test suite for energy ratio validation in biomechanics peak pair selection."""
 
     def test_energy_ratio_passes_when_recorded_knee_louder(self):
         """Test that peak pair is accepted when recorded knee is ≥20% louder.
@@ -85,9 +85,9 @@ class TestEnergyRatioValidation:
             return_details=True,
         )
 
-        # Should accept and use biomechanics-guided method
-        assert results['audio_stomp_method'] == 'biomechanics-guided'
-        assert results['selected_time'] is not None
+        # Should accept and use biomechanics method
+        assert results['selected_stomp_method'] == 'biomechanics'
+        assert results['bio_selected_time'] is not None
         assert results['energy_ratio'] is not None
         assert results['energy_ratio'] >= 1.2, \
             f"Energy ratio {results['energy_ratio']} should be >= 1.2"
@@ -120,10 +120,10 @@ class TestEnergyRatioValidation:
         )
 
         # Should reject energy ratio and fall back to consensus
-        assert results['audio_stomp_method'] == 'consensus', \
+        assert results['selected_stomp_method'] == 'consensus', \
             "Should fall back to consensus when energy ratio < 1.2"
         assert results['energy_ratio'] is None, \
-            "energy_ratio should not be set if biomechanics-guided method was not used"
+            "energy_ratio should not be set if biomechanics method was not used"
 
     def test_energy_ratio_at_minimum_threshold(self):
         """Test boundary condition: energy ratio exactly at minimum (1.2).
@@ -154,7 +154,7 @@ class TestEnergyRatioValidation:
         )
 
         # Should accept (>= 1.2 includes 1.2)
-        assert results['audio_stomp_method'] == 'biomechanics-guided'
+        assert results['selected_stomp_method'] == 'biomechanics'
         assert results['energy_ratio'] is not None
         assert abs(results['energy_ratio'] - expected_ratio) < 0.05, \
             f"Expected ratio ~{expected_ratio}, got {results['energy_ratio']}"
@@ -187,7 +187,7 @@ class TestEnergyRatioValidation:
         )
 
         # Should reject (< 1.2)
-        assert results['audio_stomp_method'] == 'consensus'
+        assert results['selected_stomp_method'] == 'consensus'
         assert results['energy_ratio'] is None
 
     def test_energy_ratio_with_left_knee_recorded(self):
@@ -215,8 +215,8 @@ class TestEnergyRatioValidation:
             return_details=True,
         )
 
-        # Should accept biomechanics-guided method
-        assert results['audio_stomp_method'] == 'biomechanics-guided'
+        # Should accept biomechanics method
+        assert results['selected_stomp_method'] == 'biomechanics'
         assert results['energy_ratio'] is not None
         assert results['energy_ratio'] >= 1.2
 
@@ -247,13 +247,13 @@ class TestEnergyRatioValidation:
         )
 
         # Verify all expected fields are populated
-        assert results['audio_stomp_method'] == 'biomechanics-guided'
+        assert results['selected_stomp_method'] == 'biomechanics'
         assert 'energy_ratio' in results
-        assert 'selected_time' in results
-        assert 'contra_selected_time' in results
+        assert 'bio_selected_time' in results
+        assert 'contra_bio_selected_time' in results
         assert results['energy_ratio'] is not None
-        assert results['selected_time'] is not None
-        assert results['contra_selected_time'] is not None
+        assert results['bio_selected_time'] is not None
+        assert results['contra_bio_selected_time'] is not None
         assert results['energy_ratio'] > 0  # Must be positive
 
     def test_energy_ratio_fallback_preserves_consensus_fields(self):
@@ -336,7 +336,7 @@ class TestEnergyRatioValidation:
 
         # May fall back to consensus due to peak finding limitations,
         # but if it does find a pair, energy_ratio should be finite and >= 1.2
-        if results['audio_stomp_method'] == 'biomechanics-guided':
+        if results['selected_stomp_method'] == 'biomechanics':
             assert np.isfinite(results['energy_ratio'])
             assert results['energy_ratio'] >= 1.2
 
@@ -389,9 +389,9 @@ class TestEnergyRatioValidation:
         )
 
         # Should find the correct pair despite noise peaks
-        if results['audio_stomp_method'] == 'biomechanics-guided':
+        if results['selected_stomp_method'] == 'biomechanics':
             assert results['energy_ratio'] >= 1.2
             # Selected time should be close to right stomp (1.0s)
-            assert abs(results['selected_time'] - 1.0) < 0.2
+            assert abs(results['bio_selected_time'] - 1.0) < 0.2
             # Contra time should be close to left stomp (2.5s)
-            assert abs(results['contra_selected_time'] - 2.5) < 0.2
+            assert abs(results['contra_bio_selected_time'] - 2.5) < 0.2

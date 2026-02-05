@@ -370,21 +370,40 @@ class ReportGenerator:
                 'Audio Processing ID': record.audio_processing_id,
                 'Biomechanics Import ID': record.biomechanics_import_id,
                 'Sync File': record.sync_file_name,
-                'Audio Sync Time': record.audio_sync_time,
+
+                # Synchronization times (biomechanics synced to audio, audio t=0 = sync t=0)
                 'Bio Left Sync Time': record.bio_left_sync_time,
                 'Bio Right Sync Time': record.bio_right_sync_time,
-                'Sync Offset': record.sync_offset,
-                'Aligned Audio Sync Time': record.aligned_audio_sync_time,
-                'Aligned Biomechanics Sync Time': record.aligned_biomechanics_sync_time,
+                'Bio Sync Offset': record.bio_sync_offset,
+                'Aligned Sync Time': record.aligned_sync_time,
+
+                # Sync method details
                 'Sync Method': record.sync_method,
                 'Consensus Methods': record.consensus_methods,
                 'Consensus Time': record.consensus_time,
+                'Method Agreement Span': record.method_agreement_span,  # Moved next to consensus
                 'RMS Time': record.rms_time,
                 'Onset Time': record.onset_time,
                 'Freq Time': record.freq_time,
-                'Audio Stomp Method': record.audio_stomp_method,
+
+                # Detection methods
+                'Stomp Detection Methods': self._format_list_for_excel(record.stomp_detection_methods),
+                'Selected Stomp Method': record.selected_stomp_method,
+
+                # Biomechanics-based sync times
+                'Bio Selected Sync Time': record.bio_selected_sync_time,
+                'Contra Bio Selected Sync Time': record.contra_bio_selected_sync_time,
+
+                # Audio sync times (optional - mic on to participant stopping)
+                'Audio Sync Time Left': record.audio_sync_time_left,
+                'Audio Sync Time Right': record.audio_sync_time_right,
+                'Audio Sync Offset': record.audio_sync_offset,
+
+                # Audio-based sync times (different from bio-based)
                 'Selected Audio Sync Time': record.selected_audio_sync_time,
                 'Contra Selected Audio Sync Time': record.contra_selected_audio_sync_time,
+
+                # Cycle statistics
                 'Sync Duration': record.sync_duration,
                 'Total Cycles Extracted': record.total_cycles_extracted,
                 'Clean Cycles': record.clean_cycles,
@@ -393,10 +412,8 @@ class ReportGenerator:
                 'Median Cycle Duration': record.median_cycle_duration_s,
                 'Min Cycle Duration': record.min_cycle_duration_s,
                 'Max Cycle Duration': record.max_cycle_duration_s,
-                'Method Agreement Span': record.method_agreement_span,
-                'Audio QC Version': record.audio_qc_version,
-                'Biomech QC Version': record.biomech_qc_version,
-                'Cycle QC Version': record.cycle_qc_version,
+
+                # QC and processing
                 'QC Fail': record.sync_qc_fail,
                 'QC Notes': record.sync_qc_notes,
                 'Processing Date': record.processing_date,

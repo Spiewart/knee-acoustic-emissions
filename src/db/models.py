@@ -343,12 +343,11 @@ class SynchronizationRecord(Base):
     speed = mapped_column(String(20), nullable=True)
 
     # Synchronization times
-    audio_sync_time = mapped_column(Float, nullable=True)
+    # Note: Biomechanics is synchronized to audio data (audio time 0 = sync time 0)
     bio_left_sync_time = mapped_column(Float, nullable=True)
     bio_right_sync_time = mapped_column(Float, nullable=True)
-    sync_offset = mapped_column(Float, nullable=True)
-    aligned_audio_sync_time = mapped_column(Float, nullable=True)
-    aligned_biomechanics_sync_time = mapped_column(Float, nullable=True)
+    bio_sync_offset = mapped_column(Float, nullable=True)  # Biomechanics sync offset between legs
+    aligned_sync_time = mapped_column(Float, nullable=True)  # Unified aligned sync time on merged dataframes
 
     # Sync method details
     sync_method = mapped_column(String(50), nullable=True)  # consensus, rms, onset, freq, biomechanics
@@ -359,11 +358,23 @@ class SynchronizationRecord(Base):
     freq_time = mapped_column(Float, nullable=True)
 
     # Biomechanics-guided sync fields
-    selected_audio_sync_time = mapped_column(Float, nullable=True)
-    contra_selected_audio_sync_time = mapped_column(Float, nullable=True)
+    bio_selected_sync_time = mapped_column(Float, nullable=True)  # Renamed from selected_audio_sync_time
+    contra_bio_selected_sync_time = mapped_column(Float, nullable=True)  # Renamed from contra_selected_audio_sync_time
     audio_visual_sync_time = mapped_column(Float, nullable=True)
     audio_visual_sync_time_contralateral = mapped_column(Float, nullable=True)
-    audio_stomp_method = mapped_column(String(50), nullable=True)
+    
+    # Audio sync times (optional - time between mic on and participant stopping for each leg)
+    audio_sync_time_left = mapped_column(Float, nullable=True)
+    audio_sync_time_right = mapped_column(Float, nullable=True)
+    audio_sync_offset = mapped_column(Float, nullable=True)  # Required if both left and right are present
+    
+    # Audio-based sync fields (new - different from bio-based)
+    selected_audio_sync_time = mapped_column(Float, nullable=True)  # Required if 'audio' in stomp_detection_methods
+    contra_selected_audio_sync_time = mapped_column(Float, nullable=True)  # Required if 'audio' in stomp_detection_methods
+    
+    # Detection method fields
+    stomp_detection_methods = mapped_column(ARRAY(String), nullable=True)  # List of methods used: ['audio', 'consensus', 'biomechanics']
+    selected_stomp_method = mapped_column(String(50), nullable=True)  # Single selected method (replaces audio_stomp_method)
 
     # Pickle file storage (sync results)
     sync_file_name = mapped_column(String(255), nullable=True)
@@ -385,10 +396,7 @@ class SynchronizationRecord(Base):
     max_cycle_duration_s = mapped_column(Float, nullable=True)
     method_agreement_span = mapped_column(Float, nullable=True)
 
-    # QC metadata
-    audio_qc_version = mapped_column(String(20), nullable=True)
-    biomech_qc_version = mapped_column(String(20), nullable=True)
-    cycle_qc_version = mapped_column(String(20), nullable=True)
+    # QC metadata (removed individual QC version columns - QC done at other stages)
     sync_qc_fail: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     sync_qc_notes = mapped_column(Text, nullable=True)
 
