@@ -441,13 +441,13 @@ class Synchronization(StudyMetadata):
     # ===== Audio-Visual Sync (Optional) =====
     audio_visual_sync_time: Optional[float] = None
     audio_visual_sync_time_contralateral: Optional[float] = None
-    
+
     # ===== Audio Sync Times (Optional) =====
     # Time between turning microphones on and participant stopping for each leg
     audio_sync_time_left: Optional[float] = None
     audio_sync_time_right: Optional[float] = None
     audio_sync_offset: Optional[float] = None  # Required if both left and right are present
-    
+
     # ===== Audio-Based Sync Fields (Optional) =====
     # Different from bio-based sync - required if 'audio' in stomp_detection_methods
     selected_audio_sync_time: Optional[float] = None
@@ -497,6 +497,47 @@ class Synchronization(StudyMetadata):
         if value < 0:
             raise ValueError("cycle counts must be non-negative")
         return value
+
+    @model_validator(mode="after")
+    def validate_conditional_requirements(self) -> "Synchronization":
+        """Validate conditional field requirements based on detection methods and sync times.
+
+        Rules:
+        - bio_selected_sync_time and contra_bio_selected_sync_time required if 'biomechanics' in stomp_detection_methods
+        - selected_audio_sync_time and contra_selected_audio_sync_time required if 'audio' in stomp_detection_methods
+        - audio_sync_offset required if both audio_sync_time_left and audio_sync_time_right are present
+        """
+        # Check biomechanics detection method requirements
+        if self.stomp_detection_methods and 'biomechanics' in self.stomp_detection_methods:
+            if self.bio_selected_sync_time is None:
+                raise ValueError(
+                    "bio_selected_sync_time is required when 'biomechanics' is in stomp_detection_methods"
+                )
+            if self.contra_bio_selected_sync_time is None:
+                raise ValueError(
+                    "contra_bio_selected_sync_time is required when 'biomechanics' is in stomp_detection_methods"
+                )
+
+        # Check audio detection method requirements
+        if self.stomp_detection_methods and 'audio' in self.stomp_detection_methods:
+            if self.selected_audio_sync_time is None:
+                raise ValueError(
+                    "selected_audio_sync_time is required when 'audio' is in stomp_detection_methods"
+                )
+            if self.contra_selected_audio_sync_time is None:
+                raise ValueError(
+                    "contra_selected_audio_sync_time is required when 'audio' is in stomp_detection_methods"
+                )
+
+        # Check audio sync offset requirement
+        has_left = self.audio_sync_time_left is not None
+        has_right = self.audio_sync_time_right is not None
+        if has_left and has_right and self.audio_sync_offset is None:
+            raise ValueError(
+                "audio_sync_offset is required when both audio_sync_time_left and audio_sync_time_right are present"
+            )
+
+        return self
 
 
 @dataclass(kw_only=True)

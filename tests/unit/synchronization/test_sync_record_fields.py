@@ -206,7 +206,7 @@ def test_synchronization_audio_sync_times():
         audio_sync_time_right=5.8,
         audio_sync_offset=0.6,
     )
-    
+
     assert record.audio_sync_time_left == 5.2
     assert record.audio_sync_time_right == 5.8
     assert record.audio_sync_offset == 0.6
@@ -220,7 +220,7 @@ def test_synchronization_audio_based_sync_fields():
         selected_audio_sync_time=3.5,
         contra_selected_audio_sync_time=4.2,
     )
-    
+
     assert record.selected_stomp_method == "audio"
     assert "audio" in record.stomp_detection_methods
     assert record.selected_audio_sync_time == 3.5
@@ -232,8 +232,13 @@ def test_synchronization_multiple_detection_methods():
     record = _create_test_record(
         stomp_detection_methods=["audio", "consensus", "biomechanics"],
         selected_stomp_method="consensus",
+        # Need to provide required fields for biomechanics and audio methods
+        bio_selected_sync_time=2.0,
+        contra_bio_selected_sync_time=3.0,
+        selected_audio_sync_time=2.1,
+        contra_selected_audio_sync_time=3.1,
     )
-    
+
     assert len(record.stomp_detection_methods) == 3
     assert "audio" in record.stomp_detection_methods
     assert "consensus" in record.stomp_detection_methods
@@ -275,3 +280,90 @@ def test_synchronization_agreement_span_with_partial_consensus():
     # Freq time is still recorded but not in consensus_methods
     assert record.freq_time == 5.0
     assert record.consensus_methods == "rms, onset"
+
+
+def test_validator_requires_bio_fields_when_biomechanics_method():
+    """Test that bio_selected fields are required when 'biomechanics' in stomp_detection_methods."""
+    with pytest.raises(ValueError, match="bio_selected_sync_time is required"):
+        _create_test_record(
+            stomp_detection_methods=["biomechanics"],
+            selected_stomp_method="biomechanics",
+            # Missing bio_selected_sync_time and contra_bio_selected_sync_time
+        )
+
+
+def test_validator_requires_audio_fields_when_audio_method():
+    """Test that audio fields are required when 'audio' in stomp_detection_methods."""
+    with pytest.raises(ValueError, match="selected_audio_sync_time is required"):
+        _create_test_record(
+            stomp_detection_methods=["audio"],
+            selected_stomp_method="audio",
+            # Missing selected_audio_sync_time and contra_selected_audio_sync_time
+        )
+
+
+def test_validator_requires_audio_offset_when_both_times_present():
+    """Test that audio_sync_offset is required when both left and right times are present."""
+    with pytest.raises(ValueError, match="audio_sync_offset is required"):
+        _create_test_record(
+            audio_sync_time_left=5.0,
+            audio_sync_time_right=5.5,
+            # Missing audio_sync_offset
+        )
+
+
+def test_validator_allows_biomechanics_with_all_required_fields():
+    """Test that validator passes when biomechanics method has all required fields."""
+    record = _create_test_record(
+        stomp_detection_methods=["biomechanics"],
+        selected_stomp_method="biomechanics",
+        bio_selected_sync_time=2.0,
+        contra_bio_selected_sync_time=3.0,
+    )
+    assert record.stomp_detection_methods == ["biomechanics"]
+    assert record.bio_selected_sync_time == 2.0
+    assert record.contra_bio_selected_sync_time == 3.0
+
+
+def test_validator_allows_audio_with_all_required_fields():
+    """Test that validator passes when audio method has all required fields."""
+    record = _create_test_record(
+        stomp_detection_methods=["audio"],
+        selected_stomp_method="audio",
+        selected_audio_sync_time=2.0,
+        contra_selected_audio_sync_time=3.0,
+    )
+    assert record.stomp_detection_methods == ["audio"]
+    assert record.selected_audio_sync_time == 2.0
+    assert record.contra_selected_audio_sync_time == 3.0
+
+
+def test_validator_allows_audio_sync_times_with_offset():
+    """Test that validator passes when audio sync times have offset."""
+    record = _create_test_record(
+        audio_sync_time_left=5.0,
+        audio_sync_time_right=5.5,
+        audio_sync_offset=0.5,
+    )
+    assert record.audio_sync_time_left == 5.0
+    assert record.audio_sync_time_right == 5.5
+    assert record.audio_sync_offset == 0.5
+
+
+def test_validator_allows_only_one_audio_sync_time_without_offset():
+    """Test that offset is not required when only one audio sync time is present."""
+    record_left = _create_test_record(
+        audio_sync_time_left=5.0,
+        # No right time, no offset required
+    )
+    assert record_left.audio_sync_time_left == 5.0
+    assert record_left.audio_sync_time_right is None
+    assert record_left.audio_sync_offset is None
+    
+    record_right = _create_test_record(
+        audio_sync_time_right=5.5,
+        # No left time, no offset required
+    )
+    assert record_right.audio_sync_time_left is None
+    assert record_right.audio_sync_time_right == 5.5
+    assert record_right.audio_sync_offset is None
