@@ -434,12 +434,22 @@ The script can be run on a single file, a `Synced` directory, or an entire parti
 Testing
 -------
 
+Tests are organized by functional domain (audio, biomechanics, synchronization, etc.) with nested subdirectories for related concerns. This structure improves discoverability and makes it clear where new tests belong.
+**See [docs/TEST_ORGANIZATION.md](docs/TEST_ORGANIZATION.md) for complete structure and [docs/TESTING_GUIDELINES.md](docs/TESTING_GUIDELINES.md) for fixture usage patterns.**
+
 ### Running Tests
 
 Run the full suite (from repo root with venv active):
 
 ```bash
 pytest tests/ -v
+```
+
+Run by category:
+```bash
+pytest tests/unit/ -v              # Unit tests only
+pytest tests/integration/ -v       # Integration tests only
+pytest tests/unit/audio/ -v        # Audio-specific tests
 ```
 
 All 610+ tests should pass. If you've made changes, ensure tests pass before committing:

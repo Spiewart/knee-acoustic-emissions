@@ -392,39 +392,71 @@ Pydantic models for data validation:
 
 ### Testing
 
-Tests located in `tests/` directory:
-- `test_process_biomechanics.py` - Biomechanics processing tests
-- `test_parse_acoustic_file_legend.py` - Audio metadata parsing tests
-- `test_process_participant_directory.py` - Directory processing tests
-- `test_sync_audio_with_biomechanics.py` - Synchronization tests
-- `test_cli.py` - CLI entry point tests
-- `test_smoke.py` - End-to-end smoke tests
-- `conftest.py` - Shared pytest fixtures
+**⚠️ CRITICAL: Test Organization and Placement**
 
-**Running Tests**: Use the Pylance MCP server to run tests, as it's much faster and more reliable than running pytest in the terminal:
+Tests are organized by functional domain in `tests/` with nested subdirectories. **See [docs/TEST_ORGANIZATION.md](../docs/TEST_ORGANIZATION.md) for complete structure and placement rules.**
 
-```python
-# Using Pylance server to run tests
-mcp_pylance_mcp_s_pylanceRunCodeSnippet(
-    workspaceRoot="file:///path/to/workspace",
-    workingDirectory="/path/to/workspace",
-    codeSnippet="""
-import subprocess
-import sys
+#### Quick Placement Guide
 
-result = subprocess.run(
-    [sys.executable, "-m", "pytest", "tests/", "-v"],
-    capture_output=True,
-    text=True,
-    cwd="/path/to/workspace"
-)
-print(result.stdout)
-print(f"Exit code: {result.returncode}")
-"""
-)
+When creating new tests, place them in the appropriate category:
+
+**Unit Tests** (`tests/unit/`):
+- **Audio**: `unit/audio/` - readers, parsers, exporters, analysis
+  - **Audio QC**: `unit/audio/test_qc/` - raw QC, maneuver QC, per-mic QC
+- **Biomechanics**: `unit/biomechanics/` - importers, metadata parsing, cycle extraction
+- **Synchronization**: `unit/synchronization/` - stomp detection, sync methods, sync QC
+- **Metadata**: `unit/metadata/` - Pydantic models, validators, DataFrame validation
+- **Database**: `unit/database/` - SQLAlchemy models, repository, persistence
+- **Processing Logs**: `unit/processing_log/` - Excel I/O, record creation, sheet integrity
+- **QC Versioning**: `unit/qc_versioning/` - version models, tracking, reports
+- **Visualization**: `unit/visualization/` - plots, waveforms, spectrograms
+- **CLI**: `unit/cli/` - command-line interface tests
+
+**Integration Tests** (`tests/integration/`):
+- Multi-module workflows: bin→sync→cycles pipelines
+- Participant directory processing
+- Database workflows with multiple stages
+- Metadata flow through full pipeline
+
+**Regression Tests** (`tests/regression/`):
+- Session-specific bugs (e.g., session 6 stomp detection)
+- Phase-specific regressions (e.g., phase 2 implementation)
+- Whitespace handling bugs
+
+**Edge Cases** (`tests/edge_cases/`):
+- Missing/corrupt files
+- Empty recordings
+- Boundary conditions
+- Invalid inputs
+
+**Performance** (`tests/performance/`):
+- Bin processing optimization
+- Sync algorithm performance
+- Large dataset scalability
+
+#### Running Tests
+
+```bash
+# Run all tests
+pytest tests/ -v
+
+# Run by category
+pytest tests/unit/ -v
+pytest tests/integration/ -v
+
+# Run specific module
+pytest tests/unit/audio/ -v
+pytest tests/unit/synchronization/ -v
+
+# Exclude slow tests
+pytest tests/ -v -m "not slow"
 ```
 
-Avoid running `pytest` directly in the terminal as it often hangs.
+**Key Files**:
+- `tests/conftest.py` - Shared fixtures (MANDATORY factories)
+- `tests/test_smoke.py` - End-to-end smoke tests (run first)
+
+**IMPORTANT**: Always use fixture factories from `conftest.py` for test data. See [TESTING_GUIDELINES.md](../docs/TESTING_GUIDELINES.md) for mandatory patterns.
 
 ---
 
