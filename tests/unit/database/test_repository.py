@@ -358,11 +358,9 @@ class TestRepository:
         sync = create_test_synchronization(
             pass_number=1,
             speed="medium",
-            audio_sync_time=5.0,
+            aligned_sync_time=10.0,
             bio_left_sync_time=10.0,
-            sync_offset=5.0,
-            aligned_audio_sync_time=10.0,
-            aligned_biomechanics_sync_time=10.0,
+            bio_sync_offset=5.0,
             sync_method="consensus",
             consensus_methods="rms,onset,freq",
             rms_time=5.0,

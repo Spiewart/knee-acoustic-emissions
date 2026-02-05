@@ -40,9 +40,9 @@ def test_stomp_offset_calculation(db_session, repository, synchronization_factor
     db_session.commit()
 
     # Verify stored values
-    assert sync_record.audio_sync_time == pytest.approx(5.0)
+    assert sync_record.aligned_sync_time == pytest.approx(5.0)
     assert sync_record.bio_left_sync_time == pytest.approx(10.0)
-    assert sync_record.sync_offset == pytest.approx(5.0)
+    assert sync_record.bio_sync_offset == pytest.approx(5.0)
     assert sync_record.bio_right_sync_time == pytest.approx(12.0)
 
 
@@ -137,8 +137,8 @@ def test_stomp_offset_with_different_methods(db_session, repository, synchroniza
 
     db_session.commit()
 
-    assert record_consensus.sync_method == "consensus"
-    assert record_consensus.sync_offset == pytest.approx(5.0)
+    assert record_consensus.selected_stomp_method == "consensus"
+    assert record_consensus.bio_sync_offset == pytest.approx(5.0)
     assert record_consensus.rms_time == pytest.approx(2.0)
 
     # Create second prerequisite set for biomechanics method
@@ -168,4 +168,4 @@ def test_stomp_offset_with_different_methods(db_session, repository, synchroniza
     db_session.commit()
 
     assert record_biomech.sync_method == "biomechanics"
-    assert record_biomech.sync_offset == pytest.approx(5.0)
+    assert record_biomech.bio_sync_offset == pytest.approx(5.0)
