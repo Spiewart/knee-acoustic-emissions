@@ -73,6 +73,11 @@ Set `AE_DATABASE_URL` in `.env.local`:
 AE_DATABASE_URL=postgresql+psycopg://USERNAME@localhost:5432/acoustic_emissions
 ```
 
+**Note for git worktrees:** `.env.local` isn't tracked by git. In worktrees, create a symlink:
+```bash
+ln -s /path/to/main/repo/.env.local .env.local
+```
+
 **2) Initialize the schema with Alembic**
 
 ```bash

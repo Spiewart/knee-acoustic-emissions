@@ -132,6 +132,27 @@ psql $AE_DATABASE_URL -c "\dt"
 - Tracks migration history in `alembic_version` table
 - Enables proper version control for future schema changes
 
+### Working with Git Worktrees
+
+If you're using git worktrees, `.env.local` won't be present in the worktree directory. You need to set it up:
+
+**Option 1: Symlink (Recommended)**
+```bash
+# From inside your worktree directory
+ln -s /path/to/main/repo/.env.local .env.local
+
+# Example:
+# ln -s ~/acoustic_emissions_processing/.env.local .env.local
+```
+
+**Option 2: Copy**
+```bash
+# Copy from main repo to worktree
+cp /path/to/main/repo/.env.local .env.local
+```
+
+**Why?** The symlink keeps configuration synchronized with the main repository. Changes to `.env.local` in the main repo automatically apply to all worktrees.
+
 ### 4b. Legacy Initialization (Deprecated)
 
 **⚠️ These methods are deprecated - use Alembic instead**
