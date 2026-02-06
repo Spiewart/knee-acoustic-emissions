@@ -559,6 +559,7 @@ class ManeuverProcessor:
                                 )
                                 if sync_record.sync_file_name:
                                     sync_records_by_name[sync_record.sync_file_name] = db_sync
+                                    sync_records_by_name[Path(sync_record.sync_file_name).stem] = db_sync
 
                             # Save movement cycle records
                             self._persist_cycle_records(
@@ -625,6 +626,28 @@ class ManeuverProcessor:
 
             sync_stem = cycle_data.sync_file_stem or cycle_data.synced_file_path.stem
             sync_db_record = sync_records_by_name.get(sync_stem)
+            if sync_db_record is None:
+                sync_db_record = sync_records_by_name.get(f"{sync_stem}.pkl")
+            if sync_db_record is None:
+                from src.db.models import SynchronizationRecord
+
+                base_sync_query = repo.session.query(SynchronizationRecord).filter(
+                    SynchronizationRecord.audio_processing_id == audio_db_record.id
+                )
+                if biomech_db_record is not None:
+                    base_sync_query = base_sync_query.filter(
+                        SynchronizationRecord.biomechanics_import_id == biomech_db_record.id
+                    )
+                sync_query = base_sync_query
+                if sync_stem:
+                    sync_query = sync_query.filter(
+                        SynchronizationRecord.sync_file_name.in_(
+                            [sync_stem, f"{sync_stem}.pkl"]
+                        )
+                    )
+                sync_db_record = sync_query.first()
+                if sync_db_record is None and self.maneuver_key != "walk":
+                    sync_db_record = base_sync_query.order_by(SynchronizationRecord.id.desc()).first()
 
             for pkl_path in sorted(cycle_data.output_dir.rglob("*.pkl")):
                 if not pkl_path.name.startswith(sync_stem):
@@ -678,8 +701,12 @@ class ManeuverProcessor:
                         speed = getattr(sync_db_record, "speed", None)
 
                 synchronization_id = None
-                if sync_db_record is not None and pass_number is not None and speed is not None:
-                    synchronization_id = getattr(sync_db_record, "id", None)
+                if sync_db_record is not None:
+                    if self.maneuver_key == "walk":
+                        if pass_number is not None and speed is not None:
+                            synchronization_id = getattr(sync_db_record, "id", None)
+                    else:
+                        synchronization_id = getattr(sync_db_record, "id", None)
 
                 cycle = MovementCycle(
                     study=self.log.audio_record.study if self.log and self.log.audio_record else "AOA",

@@ -132,15 +132,15 @@ class TestAudioSheetDataPopulation:
         # Read Audio sheet
         audio_sheet = pd.read_excel(output_path, sheet_name="Audio")
 
-        # Should have QC Artifact Segments column
-        assert "QC Artifact Segments" in audio_sheet.columns, (
-            "Audio sheet missing 'QC Artifact Segments' column"
+        # Should have QC Continuous Artifact Segments column
+        assert "QC Continuous Artifact Segments" in audio_sheet.columns, (
+            "Audio sheet missing 'QC Continuous Artifact Segments' column"
         )
 
         # Should have segment data
-        segments = audio_sheet["QC Artifact Segments"].iloc[0]
+        segments = audio_sheet["QC Continuous Artifact Segments"].iloc[0]
         assert segments is not None and len(segments) > 0, (
-            "QC Artifact Segments should be populated"
+            "QC Continuous Artifact Segments should be populated"
         )
 
     def test_audio_sheet_has_qc_signal_dropout_segments(
@@ -226,10 +226,10 @@ class TestAudioSheetDataPopulation:
 
         # Should have per-channel segment columns
         expected_columns = [
-            "QC Artifact Segments Ch1",
-            "QC Artifact Segments Ch2",
-            "QC Artifact Segments Ch3",
-            "QC Artifact Segments Ch4",
+            "QC Continuous Artifact Segments Ch1",
+            "QC Continuous Artifact Segments Ch2",
+            "QC Continuous Artifact Segments Ch3",
+            "QC Continuous Artifact Segments Ch4",
             "QC Signal Dropout Segments Ch1",
             "QC Signal Dropout Segments Ch2",
             "QC Signal Dropout Segments Ch3",

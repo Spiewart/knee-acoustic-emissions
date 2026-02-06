@@ -158,7 +158,7 @@ class TestFullPipelineMovementCyclesSheetPopulation:
             "Is Outlier",
             "Start Time",
             "End Time",
-            "Duration",
+            "Duration (s)",
         ]
 
         for col in expected_columns:

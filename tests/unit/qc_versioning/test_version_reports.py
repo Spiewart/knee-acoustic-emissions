@@ -25,16 +25,16 @@ def _create_mock_record(
     qc_signal_dropout_ch2: bool = False,
     qc_signal_dropout_ch3: bool = False,
     qc_signal_dropout_ch4: bool = False,
-    qc_artifact: bool = False,
-    qc_artifact_type: List[str] | None = None,
-    qc_artifact_ch1: bool = False,
-    qc_artifact_type_ch1: List[str] | None = None,
-    qc_artifact_ch2: bool = False,
-    qc_artifact_type_ch2: List[str] | None = None,
-    qc_artifact_ch3: bool = False,
-    qc_artifact_type_ch3: List[str] | None = None,
-    qc_artifact_ch4: bool = False,
-    qc_artifact_type_ch4: List[str] | None = None,
+    qc_continuous_artifact: bool = False,
+    qc_continuous_artifact_type: List[str] | None = None,
+    qc_continuous_artifact_ch1: bool = False,
+    qc_continuous_artifact_type_ch1: List[str] | None = None,
+    qc_continuous_artifact_ch2: bool = False,
+    qc_continuous_artifact_type_ch2: List[str] | None = None,
+    qc_continuous_artifact_ch3: bool = False,
+    qc_continuous_artifact_type_ch3: List[str] | None = None,
+    qc_continuous_artifact_ch4: bool = False,
+    qc_continuous_artifact_type_ch4: List[str] | None = None,
 ) -> MagicMock:
     """Create a mock audio record with specified QC parameters."""
     record = MagicMock()
@@ -43,16 +43,16 @@ def _create_mock_record(
     record.qc_signal_dropout_ch2 = qc_signal_dropout_ch2
     record.qc_signal_dropout_ch3 = qc_signal_dropout_ch3
     record.qc_signal_dropout_ch4 = qc_signal_dropout_ch4
-    record.qc_continuous_artifact = qc_artifact
-    record.qc_continuous_artifact_type = qc_artifact_type
-    record.qc_continuous_artifact_ch1 = qc_artifact_ch1
-    record.qc_continuous_artifact_type_ch1 = qc_artifact_type_ch1
-    record.qc_continuous_artifact_ch2 = qc_artifact_ch2
-    record.qc_continuous_artifact_type_ch2 = qc_artifact_type_ch2
-    record.qc_continuous_artifact_ch3 = qc_artifact_ch3
-    record.qc_continuous_artifact_type_ch3 = qc_artifact_type_ch3
-    record.qc_continuous_artifact_ch4 = qc_artifact_ch4
-    record.qc_continuous_artifact_type_ch4 = qc_artifact_type_ch4
+    record.qc_continuous_artifact = qc_continuous_artifact
+    record.qc_continuous_artifact_type = qc_continuous_artifact_type
+    record.qc_continuous_artifact_ch1 = qc_continuous_artifact_ch1
+    record.qc_continuous_artifact_type_ch1 = qc_continuous_artifact_type_ch1
+    record.qc_continuous_artifact_ch2 = qc_continuous_artifact_ch2
+    record.qc_continuous_artifact_type_ch2 = qc_continuous_artifact_type_ch2
+    record.qc_continuous_artifact_ch3 = qc_continuous_artifact_ch3
+    record.qc_continuous_artifact_type_ch3 = qc_continuous_artifact_type_ch3
+    record.qc_continuous_artifact_ch4 = qc_continuous_artifact_ch4
+    record.qc_continuous_artifact_type_ch4 = qc_continuous_artifact_type_ch4
 
     return record
 
@@ -74,7 +74,7 @@ class TestQCFailColumnComputation:
         record = _create_mock_record(
             qc_signal_dropout=False,
             qc_continuous_artifact=True,
-            qc_artifact_type=["Intermittent"],
+            qc_continuous_artifact_type=["Intermittent"],
         )
 
         qc_fail = record.qc_signal_dropout or record.qc_continuous_artifact
@@ -86,7 +86,7 @@ class TestQCFailColumnComputation:
         record = _create_mock_record(
             qc_signal_dropout=True,
             qc_continuous_artifact=True,
-            qc_artifact_type=["Continuous"],
+            qc_continuous_artifact_type=["Continuous"],
         )
 
         qc_fail = record.qc_signal_dropout or record.qc_continuous_artifact
@@ -122,7 +122,7 @@ class TestArtifactTypePopulation:
         """Test that Artifact Type is populated when artifacts are detected."""
         record = _create_mock_record(
             qc_continuous_artifact=True,
-            qc_artifact_type=["Intermittent"],
+            qc_continuous_artifact_type=["Intermittent"],
         )
 
         artifact_types = record.qc_continuous_artifact_type
@@ -136,7 +136,7 @@ class TestArtifactTypePopulation:
         for artifact_type in ["Intermittent", "Continuous"]:
             record = _create_mock_record(
                 qc_continuous_artifact=True,
-                qc_artifact_type=[artifact_type],
+                qc_continuous_artifact_type=[artifact_type],
             )
 
             artifact_types = record.qc_continuous_artifact_type
@@ -148,14 +148,14 @@ class TestArtifactTypePopulation:
         """Test that per-mic artifact types correspond to per-mic artifact detection."""
         record = _create_mock_record(
             qc_continuous_artifact=True,
-            qc_artifact_ch1=True,
-            qc_artifact_type_ch1=["Continuous"],
-            qc_artifact_ch2=False,
-            qc_artifact_type_ch2=None,
-            qc_artifact_ch3=True,
-            qc_artifact_type_ch3=["Intermittent"],
-            qc_artifact_ch4=False,
-            qc_artifact_type_ch4=None,
+            qc_continuous_artifact_ch1=True,
+            qc_continuous_artifact_type_ch1=["Continuous"],
+            qc_continuous_artifact_ch2=False,
+            qc_continuous_artifact_type_ch2=None,
+            qc_continuous_artifact_ch3=True,
+            qc_continuous_artifact_type_ch3=["Intermittent"],
+            qc_continuous_artifact_ch4=False,
+            qc_continuous_artifact_type_ch4=None,
         )
 
         # Ch1: has artifact, should have type
@@ -179,7 +179,7 @@ class TestArtifactTypePopulation:
         # Create record with artifact detected but no type specified
         record = _create_mock_record(
             qc_continuous_artifact=True,
-            qc_artifact_type=None,  # Explicitly None
+            qc_continuous_artifact_type=None,  # Explicitly None
         )
 
         # Should remain None, not defaulted to any value
@@ -191,15 +191,15 @@ class TestArtifactTypePopulation:
         record = _create_mock_record(
             qc_signal_dropout=False,
             qc_continuous_artifact=True,  # Overall artifact detected
-            qc_artifact_type=["Intermittent", "Continuous"],
-            qc_artifact_ch1=True,
-            qc_artifact_type_ch1=["Intermittent"],
-            qc_artifact_ch2=False,
-            qc_artifact_type_ch2=None,
-            qc_artifact_ch3=True,
-            qc_artifact_type_ch3=["Continuous"],
-            qc_artifact_ch4=False,
-            qc_artifact_type_ch4=None,
+            qc_continuous_artifact_type=["Intermittent", "Continuous"],
+            qc_continuous_artifact_ch1=True,
+            qc_continuous_artifact_type_ch1=["Intermittent"],
+            qc_continuous_artifact_ch2=False,
+            qc_continuous_artifact_type_ch2=None,
+            qc_continuous_artifact_ch3=True,
+            qc_continuous_artifact_type_ch3=["Continuous"],
+            qc_continuous_artifact_ch4=False,
+            qc_continuous_artifact_type_ch4=None,
         )
 
         # Overall QC Fail should be True
@@ -208,8 +208,8 @@ class TestArtifactTypePopulation:
 
         # Check per-mic consistency
         for ch_num in range(1, 5):
-            ch_artifact = getattr(record, f"qc_artifact_ch{ch_num}")
-            ch_type = getattr(record, f"qc_artifact_type_ch{ch_num}")
+            ch_artifact = getattr(record, f"qc_continuous_artifact_ch{ch_num}")
+            ch_type = getattr(record, f"qc_continuous_artifact_type_ch{ch_num}")
 
             if ch_artifact:
                 assert ch_type is not None and len(ch_type) > 0, \
@@ -222,23 +222,23 @@ class TestArtifactTypePopulation:
         """Test edge case where all channels fail QC."""
         record = _create_mock_record(
             qc_continuous_artifact=True,
-            qc_artifact_type=["Continuous", "Continuous", "Continuous", "Continuous"],
-            qc_artifact_ch1=True,
-            qc_artifact_type_ch1=["Continuous"],
-            qc_artifact_ch2=True,
-            qc_artifact_type_ch2=["Continuous"],
-            qc_artifact_ch3=True,
-            qc_artifact_type_ch3=["Continuous"],
-            qc_artifact_ch4=True,
-            qc_artifact_type_ch4=["Continuous"],
+            qc_continuous_artifact_type=["Continuous", "Continuous", "Continuous", "Continuous"],
+            qc_continuous_artifact_ch1=True,
+            qc_continuous_artifact_type_ch1=["Continuous"],
+            qc_continuous_artifact_ch2=True,
+            qc_continuous_artifact_type_ch2=["Continuous"],
+            qc_continuous_artifact_ch3=True,
+            qc_continuous_artifact_type_ch3=["Continuous"],
+            qc_continuous_artifact_ch4=True,
+            qc_continuous_artifact_type_ch4=["Continuous"],
         )
 
         qc_fail = record.qc_signal_dropout or record.qc_continuous_artifact
         assert qc_fail is True
 
         for ch_num in range(1, 5):
-            ch_artifact = getattr(record, f"qc_artifact_ch{ch_num}")
-            ch_type = getattr(record, f"qc_artifact_type_ch{ch_num}")
+            ch_artifact = getattr(record, f"qc_continuous_artifact_ch{ch_num}")
+            ch_type = getattr(record, f"qc_continuous_artifact_type_ch{ch_num}")
             assert ch_artifact is True
             assert ch_type is not None
 
@@ -251,7 +251,7 @@ class TestArtifactTypePopulation:
             qc_signal_dropout_ch3=False,
             qc_signal_dropout_ch4=False,
             qc_continuous_artifact=False,
-            qc_artifact_type=None,
+            qc_continuous_artifact_type=None,
         )
 
         qc_fail = record.qc_signal_dropout or record.qc_continuous_artifact
@@ -272,7 +272,7 @@ class TestArtifactTypeEnforcement:
         # Duration threshold is 1.0 second: < 1.0s = Intermittent
         record = _create_mock_record(
             qc_continuous_artifact=True,
-            qc_artifact_type=["Intermittent"],
+            qc_continuous_artifact_type=["Intermittent"],
         )
 
         # When artifact detected, type should exist and be valid
@@ -285,7 +285,7 @@ class TestArtifactTypeEnforcement:
         # Duration threshold is 1.0 second: >= 1.0s = Continuous
         record = _create_mock_record(
             qc_continuous_artifact=True,
-            qc_artifact_type=["Continuous"],
+            qc_continuous_artifact_type=["Continuous"],
         )
 
         # When artifact detected, type should exist and be valid
@@ -297,7 +297,7 @@ class TestArtifactTypeEnforcement:
         """Test that multiple artifacts can have different types."""
         record = _create_mock_record(
             qc_continuous_artifact=True,
-            qc_artifact_type=["Intermittent", "Continuous"],
+            qc_continuous_artifact_type=["Intermittent", "Continuous"],
         )
 
         assert record.qc_continuous_artifact is True
@@ -305,16 +305,16 @@ class TestArtifactTypeEnforcement:
         assert all(t in ["Intermittent", "Continuous"] for t in record.qc_continuous_artifact_type)
 
     def test_artifact_type_required_per_channel(self):
-        """Test that each channel with qc_artifact_ch=True must have a type."""
+        """Test that each channel with qc_continuous_artifact_ch=True must have a type."""
         record = _create_mock_record(
-            qc_artifact_ch1=True,
-            qc_artifact_type_ch1=["Intermittent"],
-            qc_artifact_ch2=True,
-            qc_artifact_type_ch2=["Continuous"],
-            qc_artifact_ch3=False,
-            qc_artifact_type_ch3=None,
-            qc_artifact_ch4=False,
-            qc_artifact_type_ch4=None,
+            qc_continuous_artifact_ch1=True,
+            qc_continuous_artifact_type_ch1=["Intermittent"],
+            qc_continuous_artifact_ch2=True,
+            qc_continuous_artifact_type_ch2=["Continuous"],
+            qc_continuous_artifact_ch3=False,
+            qc_continuous_artifact_type_ch3=None,
+            qc_continuous_artifact_ch4=False,
+            qc_continuous_artifact_type_ch4=None,
         )
 
         # Ch1 and Ch2 should have types since they have artifacts

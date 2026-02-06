@@ -547,8 +547,8 @@ class MovementCycle(StudyMetadata):
     Represents a single extracted movement cycle.
     Uses foreign keys to reference AudioProcessing, BiomechanicsImport, and Synchronization.
 
-    If synchronization_id is set, pass_number and speed must also be set and should
-    match the associated Synchronization record (validated by repository layer).
+    For walk maneuvers, pass_number and speed should be set and match the
+    associated Synchronization record (validated by repository layer).
     """
 
     # ===== Foreign Key References =====
@@ -556,7 +556,7 @@ class MovementCycle(StudyMetadata):
     biomechanics_import_id: Optional[int] = None  # ID of related BiomechanicsImport (optional)
     synchronization_id: Optional[int] = None  # ID of related Synchronization (optional)
 
-    # ===== Walk-Specific Metadata (required if synchronization_id is set) =====
+    # ===== Walk-Specific Metadata =====
     pass_number: Optional[int] = None
     speed: Optional[Literal["slow", "fast", "medium", "comfortable"]] = None
 
@@ -638,14 +638,11 @@ class MovementCycle(StudyMetadata):
 
     @model_validator(mode="after")
     def validate_walk_metadata_with_sync(self):
-        """Validate walk metadata is present when synchronization_id is set.
+        """Validate walk metadata consistency when provided.
 
-        If this cycle is part of a Synchronization, it must have pass_number and speed set.
+        If pass_number or speed is set, require both to avoid partial walk metadata.
         The repository layer will validate these match the actual Synchronization record.
         """
-        if self.synchronization_id is not None:
-            if self.pass_number is None or self.speed is None:
-                raise ValueError(
-                    "pass_number and speed are required when synchronization_id is set"
-                )
+        if (self.pass_number is None) != (self.speed is None):
+            raise ValueError("pass_number and speed must both be set when one is provided")
         return self
