@@ -60,7 +60,7 @@ class TestMovementCycleFields:
         fields = MovementCycle.__dataclass_fields__
         assert "qc_fail_segments" not in fields
         assert "qc_signal_dropout" not in fields
-        assert "qc_artifact" not in fields
+        assert "qc_continuous_artifact" not in fields
 
 
 class TestHelperFunctions:
@@ -118,10 +118,11 @@ class TestInstantiation:
             start_time_s=0.0,
             end_time_s=1.0,
             duration_s=1.0,
-            audio_start_time=now,
-            audio_end_time=now,
+            start_time=now,
+            end_time=now,
             biomechanics_qc_fail=False,
             sync_qc_fail=False,
+            audio_qc_fail=False,
         )
 
         assert cycle.cycle_file == "cycle.pkl"
@@ -129,28 +130,29 @@ class TestInstantiation:
         assert cycle.duration_s == 1.0
         assert cycle.is_outlier is False
 
-    def test_movement_cycle_requires_bio_timestamps_when_biomech_id_set(self):
+    def test_movement_cycle_with_biomech_id_no_longer_requires_bio_timestamps(self):
+        """Bio timestamps are no longer separate fields - start_time/end_time is used for both."""
         now = datetime(2024, 1, 1, 10, 0, 0)
-        with pytest.raises(ValidationError):
-            MovementCycle(
-                study="AOA",
-                study_id=1011,
-                audio_processing_id=1,
-                biomechanics_import_id=2,
-                synchronization_id=None,
-                cycle_file="cycle.pkl",
-                cycle_index=0,
-                is_outlier=False,
-                start_time_s=0.0,
-                end_time_s=1.0,
-                duration_s=1.0,
-                audio_start_time=now,
-                audio_end_time=now,
-                bio_start_time=None,
-                bio_end_time=None,
-                biomechanics_qc_fail=False,
-                sync_qc_fail=False,
-            )
+        # This should now succeed - no separate bio timestamps required
+        cycle = MovementCycle(
+            study="AOA",
+            study_id=1011,
+            audio_processing_id=1,
+            biomechanics_import_id=2,
+            synchronization_id=None,
+            cycle_file="cycle.pkl",
+            cycle_index=0,
+            is_outlier=False,
+            start_time_s=0.0,
+            end_time_s=1.0,
+            duration_s=1.0,
+            start_time=now,
+            end_time=now,
+            biomechanics_qc_fail=False,
+            sync_qc_fail=False,
+            audio_qc_fail=False,
+        )
+        assert cycle.biomechanics_import_id == 2
 
 
 class TestBiomechanicsImportInstantiation:

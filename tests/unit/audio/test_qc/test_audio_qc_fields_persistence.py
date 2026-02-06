@@ -54,7 +54,7 @@ class TestAudioQCFieldsDatabasePersistence:
             qc_signal_dropout_ch4=False,
             qc_signal_dropout_segments_ch4=[],
             # Artifact QC
-            qc_artifact=True,
+            qc_continuous_artifact=True,
             qc_artifact_type=["Continuous"],
             qc_artifact_segments=[(12.0, 14.0)],
             qc_artifact_ch1=False,
@@ -94,7 +94,7 @@ class TestAudioQCFieldsDatabasePersistence:
 
     def test_create_audio_processing_record_includes_artifact_qc(self):
         """Test that AudioProcessingRecord model has all artifact QC fields."""
-        assert hasattr(AudioProcessingRecord, "qc_artifact")
+        assert hasattr(AudioProcessingRecord, "qc_continuous_artifact")
         assert hasattr(AudioProcessingRecord, "qc_artifact_type")
         assert hasattr(AudioProcessingRecord, "qc_artifact_segments")
         assert hasattr(AudioProcessingRecord, "qc_artifact_ch1")
@@ -128,6 +128,6 @@ class TestAudioQCFieldsDatabasePersistence:
         assert hasattr(audio, "qc_signal_dropout_segments_ch1")
 
         # Artifact
-        assert hasattr(audio, "qc_artifact")
+        assert hasattr(audio, "qc_continuous_artifact")
         assert hasattr(audio, "qc_artifact_type")
         assert hasattr(audio, "qc_artifact_segments")

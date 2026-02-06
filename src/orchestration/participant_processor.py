@@ -651,28 +651,8 @@ class ManeuverProcessor:
                 end_time_s = _to_seconds(df["tt"].iloc[-1])
                 duration_s = max(0.0, end_time_s - start_time_s)
 
-                audio_start_time = base_dt + timedelta(seconds=start_time_s)
-                audio_end_time = base_dt + timedelta(seconds=end_time_s)
-
-                bio_start_time = None
-                bio_end_time = None
-                if "TIME" in df.columns and len(df["TIME"]) > 0:
-                    bio_start_seconds = _to_seconds(df["TIME"].iloc[0])
-                    bio_end_seconds = _to_seconds(df["TIME"].iloc[-1])
-
-                    if not pd.isna(bio_start_seconds):
-                        bio_start_time = base_dt + timedelta(seconds=bio_start_seconds)
-                    if not pd.isna(bio_end_seconds):
-                        bio_end_time = base_dt + timedelta(seconds=bio_end_seconds)
-                elif biomech_db_record is not None:
-                    bio_start_time = audio_start_time
-                    bio_end_time = audio_end_time
-
-                if biomech_db_record is not None:
-                    if bio_start_time is None:
-                        bio_start_time = audio_start_time
-                    if bio_end_time is None:
-                        bio_end_time = audio_end_time
+                start_time = base_dt + timedelta(seconds=start_time_s)
+                end_time = base_dt + timedelta(seconds=end_time_s)
 
                 cycle_index = metadata.get("cycle_index")
                 if cycle_index is None or (isinstance(cycle_index, float) and pd.isna(cycle_index)):
@@ -715,12 +695,22 @@ class ManeuverProcessor:
                     start_time_s=float(start_time_s),
                     end_time_s=float(end_time_s),
                     duration_s=float(duration_s),
-                    audio_start_time=audio_start_time,
-                    audio_end_time=audio_end_time,
-                    bio_start_time=bio_start_time,
-                    bio_end_time=bio_end_time,
+                    start_time=start_time,
+                    end_time=end_time,
                     biomechanics_qc_fail=(not biomech_qc_pass) if biomech_qc_pass is not None else bool(is_outlier),
                     sync_qc_fail=(not sync_qc_pass) if sync_qc_pass is not None else bool(is_outlier),
+                    audio_qc_fail=False,
+                    audio_qc_failures=None,
+                    audio_artifact_intermittent_fail=False,
+                    audio_artifact_intermittent_fail_ch1=False,
+                    audio_artifact_intermittent_fail_ch2=False,
+                    audio_artifact_intermittent_fail_ch3=False,
+                    audio_artifact_intermittent_fail_ch4=False,
+                    audio_artifact_timestamps=None,
+                    audio_artifact_timestamps_ch1=None,
+                    audio_artifact_timestamps_ch2=None,
+                    audio_artifact_timestamps_ch3=None,
+                    audio_artifact_timestamps_ch4=None,
                 )
 
                 repo.save_movement_cycle(

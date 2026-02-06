@@ -114,7 +114,7 @@ class TestAudioSheetDataPopulation:
             maneuver="fe",
             audio_file_name="HP_W11.2-3-20240315_143022.bin",
             device_serial="3",
-            qc_artifact=True,
+            qc_continuous_artifact=True,
             qc_artifact_segments=[(0.5, 1.5), (3.0, 4.2)],  # Two artifact segments as tuples
         )
         audio_record = repository.save_audio_processing(audio)

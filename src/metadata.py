@@ -123,22 +123,22 @@ class AudioProcessing(StudyMetadata):
     qc_signal_dropout_ch4: bool = False
     qc_signal_dropout_segments_ch4: List[tuple] = Field(default_factory=list)
 
-    # ===== Artifact QC =====
-    qc_artifact: bool = False
-    qc_artifact_type: Optional[List[Literal["Intermittent", "Continuous"]]] = None
-    qc_artifact_segments: List[tuple] = Field(default_factory=list)
-    qc_artifact_ch1: bool = False
-    qc_artifact_type_ch1: Optional[List[Literal["Intermittent", "Continuous"]]] = None
-    qc_artifact_segments_ch1: List[tuple] = Field(default_factory=list)
-    qc_artifact_ch2: bool = False
-    qc_artifact_type_ch2: Optional[List[Literal["Intermittent", "Continuous"]]] = None
-    qc_artifact_segments_ch2: List[tuple] = Field(default_factory=list)
-    qc_artifact_ch3: bool = False
-    qc_artifact_type_ch3: Optional[List[Literal["Intermittent", "Continuous"]]] = None
-    qc_artifact_segments_ch3: List[tuple] = Field(default_factory=list)
-    qc_artifact_ch4: bool = False
-    qc_artifact_type_ch4: Optional[List[Literal["Intermittent", "Continuous"]]] = None
-    qc_artifact_segments_ch4: List[tuple] = Field(default_factory=list)
+    # ===== Continuous Artifact QC (detected at audio processing stage) =====
+    qc_continuous_artifact: bool = False
+    qc_continuous_artifact_type: Optional[List[Literal["Intermittent", "Continuous"]]] = None
+    qc_continuous_artifact_segments: List[tuple] = Field(default_factory=list)
+    qc_continuous_artifact_ch1: bool = False
+    qc_continuous_artifact_type_ch1: Optional[List[Literal["Intermittent", "Continuous"]]] = None
+    qc_continuous_artifact_segments_ch1: List[tuple] = Field(default_factory=list)
+    qc_continuous_artifact_ch2: bool = False
+    qc_continuous_artifact_type_ch2: Optional[List[Literal["Intermittent", "Continuous"]]] = None
+    qc_continuous_artifact_segments_ch2: List[tuple] = Field(default_factory=list)
+    qc_continuous_artifact_ch3: bool = False
+    qc_continuous_artifact_type_ch3: Optional[List[Literal["Intermittent", "Continuous"]]] = None
+    qc_continuous_artifact_segments_ch3: List[tuple] = Field(default_factory=list)
+    qc_continuous_artifact_ch4: bool = False
+    qc_continuous_artifact_type_ch4: Optional[List[Literal["Intermittent", "Continuous"]]] = None
+    qc_continuous_artifact_segments_ch4: List[tuple] = Field(default_factory=list)
 
     # ===== QC Status (auto-populated from segments) =====
     qc_not_passed: bool = False
@@ -273,21 +273,21 @@ class AudioProcessing(StudyMetadata):
             "QC Signal Dropout Segments Ch3": self.qc_signal_dropout_segments_ch3,
             "QC Signal Dropout Ch4": self.qc_signal_dropout_ch4,
             "QC Signal Dropout Segments Ch4": self.qc_signal_dropout_segments_ch4,
-            "QC Artifact": self.qc_artifact,
-            "QC Artifact Type": self.qc_artifact_type,
-            "QC Artifact Segments": self.qc_artifact_segments,
-            "QC Artifact Ch1": self.qc_artifact_ch1,
-            "QC Artifact Type Ch1": self.qc_artifact_type_ch1,
-            "QC Artifact Segments Ch1": self.qc_artifact_segments_ch1,
-            "QC Artifact Ch2": self.qc_artifact_ch2,
-            "QC Artifact Type Ch2": self.qc_artifact_type_ch2,
-            "QC Artifact Segments Ch2": self.qc_artifact_segments_ch2,
-            "QC Artifact Ch3": self.qc_artifact_ch3,
-            "QC Artifact Type Ch3": self.qc_artifact_type_ch3,
-            "QC Artifact Segments Ch3": self.qc_artifact_segments_ch3,
-            "QC Artifact Ch4": self.qc_artifact_ch4,
-            "QC Artifact Type Ch4": self.qc_artifact_type_ch4,
-            "QC Artifact Segments Ch4": self.qc_artifact_segments_ch4,
+            "QC Continuous Artifact": self.qc_continuous_artifact,
+            "QC Continuous Artifact Type": self.qc_continuous_artifact_type,
+            "QC Continuous Artifact Segments": self.qc_continuous_artifact_segments,
+            "QC Continuous Artifact Ch1": self.qc_continuous_artifact_ch1,
+            "QC Continuous Artifact Type Ch1": self.qc_continuous_artifact_type_ch1,
+            "QC Continuous Artifact Segments Ch1": self.qc_continuous_artifact_segments_ch1,
+            "QC Continuous Artifact Ch2": self.qc_continuous_artifact_ch2,
+            "QC Continuous Artifact Type Ch2": self.qc_continuous_artifact_type_ch2,
+            "QC Continuous Artifact Segments Ch2": self.qc_continuous_artifact_segments_ch2,
+            "QC Continuous Artifact Ch3": self.qc_continuous_artifact_ch3,
+            "QC Continuous Artifact Type Ch3": self.qc_continuous_artifact_type_ch3,
+            "QC Continuous Artifact Segments Ch3": self.qc_continuous_artifact_segments_ch3,
+            "QC Continuous Artifact Ch4": self.qc_continuous_artifact_ch4,
+            "QC Continuous Artifact Type Ch4": self.qc_continuous_artifact_type_ch4,
+            "QC Continuous Artifact Segments Ch4": self.qc_continuous_artifact_segments_ch4,
         })
         return result
 
@@ -563,24 +563,34 @@ class MovementCycle(StudyMetadata):
     # ===== Cycle Identification =====
     cycle_file: str = Field(...)
     cycle_index: int = Field(...)
-    is_outlier: bool = Field(...)
 
     # ===== Cycle Temporal Characteristics =====
     start_time_s: float = Field(...)
     end_time_s: float = Field(...)
     duration_s: float = Field(...)
 
-    # ===== Audio Timestamps (always present) =====
-    audio_start_time: datetime = Field(...)
-    audio_end_time: datetime = Field(...)
-
-    # ===== Biomechanics Timestamps (optional, required if biomechanics_import_id is set) =====
-    bio_start_time: Optional[datetime] = None
-    bio_end_time: Optional[datetime] = None
+    # ===== Timestamps (datetime objects) =====
+    start_time: datetime = Field(...)
+    end_time: datetime = Field(...)
 
     # ===== Cycle-Level QC Flags =====
+    is_outlier: bool = Field(...)
     biomechanics_qc_fail: bool = Field(...)
     sync_qc_fail: bool = Field(...)
+    audio_qc_fail: bool = Field(default=False)
+
+    # ===== Audio QC Details =====
+    audio_qc_failures: Optional[List[Literal["dropout", "continuous", "intermittent"]]] = None
+    audio_artifact_intermittent_fail: bool = Field(default=False)
+    audio_artifact_intermittent_fail_ch1: bool = Field(default=False)
+    audio_artifact_intermittent_fail_ch2: bool = Field(default=False)
+    audio_artifact_intermittent_fail_ch3: bool = Field(default=False)
+    audio_artifact_intermittent_fail_ch4: bool = Field(default=False)
+    audio_artifact_timestamps: Optional[List[float]] = None
+    audio_artifact_timestamps_ch1: Optional[List[float]] = None
+    audio_artifact_timestamps_ch2: Optional[List[float]] = None
+    audio_artifact_timestamps_ch3: Optional[List[float]] = None
+    audio_artifact_timestamps_ch4: Optional[List[float]] = None
 
     # ===== QC Version Tracking =====
     biomechanics_qc_version: int = Field(default_factory=get_biomech_qc_version)
@@ -625,16 +635,6 @@ class MovementCycle(StudyMetadata):
         if value < 0:
             raise ValueError("time values must be non-negative")
         return value
-
-    @model_validator(mode="after")
-    def validate_biomechanics_timestamps(self):
-        """Validate bio_start_time and bio_end_time are provided when biomechanics_import_id is set."""
-        if self.biomechanics_import_id is not None:
-            if self.bio_start_time is None or self.bio_end_time is None:
-                raise ValueError(
-                    "bio_start_time and bio_end_time are required when biomechanics_import_id is set"
-                )
-        return self
 
     @model_validator(mode="after")
     def validate_walk_metadata_with_sync(self):

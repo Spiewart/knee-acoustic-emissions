@@ -193,17 +193,17 @@ class AudioProcessingRecord(Base):
     qc_signal_dropout_ch4: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     qc_signal_dropout_segments_ch4 = mapped_column(ARRAY(Float), nullable=True)
 
-    # Artifact QC
-    qc_artifact: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    qc_artifact_segments = mapped_column(ARRAY(Float), nullable=True)
-    qc_artifact_ch1: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    qc_artifact_segments_ch1 = mapped_column(ARRAY(Float), nullable=True)
-    qc_artifact_ch2: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    qc_artifact_segments_ch2 = mapped_column(ARRAY(Float), nullable=True)
-    qc_artifact_ch3: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    qc_artifact_segments_ch3 = mapped_column(ARRAY(Float), nullable=True)
-    qc_artifact_ch4: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    qc_artifact_segments_ch4 = mapped_column(ARRAY(Float), nullable=True)
+    # Continuous Artifact QC (detected at audio processing stage)
+    qc_continuous_artifact: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    qc_continuous_artifact_segments = mapped_column(ARRAY(Float), nullable=True)
+    qc_continuous_artifact_ch1: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    qc_continuous_artifact_segments_ch1 = mapped_column(ARRAY(Float), nullable=True)
+    qc_continuous_artifact_ch2: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    qc_continuous_artifact_segments_ch2 = mapped_column(ARRAY(Float), nullable=True)
+    qc_continuous_artifact_ch3: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    qc_continuous_artifact_segments_ch3 = mapped_column(ARRAY(Float), nullable=True)
+    qc_continuous_artifact_ch4: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    qc_continuous_artifact_segments_ch4 = mapped_column(ARRAY(Float), nullable=True)
 
     # Processing metadata
     processing_date: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
@@ -444,24 +444,38 @@ class MovementCycleRecord(Base):
     # Cycle identification
     cycle_file: Mapped[str] = mapped_column(String(255), nullable=False)
     cycle_index: Mapped[int] = mapped_column(Integer, nullable=False)
-    is_outlier: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
-    # Cycle temporal characteristics
+    # Cycle temporal characteristics (in seconds)
     start_time_s: Mapped[float] = mapped_column(Float, nullable=False)
     end_time_s: Mapped[float] = mapped_column(Float, nullable=False)
     duration_s: Mapped[float] = mapped_column(Float, nullable=False)
 
-    # Audio timestamps (always present)
-    audio_start_time: Mapped[datetime] = mapped_column(DateTime, nullable=False)
-    audio_end_time: Mapped[datetime] = mapped_column(DateTime, nullable=False)
-
-    # Biomechanics timestamps (optional - only if biomechanics_import_id is not null)
-    bio_start_time = mapped_column(DateTime, nullable=True)
-    bio_end_time = mapped_column(DateTime, nullable=True)
+    # Timestamps (datetime objects)
+    start_time: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    end_time: Mapped[datetime] = mapped_column(DateTime, nullable=False)
 
     # QC flags (cycle-specific)
+    is_outlier: Mapped[bool] = mapped_column(Boolean, nullable=False)
     biomechanics_qc_fail: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     sync_qc_fail: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    audio_qc_fail: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    # Audio QC failure types (list of failure modes)
+    audio_qc_failures = mapped_column(ARRAY(String), nullable=True)
+
+    # Audio artifact QC - intermittent artifacts detected at cycle stage
+    audio_artifact_intermittent_fail: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    audio_artifact_intermittent_fail_ch1: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    audio_artifact_intermittent_fail_ch2: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    audio_artifact_intermittent_fail_ch3: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    audio_artifact_intermittent_fail_ch4: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    # Audio artifact timestamps (intermittent artifacts within cycle)
+    audio_artifact_timestamps = mapped_column(ARRAY(Float), nullable=True)
+    audio_artifact_timestamps_ch1 = mapped_column(ARRAY(Float), nullable=True)
+    audio_artifact_timestamps_ch2 = mapped_column(ARRAY(Float), nullable=True)
+    audio_artifact_timestamps_ch3 = mapped_column(ARRAY(Float), nullable=True)
+    audio_artifact_timestamps_ch4 = mapped_column(ARRAY(Float), nullable=True)
 
     # QC versions
     biomechanics_qc_version = mapped_column(String(20), nullable=True)

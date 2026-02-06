@@ -987,12 +987,11 @@ def movement_cycle_factory():
             "start_time_s": 0.0,
             "end_time_s": 1.2,
             "duration_s": 1.2,
-            "audio_start_time": datetime(2024, 1, 1, 10, 0, 0),
-            "audio_end_time": datetime(2024, 1, 1, 10, 0, 1, 200000),
-            "bio_start_time": datetime(2024, 1, 1, 10, 0, 0),
-            "bio_end_time": datetime(2024, 1, 1, 10, 0, 1, 200000),
+            "start_time": datetime(2024, 1, 1, 10, 0, 0),
+            "end_time": datetime(2024, 1, 1, 10, 0, 1, 200000),
             "biomechanics_qc_fail": False,
             "sync_qc_fail": False,
+            "audio_qc_fail": False,
         }
         defaults.update(overrides)
         return MovementCycle(**defaults)
