@@ -46,7 +46,7 @@ This project uses unified Pydantic dataclasses (`src/metadata.py`) as the single
 
 **Key Design Principle**: Pydantic dataclasses in `metadata.py` unify validation and Excel export in a single definition. They contain metadata and recording properties (file names, QC parameters, timestamps, sample rates) plus data-derived statistics (channel RMS values, per-sample counts) for comprehensive logging.
 
-See [ai_instructions.md](ai_instructions.md) for detailed information on adding new fields to models, [MIGRATION.md](MIGRATION.md) for module mappings, [QC_VERSIONING.md](docs/QC_VERSIONING.md) for QA/QC version tracking, and [CYCLE_QC.md](docs/CYCLE_QC.md) for movement cycle quality control details.
+See [ai_instructions.md](ai_instructions.md) for detailed information on adding new fields to models, [QC_VERSIONING.md](docs/QC_VERSIONING.md) for QA/QC version tracking, and [CYCLE_QC.md](docs/CYCLE_QC.md) for movement cycle quality control details.
 
 Prerequisites
 -----------
@@ -55,6 +55,63 @@ Prerequisites
   ```bash
   python --version
   ```
+
+Database Setup
+--------------
+
+This project uses PostgreSQL for processing logs and report generation. **Schema management is now handled via Alembic migrations** for version control and reliable schema updates.
+
+**📖 For comprehensive database operations guide, see [docs/POSTGRES_OPERATION.md](docs/POSTGRES_OPERATION.md)**
+
+### Quick Setup
+
+**1) Configure connection string**
+
+Set `AE_DATABASE_URL` in `.env.local`:
+
+```bash
+AE_DATABASE_URL=postgresql+psycopg://USERNAME@localhost:5432/acoustic_emissions
+```
+
+**Note for git worktrees:** `.env.local` isn't tracked by git. In worktrees, create a symlink:
+```bash
+ln -s /path/to/main/repo/.env.local .env.local
+```
+
+**2) Initialize the schema with Alembic**
+
+```bash
+# Activate virtual environment
+workon kae_processing
+
+# Apply all migrations to create/update schema
+alembic upgrade head
+```
+
+**3) Test connection**
+```bash
+python scripts/init_database.py --test-connection
+```
+
+### Updating Schema
+
+When pulling new code with schema changes:
+
+```bash
+# Check migration status
+alembic current
+
+# Apply new migrations
+alembic upgrade head
+```
+
+### Additional Resources
+
+- **[docs/POSTGRES_OPERATION.md](docs/POSTGRES_OPERATION.md)** - Complete Alembic and database guide ⭐
+- **[SYNCHRONIZATION_SCHEMA_CHANGES.md](SYNCHRONIZATION_SCHEMA_CHANGES.md)** - Recent schema changes
+- **[docs/POSTGRES_SETUP.md](docs/POSTGRES_SETUP.md)** - PostgreSQL installation for macOS/Windows
+
+**⚠️ Important**: The `init_fresh_db.py` script is deprecated. Use `alembic upgrade head` instead for schema initialization and updates.
 
 Quick Start
 -----------
@@ -391,12 +448,22 @@ The script can be run on a single file, a `Synced` directory, or an entire parti
 Testing
 -------
 
+Tests are organized by functional domain (audio, biomechanics, synchronization, etc.) with nested subdirectories for related concerns. This structure improves discoverability and makes it clear where new tests belong.
+**See [docs/TEST_ORGANIZATION.md](docs/TEST_ORGANIZATION.md) for complete structure and [docs/TESTING_GUIDELINES.md](docs/TESTING_GUIDELINES.md) for fixture usage patterns.**
+
 ### Running Tests
 
 Run the full suite (from repo root with venv active):
 
 ```bash
 pytest tests/ -v
+```
+
+Run by category:
+```bash
+pytest tests/unit/ -v              # Unit tests only
+pytest tests/integration/ -v       # Integration tests only
+pytest tests/unit/audio/ -v        # Audio-specific tests
 ```
 
 All 610+ tests should pass. If you've made changes, ensure tests pass before committing:
@@ -482,7 +549,7 @@ from src.visualization.plots import plot_syncd_data
 from src.orchestration.participant import process_participant
 ```
 
-See [MIGRATION.md](MIGRATION.md) for detailed import paths and examples.
+See [ai_instructions.md](ai_instructions.md) for detailed import paths and examples.
 
 Troubleshooting
 ---------------
@@ -490,6 +557,21 @@ Troubleshooting
 - Missing sampling frequency (`fs`): scripts fall back to `tt` or metadata JSON; if absent, some analyses fail.
 - Hilbert instantaneous frequency is sensitive to filtering; adjust `--lowcut/--highcut` as needed.
 - Large spectrograms may need `nperseg`/`noverlap` tweaks to manage memory.
+
+Data Root Configuration
+-----------------------
+
+If your participant folders are not inside the repo, set a default root path:
+
+- Set `AE_DATA_ROOT` in `.env.local` (created from `.env.example` by the setup scripts).
+- If the CLI `PATH` argument is omitted, the tools will use `AE_DATA_ROOT`.
+
+PostgreSQL Setup
+--------------------------
+
+See:
+- [docs/POSTGRES_SETUP.md](docs/POSTGRES_SETUP.md)
+- [docs/POSTGRES_OPERATION.md](docs/POSTGRES_OPERATION.md)
 
 ### Updated CLI Usage
 

@@ -323,6 +323,24 @@ The project uses the following dependencies:
 
 ### Installation Steps
 
+**Option 1: virtualenvwrapper (Project Maintainer Setup)**
+
+This project uses [virtualenvwrapper](https://virtualenvwrapper.readthedocs.io/en/latest/) for virtual environment management:
+
+```bash
+# Activate the virtual environment
+workon kae_processing
+
+# Dependencies should already be installed
+# If needed, reinstall:
+pip install -r requirements.txt
+pip install -r dev-requirements.txt
+```
+
+**Option 2: Standard venv (Alternative Setup)**
+
+Users can customize their preferred virtual environment setup:
+
 1. Create virtual environment:
    ```bash
    python -m venv .venv
@@ -340,6 +358,8 @@ The project uses the following dependencies:
    ```bash
    pip install -r dev-requirements.txt
    ```
+
+**Note for AI Assistants**: When running commands in this project, use `workon kae_processing` to activate the virtual environment. The project requires Python 3.12+ for modern type hint syntax (`type | None`).
 
 ---
 
@@ -392,39 +412,71 @@ Pydantic models for data validation:
 
 ### Testing
 
-Tests located in `tests/` directory:
-- `test_process_biomechanics.py` - Biomechanics processing tests
-- `test_parse_acoustic_file_legend.py` - Audio metadata parsing tests
-- `test_process_participant_directory.py` - Directory processing tests
-- `test_sync_audio_with_biomechanics.py` - Synchronization tests
-- `test_cli.py` - CLI entry point tests
-- `test_smoke.py` - End-to-end smoke tests
-- `conftest.py` - Shared pytest fixtures
+**⚠️ CRITICAL: Test Organization and Placement**
 
-**Running Tests**: Use the Pylance MCP server to run tests, as it's much faster and more reliable than running pytest in the terminal:
+Tests are organized by functional domain in `tests/` with nested subdirectories. **See [docs/TEST_ORGANIZATION.md](../docs/TEST_ORGANIZATION.md) for complete structure and placement rules.**
 
-```python
-# Using Pylance server to run tests
-mcp_pylance_mcp_s_pylanceRunCodeSnippet(
-    workspaceRoot="file:///path/to/workspace",
-    workingDirectory="/path/to/workspace",
-    codeSnippet="""
-import subprocess
-import sys
+#### Quick Placement Guide
 
-result = subprocess.run(
-    [sys.executable, "-m", "pytest", "tests/", "-v"],
-    capture_output=True,
-    text=True,
-    cwd="/path/to/workspace"
-)
-print(result.stdout)
-print(f"Exit code: {result.returncode}")
-"""
-)
+When creating new tests, place them in the appropriate category:
+
+**Unit Tests** (`tests/unit/`):
+- **Audio**: `unit/audio/` - readers, parsers, exporters, analysis
+  - **Audio QC**: `unit/audio/test_qc/` - raw QC, maneuver QC, per-mic QC
+- **Biomechanics**: `unit/biomechanics/` - importers, metadata parsing, cycle extraction
+- **Synchronization**: `unit/synchronization/` - stomp detection, sync methods, sync QC
+- **Metadata**: `unit/metadata/` - Pydantic models, validators, DataFrame validation
+- **Database**: `unit/database/` - SQLAlchemy models, repository, persistence
+- **Processing Logs**: `unit/processing_log/` - Excel I/O, record creation, sheet integrity
+- **QC Versioning**: `unit/qc_versioning/` - version models, tracking, reports
+- **Visualization**: `unit/visualization/` - plots, waveforms, spectrograms
+- **CLI**: `unit/cli/` - command-line interface tests
+
+**Integration Tests** (`tests/integration/`):
+- Multi-module workflows: bin→sync→cycles pipelines
+- Participant directory processing
+- Database workflows with multiple stages
+- Metadata flow through full pipeline
+
+**Regression Tests** (`tests/regression/`):
+- Session-specific bugs (e.g., session 6 stomp detection)
+- Phase-specific regressions (e.g., phase 2 implementation)
+- Whitespace handling bugs
+
+**Edge Cases** (`tests/edge_cases/`):
+- Missing/corrupt files
+- Empty recordings
+- Boundary conditions
+- Invalid inputs
+
+**Performance** (`tests/performance/`):
+- Bin processing optimization
+- Sync algorithm performance
+- Large dataset scalability
+
+#### Running Tests
+
+```bash
+# Run all tests
+pytest tests/ -v
+
+# Run by category
+pytest tests/unit/ -v
+pytest tests/integration/ -v
+
+# Run specific module
+pytest tests/unit/audio/ -v
+pytest tests/unit/synchronization/ -v
+
+# Exclude slow tests
+pytest tests/ -v -m "not slow"
 ```
 
-Avoid running `pytest` directly in the terminal as it often hangs.
+**Key Files**:
+- `tests/conftest.py` - Shared fixtures (MANDATORY factories)
+- `tests/test_smoke.py` - End-to-end smoke tests (run first)
+
+**IMPORTANT**: Always use fixture factories from `conftest.py` for test data. See [TESTING_GUIDELINES.md](../docs/TESTING_GUIDELINES.md) for mandatory patterns.
 
 ---
 
@@ -611,6 +663,116 @@ When creating change documentation:
 - Filter by change type based on your interest
 
 **Full details**: See `/docs/changelog/README.md`
+
+---
+
+## Database Management
+
+### PostgreSQL with Alembic Migrations
+
+This project uses PostgreSQL for data persistence and **Alembic** for schema version control.
+
+**📖 Complete guide**: [docs/POSTGRES_OPERATION.md](docs/POSTGRES_OPERATION.md)
+
+#### Quick Setup
+
+1. **Install PostgreSQL** (see [docs/POSTGRES_SETUP.md](docs/POSTGRES_SETUP.md))
+2. **Create databases**:
+   ```bash
+   createdb acoustic_emissions
+   createdb acoustic_emissions_test
+   ```
+
+3. **Configure `.env.local`** in project root:
+   ```bash
+   AE_DATABASE_URL=postgresql+psycopg://USERNAME@localhost:5432/acoustic_emissions
+   AE_TEST_DATABASE_URL=postgresql+psycopg://USERNAME@localhost:5432/acoustic_emissions_test
+   ```
+
+4. **Apply migrations**:
+   ```bash
+   workon kae_processing
+   alembic upgrade head
+   ```
+
+#### Git Worktree Setup
+
+**⚠️ IMPORTANT**: When working in git worktrees, `.env.local` is not present (it's in `.gitignore`).
+
+**Solution - Create a symlink**:
+```bash
+# From inside your worktree directory
+ln -s /path/to/main/repo/.env.local .env.local
+
+# Example:
+# ln -s ~/acoustic_emissions_processing/.env.local .env.local
+```
+
+This keeps your database configuration synchronized with the main repository.
+
+#### Database Schema Models
+
+**Database ORM Models** (`src/db/models.py`):
+- `ParticipantRecord` - Study participants
+- `AudioProcessingRecord` - Audio processing metadata
+- `BiomechanicsImportRecord` - Biomechanics import tracking
+- `SynchronizationRecord` - Audio-biomechanics synchronization
+- `MovementCyclesRecord` - Movement cycle extraction
+- `MovementCycleRecord` - Individual cycles
+
+**Pydantic Validation Models** (`src/metadata.py`):
+- Mirror database models with validation rules
+- Used for data validation before persistence
+- Include field validators and conditional requirements
+
+#### Common Alembic Commands
+
+```bash
+# Check current migration version
+alembic current
+
+# Apply all migrations
+alembic upgrade head
+
+# View migration history
+alembic history --verbose
+
+# Rollback one migration
+alembic downgrade -1
+
+# Create new migration (after modifying models)
+alembic revision --autogenerate -m "description"
+```
+
+#### For AI Assistants: Schema Changes
+
+When modifying database schema:
+
+1. **Update ORM model** in `src/db/models.py`
+2. **Update Pydantic model** in `src/metadata.py` (with validators)
+3. **Generate migration**: `alembic revision --autogenerate -m "description"`
+4. **Review migration file** in `alembic/versions/` (autogenerate may miss complex changes)
+5. **Test migration**:
+   ```bash
+   alembic upgrade head   # Apply
+   alembic downgrade -1   # Test rollback
+   alembic upgrade head   # Reapply
+   ```
+6. **Update all affected code**:
+   - Repository methods (`src/db/repository.py`)
+   - Processing log helpers (`src/orchestration/processing_log.py`)
+   - Report generators (`src/reports/report_generator.py`)
+   - Excel I/O methods
+7. **Update tests**:
+   - Factory fixtures in `tests/conftest.py`
+   - Unit tests for new fields
+   - Integration tests for database workflows
+8. **Update documentation**:
+   - Migration notes in `alembic/versions/` file
+   - Schema change documentation if major
+   - Update `docs/POSTGRES_OPERATION.md` if needed
+
+**Critical**: Always include both `upgrade()` and `downgrade()` in migration files.
 
 ---
 

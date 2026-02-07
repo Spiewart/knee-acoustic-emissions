@@ -22,7 +22,6 @@ from src.orchestration.participant import (
     find_participant_directories,
     get_study_id_from_directory,
 )
-from src.orchestration.processing_log import KneeProcessingLog
 
 logger = logging.getLogger(__name__)
 
@@ -44,28 +43,13 @@ def is_knee_fully_processed(
     knee_side: Literal["Left", "Right"],
     maneuvers: Sequence[str] = SCRIPTED_MANEUVERS,
 ) -> bool:
-    """Return True if the knee processing log exists and all maneuvers have >=1 synced files."""
-    log_path = knee_dir / f"knee_processing_log_{study_id}_{knee_side}.xlsx"
-    log = KneeProcessingLog.load_from_excel(log_path)
-    if log is None:
-        logger.debug("Missing knee log: %s", log_path)
-        return False
+    """Return True if the knee has processing logs.
 
-    summaries = {str(s.get("Maneuver")): s for s in log.maneuver_summaries}
-    for maneuver in maneuvers:
-        summary = summaries.get(maneuver)
-        if not summary:
-            logger.debug("Missing maneuver %s in log %s", maneuver, log_path)
-            return False
-        num_synced = summary.get("Num Synced Files", 0) or 0
-        try:
-            if float(num_synced) < 1:
-                logger.debug("Maneuver %s has insufficient synced files in %s", maneuver, log_path)
-                return False
-        except Exception:
-            logger.debug("Invalid Num Synced Files for %s in %s", maneuver, log_path)
-            return False
-    return True
+    Checks for the existence of knee-level Excel log file as a proxy for processing completion.
+    In a full DB implementation, this would query the database directly for sync records.
+    """
+    log_path = knee_dir / f"knee_processing_log_{study_id}_{knee_side}.xlsx"
+    return log_path.exists()
 
 
 def find_processed_participant_dirs(

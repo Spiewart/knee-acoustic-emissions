@@ -162,12 +162,11 @@ def compute_spectrogram_from_pickle(
 
     base = pkl_path.stem
     dirpath = pkl_path.parent
-    meta_json = dirpath / (base + "_meta.json")
 
     logging.info("Loading pickle: %s", pkl_path)
     df = pd.read_pickle(pkl_path)
 
-    fs = get_fs_from_df_or_meta(df, meta_json)
+    fs = get_fs_from_df_or_meta(df)
     logging.info("Using sampling frequency: %.3f Hz", fs)
     f, t, specs = compute_spectrogram_arrays(df, fs=fs, nperseg=nperseg, noverlap=noverlap)
 

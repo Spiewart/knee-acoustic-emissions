@@ -327,12 +327,18 @@ def _detect_stomp_by_frequency_content(
 
     # Compute STFT for time-frequency representation
     try:
+        nperseg = min(window_samples, len(combined_signal))
+        if nperseg < 2:
+            return float(search_tt[0]), 0.0
+
+        noverlap = max(0, min(window_samples - hop_samples, nperseg - 1))
+
         frequencies, times, Sxx = scipy_signal.spectrogram(
             combined_signal,
             sr,
             window='hamming',
-            nperseg=window_samples,
-            noverlap=window_samples - hop_samples,
+            nperseg=nperseg,
+            noverlap=noverlap,
             scaling='spectrum'
         )
     except Exception as e:
@@ -441,11 +447,12 @@ def get_audio_stomp_time(
         - `freq_energy` (float): Frequency band energy at peak
 
         **Method Selection**:
-        - `audio_stomp_method` (str): Either `'consensus'` or `'biomechanics-guided'`
+        - `stomp_detection_methods` (list): List of methods used (e.g., ['consensus'], ['consensus', 'biomechanics'])
+        - `selected_stomp_method` (str): The selected method: 'consensus', 'biomechanics', or 'audio'
 
         **Biomechanics-Guided Results** (populated only if method used):
-        - `selected_time` (float, seconds): Refined stomp time for recorded knee
-        - `contra_selected_time` (float, seconds): Contralateral peak time
+        - `bio_selected_time` (float, seconds): Refined stomp time for recorded knee
+        - `contra_bio_selected_time` (float, seconds): Contralateral peak time
 
     Raises:
         ValueError: If parameters are invalid (e.g., `recorded_knee` specified without
@@ -463,9 +470,9 @@ def get_audio_stomp_time(
         ...     left_stomp_time=timedelta(seconds=4.0),
         ...     return_details=True
         ... )
-        >>> if results['audio_stomp_method'] == 'biomechanics-guided':
+        >>> if results['selected_stomp_method'] == 'biomechanics':
         ...     print(f"Energy ratio: {results['energy_ratio']:.2f}")
-        ...     print(f"Contralateral peak at: {results['contra_selected_time']:.3f}s")
+        ...     print(f"Contralateral peak at: {results['contra_bio_selected_time']:.3f}s")
     """
     # Validate parameters for biomechanics-guided detection
     if recorded_knee is not None:
@@ -548,9 +555,10 @@ def get_audio_stomp_time(
         'onset_magnitude': float(onset_mag),
         'freq_time': freq_time,
         'freq_energy': float(freq_energy),
-        'audio_stomp_method': 'consensus',  # Will be updated if biomechanics-guided succeeds
-        'selected_time': None,  # Populated when biomechanics-guided method used
-        'contra_selected_time': None,  # Contralateral peak time when biomechanics-guided
+        'stomp_detection_methods': ['consensus'],  # Will be updated if biomechanics-guided succeeds
+        'selected_stomp_method': 'consensus',  # The selected method for synchronization
+        'bio_selected_time': None,  # Populated when biomechanics-guided method used
+        'contra_bio_selected_time': None,  # Contralateral peak time when biomechanics-guided
         'energy_ratio': None,  # Populated when biomechanics-guided method used
     }
 
@@ -696,9 +704,10 @@ def get_audio_stomp_time(
                     contra_time = left_peak_time if recorded_knee == "right" else right_peak_time
 
                     # Update detection_results with biomechanics-guided method info
-                    detection_results['audio_stomp_method'] = 'biomechanics-guided'
-                    detection_results['selected_time'] = selected_time
-                    detection_results['contra_selected_time'] = contra_time
+                    detection_results['stomp_detection_methods'] = ['consensus', 'biomechanics']
+                    detection_results['selected_stomp_method'] = 'biomechanics'
+                    detection_results['bio_selected_time'] = selected_time
+                    detection_results['contra_bio_selected_time'] = contra_time
                     detection_results['energy_ratio'] = float(energy_ratio)
 
                     logging.debug(
@@ -1210,9 +1219,9 @@ def plot_stomp_detection(
         bio_right_s = float(bio_stomp_right.total_seconds())
 
         # Extract biomechanics-guided metadata
-        audio_stomp_method = detection_results.get('audio_stomp_method', 'consensus') if detection_results else 'consensus'
-        selected_time_s = detection_results.get('selected_time') if detection_results else None
-        contra_selected_time_s = detection_results.get('contra_selected_time') if detection_results else None
+        selected_stomp_method = detection_results.get('selected_stomp_method', 'consensus') if detection_results else 'consensus'
+        bio_selected_time_s = detection_results.get('bio_selected_time') if detection_results else None
+        contra_bio_selected_time_s = detection_results.get('contra_bio_selected_time') if detection_results else None
 
         # Debug logging for visualization timing
         if detection_results:
@@ -1246,10 +1255,10 @@ def plot_stomp_detection(
         # Truncate to start of recording through a few seconds after all detection times
         # Include all detection method times plus biomechanics-guided times if available
         all_times = [audio_stomp_s, bio_left_s, bio_right_s, rms_time_s, onset_time_s, freq_time_s]
-        if selected_time_s is not None:
-            all_times.append(selected_time_s)
-        if contra_selected_time_s is not None:
-            all_times.append(contra_selected_time_s)
+        if bio_selected_time_s is not None:
+            all_times.append(bio_selected_time_s)
+        if contra_bio_selected_time_s is not None:
+            all_times.append(contra_bio_selected_time_s)
         last_stomp_time = max(all_times)
         time_buffer = 2.0  # Show 2 seconds after last detection time
         truncate_end = last_stomp_time + time_buffer
@@ -1344,9 +1353,9 @@ def plot_stomp_detection(
             ax_left.tick_params(axis="y", labelcolor="black")
 
         # Add stomp markers with clear labels
-        # Build label to show detection method (consensus or biomechanics-guided)
-        method_label = audio_stomp_method
-        if audio_stomp_method == "consensus" and detection_results and "consensus_methods" in detection_results:
+        # Build label to show detection method (consensus or biomechanics)
+        method_label = selected_stomp_method
+        if selected_stomp_method == "consensus" and detection_results and "consensus_methods" in detection_results:
             methods_used = detection_results.get("consensus_methods", [])
             if methods_used:
                 method_label = f"consensus ({', '.join(methods_used)})"
@@ -1371,10 +1380,10 @@ def plot_stomp_detection(
                 label=f"Freq\n{freq_time_s:.2f}s", zorder=9
             )
         # Add contralateral peak marker if biomechanics-guided
-        if contra_selected_time_s is not None:
+        if contra_bio_selected_time_s is not None:
             ax_left.axvline(
-                contra_selected_time_s, color="purple", linestyle="-.", linewidth=2.0,
-                label=f"Contra Selected\n{contra_selected_time_s:.2f}s", zorder=10
+                contra_bio_selected_time_s, color="purple", linestyle="-.", linewidth=2.0,
+                label=f"Contra Selected\n{contra_bio_selected_time_s:.2f}s", zorder=10
             )
         ax_left.axvline(
             bio_left_s, color="green", linestyle=":", linewidth=2.5,
@@ -1524,7 +1533,7 @@ def plot_stomp_detection(
         # ===== TOP RIGHT 2: Summary info =====
         summary_text = (
             f"Stomp Detection Summary\n\n"
-            f"Method: {audio_stomp_method}\n\n"
+            f"Method: {selected_stomp_method}\n\n"
         )
         if detection_results:
             consensus_time = detection_results.get('consensus_time', audio_stomp_s)
@@ -1535,11 +1544,11 @@ def plot_stomp_detection(
                 f"  Freq: {freq_time_s:.3f}s\n\n"
             )
             # Add biomechanics-guided times if available
-            if selected_time_s is not None:
-                summary_text += f"Selected Time: {selected_time_s:.3f}s\n"
-            if contra_selected_time_s is not None:
-                summary_text += f"Contra Time: {contra_selected_time_s:.3f}s\n"
-            if selected_time_s is not None or contra_selected_time_s is not None:
+            if bio_selected_time_s is not None:
+                summary_text += f"Selected Time: {bio_selected_time_s:.3f}s\n"
+            if contra_bio_selected_time_s is not None:
+                summary_text += f"Contra Time: {contra_bio_selected_time_s:.3f}s\n"
+            if bio_selected_time_s is not None or contra_bio_selected_time_s is not None:
                 summary_text += "\n"
         else:
             summary_text += f"Selected Stomp: {audio_stomp_s:.3f}s\n\n"
@@ -1648,9 +1657,9 @@ def plot_stomp_detection(
             ax_ch.axvline(audio_stomp_s, color="red", linestyle="--", linewidth=1.0, alpha=0.6,
                          label=f"Selected ({audio_stomp_s:.2f}s)")
             # Add contralateral peak marker if biomechanics-guided
-            if contra_selected_time_s is not None:
-                ax_ch.axvline(contra_selected_time_s, color="purple", linestyle="-.", linewidth=1.0, alpha=0.6,
-                             label=f"Contra ({contra_selected_time_s:.2f}s)")
+            if contra_bio_selected_time_s is not None:
+                ax_ch.axvline(contra_bio_selected_time_s, color="purple", linestyle="-.", linewidth=1.0, alpha=0.6,
+                             label=f"Contra ({contra_bio_selected_time_s:.2f}s)")
             # Add detection method lines if available
             if detection_results:
                 ax_ch.axvline(rms_time_s, color="darkred", linestyle="-", linewidth=0.8, alpha=0.5,

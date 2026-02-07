@@ -1,0 +1,373 @@
+"""Tests for Synchronization class new fields."""
+
+from datetime import datetime, timedelta
+
+import pandas as pd
+import pytest
+
+from src.metadata import Synchronization
+from src.orchestration.processing_log import create_sync_record_from_data
+
+
+def _create_test_record(**kwargs):
+    """Helper to create a test Synchronization record with required fields."""
+    defaults = {
+        "study": "AOA",
+        "study_id": 1001,
+        "audio_processing_id": 1,
+        "biomechanics_import_id": 1,
+        "pass_number": 1,
+        "speed": "comfortable",
+        "bio_left_sync_time": 0.0,
+        "bio_sync_offset": 0.0,
+        "aligned_sync_time": 0.0,
+        "sync_method": "consensus",
+        "consensus_time": 0.0,
+        "rms_time": 0.0,
+        "onset_time": 0.0,
+        "freq_time": 0.0,
+        "sync_file_name": "test_sync.pkl",
+        "processing_date": datetime.now(),
+        "processing_status": "success",
+        "sync_duration": 3.0,
+        "total_cycles_extracted": 0,
+        "clean_cycles": 0,
+        "outlier_cycles": 0,
+        "mean_cycle_duration_s": 0.0,
+        "median_cycle_duration_s": 0.0,
+        "min_cycle_duration_s": 0.0,
+        "max_cycle_duration_s": 0.0,
+    }
+    defaults.update(kwargs)
+    return Synchronization(**defaults)
+
+
+def test_synchronization_has_biomech_guided_fields():
+    """Test that Synchronization has new fields for biomechanics-guided detection."""
+    record = _create_test_record(
+        selected_stomp_method="biomechanics",
+        stomp_detection_methods=["biomechanics"],
+        bio_selected_sync_time=2.5,
+        contra_bio_selected_sync_time=3.8,
+    )
+
+    assert record.selected_stomp_method == "biomechanics"
+    assert record.stomp_detection_methods == ["biomechanics"]
+    assert record.bio_selected_sync_time == 2.5
+    assert record.contra_bio_selected_sync_time == 3.8
+
+def test_synchronization_fields_include_new_values():
+    """Test that new fields are populated on the model."""
+    record = _create_test_record(
+        selected_stomp_method="biomechanics",
+        stomp_detection_methods=["consensus", "biomechanics"],
+        bio_selected_sync_time=2.5,
+        contra_bio_selected_sync_time=3.8,
+    )
+
+    assert record.selected_stomp_method == "biomechanics"
+    assert "biomechanics" in record.stomp_detection_methods
+    assert "consensus" in record.stomp_detection_methods
+    assert record.bio_selected_sync_time == 2.5
+    assert record.contra_bio_selected_sync_time == 3.8
+
+
+def test_create_sync_record_populates_new_fields_from_detection_results():
+    """Test that create_sync_record_from_data extracts new fields from detection_results."""
+    # Create minimal synced dataframe
+    synced_df = pd.DataFrame({
+        'tt': pd.to_timedelta([0, 1, 2], unit='s'),
+        'ch1': [0.1, 0.2, 0.3],
+        'ch2': [0.1, 0.2, 0.3],
+        'ch3': [0.1, 0.2, 0.3],
+        'ch4': [0.1, 0.2, 0.3],
+    })
+
+    # Detection results with new fields
+    detection_results = {
+        'consensus_time': 2.0,
+        'rms_time': 2.1,
+        'rms_energy': 500.0,
+        'onset_time': 1.9,
+        'onset_magnitude': 100.0,
+        'freq_time': 2.0,
+        'freq_energy': 300.0,
+        'selected_stomp_method': 'biomechanics',
+        'stomp_detection_methods': ['biomechanics'],
+        'bio_selected_time': 2.5,
+        'contra_bio_selected_time': 3.8,
+    }
+
+    record = create_sync_record_from_data(
+        sync_file_name="test_sync.pkl",
+        synced_df=synced_df,
+        knee_side="left",
+        pass_number=1,
+        speed="normal",
+        audio_stomp_time=2.0,
+        detection_results=detection_results,
+    )
+
+    # Verify new fields are populated
+    assert record.selected_stomp_method == "biomechanics"
+    assert record.stomp_detection_methods == ['biomechanics']
+    assert record.bio_selected_sync_time == 2.5
+    assert record.contra_bio_selected_sync_time == 3.8
+
+
+
+def test_synchronization_biomech_guided_can_be_none():
+    """Test that biomechanics-guided fields can be None (for consensus detection)."""
+    record = _create_test_record()
+
+    # These should default to None
+    assert record.selected_stomp_method is None
+    assert record.stomp_detection_methods is None
+    assert record.bio_selected_sync_time is None
+    assert record.contra_bio_selected_sync_time is None
+
+
+
+def test_create_sync_record_consensus_without_biomech_guided():
+    """Test creating a sync record with consensus detection (no biomech-guided fields)."""
+    synced_df = pd.DataFrame({
+        'tt': pd.to_timedelta([0, 1, 2], unit='s'),
+        'ch1': [0.1, 0.2, 0.3],
+        'ch2': [0.1, 0.2, 0.3],
+        'ch3': [0.1, 0.2, 0.3],
+        'ch4': [0.1, 0.2, 0.3],
+    })
+
+    # Detection results without biomech-guided fields (pure consensus)
+    detection_results = {
+        'consensus_time': 2.0,
+        'consensus_methods': ['rms', 'onset'],
+        'rms_time': 2.1,
+        'onset_time': 1.9,
+    }
+
+    record = create_sync_record_from_data(
+        sync_file_name="test_sync.pkl",
+        synced_df=synced_df,
+        knee_side="left",
+        pass_number=1,
+        speed="normal",
+        audio_stomp_time=2.0,
+        detection_results=detection_results,
+    )
+
+    # Biomech-guided fields should be None
+    assert record.selected_stomp_method is None
+    assert record.bio_selected_sync_time is None
+    assert record.contra_bio_selected_sync_time is None
+
+    # But consensus fields should be populated
+    assert record.consensus_time == 2.0
+    assert record.rms_time == 2.1
+
+
+
+def test_synchronization_consensus_method_agreement_span_calculation():
+    """Test calculation of method_agreement_span in create_sync_record_from_data."""
+    synced_df = pd.DataFrame({
+        'tt': pd.to_timedelta([0, 1, 2, 3], unit='s'),
+        'ch1': [0.1, 0.2, 0.3, 0.4],
+        'ch2': [0.1, 0.2, 0.3, 0.4],
+        'ch3': [0.1, 0.2, 0.3, 0.4],
+        'ch4': [0.1, 0.2, 0.3, 0.4],
+    })
+
+    # All three methods agree within 0.2s
+    detection_results = {
+        'consensus_time': 2.0,
+        'consensus_methods': ['rms', 'onset', 'freq'],
+        'rms_time': 1.9,
+        'onset_time': 2.0,
+        'freq_time': 2.1,
+    }
+
+    record = create_sync_record_from_data(
+        sync_file_name="test_sync.pkl",
+        synced_df=synced_df,
+        knee_side="left",
+        pass_number=1,
+        speed="normal",
+        audio_stomp_time=2.0,
+        detection_results=detection_results,
+    )
+
+    # Agreement span should be max - min of the three times
+    assert record.method_agreement_span == pytest.approx(0.2, abs=0.01)
+    # Verify consensus_methods is stored
+    assert record.consensus_methods == "rms, onset, freq"
+
+
+def test_synchronization_audio_sync_times():
+    """Test audio sync time fields (time between mic on and participant stopping)."""
+    record = _create_test_record(
+        audio_sync_time_left=5.2,
+        audio_sync_time_right=5.8,
+        audio_sync_offset=0.6,
+    )
+
+    assert record.audio_sync_time_left == 5.2
+    assert record.audio_sync_time_right == 5.8
+    assert record.audio_sync_offset == 0.6
+
+
+def test_synchronization_audio_based_sync_fields():
+    """Test audio-based sync fields (different from bio-based)."""
+    record = _create_test_record(
+        selected_stomp_method="audio",
+        stomp_detection_methods=["audio", "consensus"],
+        audio_selected_sync_time=3.5,
+        contra_audio_selected_sync_time=4.2,
+    )
+
+    assert record.selected_stomp_method == "audio"
+    assert "audio" in record.stomp_detection_methods
+    assert record.audio_selected_sync_time == 3.5
+    assert record.contra_audio_selected_sync_time == 4.2
+
+
+def test_synchronization_multiple_detection_methods():
+    """Test using multiple stomp detection methods."""
+    record = _create_test_record(
+        stomp_detection_methods=["audio", "consensus", "biomechanics"],
+        selected_stomp_method="consensus",
+        # Need to provide required fields for biomechanics and audio methods
+        bio_selected_sync_time=2.0,
+        contra_bio_selected_sync_time=3.0,
+        audio_selected_sync_time=2.1,
+        contra_audio_selected_sync_time=3.1,
+    )
+
+    assert len(record.stomp_detection_methods) == 3
+    assert "audio" in record.stomp_detection_methods
+    assert "consensus" in record.stomp_detection_methods
+    assert "biomechanics" in record.stomp_detection_methods
+    assert record.selected_stomp_method == "consensus"
+
+
+
+def test_synchronization_agreement_span_with_partial_consensus():
+    """Test agreement span when only some methods agree (not all 3)."""
+    synced_df = pd.DataFrame({
+        'tt': pd.to_timedelta([0, 1, 2], unit='s'),
+        'ch1': [0.1, 0.2, 0.3],
+        'ch2': [0.1, 0.2, 0.3],
+        'ch3': [0.1, 0.2, 0.3],
+        'ch4': [0.1, 0.2, 0.3],
+    })
+
+    # Only RMS and onset in consensus (freq disagreed)
+    detection_results = {
+        'consensus_time': 2.0,
+        'consensus_methods': ['rms', 'onset'],
+        'rms_time': 1.95,
+        'onset_time': 2.05,
+        'freq_time': 5.0,  # Not in consensus
+    }
+
+    record = create_sync_record_from_data(
+        sync_file_name="test_sync.pkl",
+        synced_df=synced_df,
+        knee_side="left",
+        pass_number=1,
+        speed="normal",
+        audio_stomp_time=2.0,
+        detection_results=detection_results,
+    )
+
+    # Agreement span should only consider methods in consensus
+    assert record.method_agreement_span == pytest.approx(0.1, abs=0.01)
+    # Freq time is still recorded but not in consensus_methods
+    assert record.freq_time == 5.0
+    assert record.consensus_methods == "rms, onset"
+
+
+def test_validator_requires_bio_fields_when_biomechanics_method():
+    """Test that bio_selected fields are required when 'biomechanics' in stomp_detection_methods."""
+    with pytest.raises(ValueError, match="bio_selected_sync_time is required"):
+        _create_test_record(
+            stomp_detection_methods=["biomechanics"],
+            selected_stomp_method="biomechanics",
+            # Missing bio_selected_sync_time and contra_bio_selected_sync_time
+        )
+
+
+def test_validator_requires_audio_fields_when_audio_method():
+    """Test that audio fields are required when 'audio' in stomp_detection_methods."""
+    with pytest.raises(ValueError, match="audio_selected_sync_time is required"):
+        _create_test_record(
+            stomp_detection_methods=["audio"],
+            selected_stomp_method="audio",
+            # Missing audio_selected_sync_time and contra_audio_selected_sync_time
+        )
+
+
+def test_validator_requires_audio_offset_when_both_times_present():
+    """Test that audio_sync_offset is required when both left and right times are present."""
+    with pytest.raises(ValueError, match="audio_sync_offset is required"):
+        _create_test_record(
+            audio_sync_time_left=5.0,
+            audio_sync_time_right=5.5,
+            # Missing audio_sync_offset
+        )
+
+
+def test_validator_allows_biomechanics_with_all_required_fields():
+    """Test that validator passes when biomechanics method has all required fields."""
+    record = _create_test_record(
+        stomp_detection_methods=["biomechanics"],
+        selected_stomp_method="biomechanics",
+        bio_selected_sync_time=2.0,
+        contra_bio_selected_sync_time=3.0,
+    )
+    assert record.stomp_detection_methods == ["biomechanics"]
+    assert record.bio_selected_sync_time == 2.0
+    assert record.contra_bio_selected_sync_time == 3.0
+
+
+def test_validator_allows_audio_with_all_required_fields():
+    """Test that validator passes when audio method has all required fields."""
+    record = _create_test_record(
+        stomp_detection_methods=["audio"],
+        selected_stomp_method="audio",
+        audio_selected_sync_time=2.0,
+        contra_audio_selected_sync_time=3.0,
+    )
+    assert record.stomp_detection_methods == ["audio"]
+    assert record.audio_selected_sync_time == 2.0
+    assert record.contra_audio_selected_sync_time == 3.0
+
+
+def test_validator_allows_audio_sync_times_with_offset():
+    """Test that validator passes when audio sync times have offset."""
+    record = _create_test_record(
+        audio_sync_time_left=5.0,
+        audio_sync_time_right=5.5,
+        audio_sync_offset=0.5,
+    )
+    assert record.audio_sync_time_left == 5.0
+    assert record.audio_sync_time_right == 5.5
+    assert record.audio_sync_offset == 0.5
+
+
+def test_validator_allows_only_one_audio_sync_time_without_offset():
+    """Test that offset is not required when only one audio sync time is present."""
+    record_left = _create_test_record(
+        audio_sync_time_left=5.0,
+        # No right time, no offset required
+    )
+    assert record_left.audio_sync_time_left == 5.0
+    assert record_left.audio_sync_time_right is None
+    assert record_left.audio_sync_offset is None
+    
+    record_right = _create_test_record(
+        audio_sync_time_right=5.5,
+        # No left time, no offset required
+    )
+    assert record_right.audio_sync_time_left is None
+    assert record_right.audio_sync_time_right == 5.5
+    assert record_right.audio_sync_offset is None

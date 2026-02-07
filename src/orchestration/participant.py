@@ -15,8 +15,6 @@ Usage from command line:
     python process_participant_directory.py /path/to/studies --log output.log
 """
 
-from __future__ import annotations
-
 import argparse
 import json
 import logging
@@ -28,15 +26,14 @@ from typing import TYPE_CHECKING, Dict, Literal, Optional, cast
 import pandas as pd
 
 from src.biomechanics.importers import import_biomechanics_recordings
+from src.config import get_data_root, load_env_file
 from src.orchestration.processing_log import (
     KneeProcessingLog,
     ManeuverProcessingLog,
     create_audio_record_from_data,
     create_biomechanics_record_from_data,
-    create_cycles_record_from_data,
     create_sync_record_from_data,
 )
-from src.synchronization.quality_control import find_synced_files, perform_sync_qc
 from src.synchronization.sync import (
     get_audio_stomp_time,
     get_bio_end_time,
@@ -232,13 +229,31 @@ def _save_or_update_processing_log(
                 bin_files = list(maneuver_dir.glob("*.bin"))
                 audio_bin_path = bin_files[0] if bin_files else None
 
+            if audio_metadata is None:
+                audio_metadata = {}
+            audio_metadata["study_id"] = int(study_id)
+            audio_metadata["recording_timezone"] = "UTC"
+            audio_metadata["mic_positions"] = _load_mic_positions_from_legend(
+                participant_dir=maneuver_dir.parents[1],
+                knee=knee_side.lower(),
+                maneuver_key=maneuver_key,
+            )
+
+            audio_file_base = None
+            if audio_bin_path is not None:
+                audio_file_base = Path(audio_bin_path).stem
+            if audio_file_base is None:
+                audio_file_base = audio_pkl_file.stem.replace("_with_freq", "")
+
             audio_record = create_audio_record_from_data(
-                audio_file_name=audio_pkl_file.stem,
+                audio_file_name=audio_file_base,
                 audio_df=audio_df,
                 audio_bin_path=audio_bin_path,
                 audio_pkl_path=audio_pkl_file,
                 metadata=audio_metadata,
                 biomechanics_type=biomechanics_type,
+                knee=knee_side.lower(),
+                maneuver=maneuver_key,
             )
 
             # Preserve existing biomechanics metadata from log if present
@@ -313,6 +328,10 @@ def _save_or_update_processing_log(
                 sheet_name=f"{maneuver_key}_data",
                 maneuver=maneuver_key,
                 biomechanics_type=biomechanics_type,
+                knee=knee_side.lower(),
+                biomechanics_sync_method=("flick" if biomechanics_type == "Gonio" else "stomp"),
+                biomechanics_sample_rate=audio_record.biomechanics_sample_rate if audio_record else None,
+                study_id=int(study_id),
             )
             log.update_biomechanics_record(bio_record)
 
@@ -1397,6 +1416,42 @@ def _load_acoustics_file_names(participant_dir: Path) -> dict[tuple[str, str], s
     return mapping
 
 
+def _load_mic_positions_from_legend(
+    participant_dir: Path,
+    knee: str,
+    maneuver_key: str,
+) -> dict:
+    """Load microphone positions from the acoustics file legend."""
+    legend_path = _find_excel_file(participant_dir, "*acoustic_file_legend*")
+    if legend_path is None:
+        raise FileNotFoundError(
+            f"No acoustic file legend found in {participant_dir}"
+        )
+
+    from src.audio.parsers import get_acoustics_metadata  # Local import to avoid cycle
+    meta = get_acoustics_metadata(
+        metadata_file_path=str(legend_path),
+        scripted_maneuver=maneuver_key,
+        knee=knee,
+    )
+
+    def _to_code(pos) -> str:
+        patellar = "I" if pos.patellar_position == "Infrapatellar" else "S"
+        lateral = "M" if pos.laterality == "Medial" else "L"
+        return f"{patellar}P{lateral}"
+
+    mic_positions = {}
+    for mic_num, pos in meta.microphones.items():
+        mic_positions[f"mic_{mic_num}_position"] = _to_code(pos)
+
+    if len(mic_positions) != 4:
+        raise ValueError(
+            f"Incomplete microphone positions in legend: {legend_path}"
+        )
+
+    return mic_positions
+
+
 def get_audio_file_name(maneuver_dir: Path, with_freq: bool = False) -> str:
     """Get the audio file name from the maneuver directory by looking for the
     original .bin file and pulling the name written in the file.
@@ -2158,6 +2213,9 @@ def main() -> None:
 
     args = parser.parse_args()
 
+    # Load environment defaults (e.g., AE_DATA_ROOT, AE_DATABASE_URL)
+    load_env_file()
+
     # Set up logging
     log_file = Path(args.log) if args.log else None
     setup_logging(log_file)
@@ -2175,12 +2233,14 @@ def main() -> None:
             logging.error("Failed to sync audio file: %s", args.path)
         return
 
-    # Validate input path
-    if not args.path:
+    # Resolve input path from CLI or environment
+    resolved_path = Path(args.path) if args.path else get_data_root()
+    if resolved_path is None:
         parser.print_help()
+        logging.error("No PATH provided. Set AE_DATA_ROOT or pass PATH.")
         return
 
-    path = Path(args.path)
+    path = resolved_path
     if not path.exists():
         logging.error("Path does not exist: %s", path)
         return

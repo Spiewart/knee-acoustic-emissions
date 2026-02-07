@@ -8,14 +8,17 @@ directory should be named with format '#<study_id>'.
 
 import argparse
 import logging
+import os
 from pathlib import Path
 
+from src.config import get_data_root, load_env_file
 from src.orchestration.participant import (
     find_participant_directories,
     process_participant,
     setup_logging,
     sync_single_audio_file,
 )
+from src.orchestration.persistent_processor import create_persistent_processor
 from src.orchestration.processing_log import _infer_biomechanics_type_from_study
 
 
@@ -109,8 +112,28 @@ def main() -> None:
         choices=["walk", "fe", "sts"],
         help="Specify which maneuver to process: 'walk', 'fe', or 'sts'.",
     )
+    parser.add_argument(
+        "--persist-to-db",
+        action="store_true",
+        help=(
+            "Enable optional database persistence. Requires AE_DATABASE_URL to be set. "
+            "If database is unavailable, processing continues without saving to database."
+        ),
+    )
+    parser.add_argument(
+        "--db-url",
+        type=str,
+        default=None,
+        help=(
+            "PostgreSQL database URL for persistence (e.g., postgresql://user@localhost/db). "
+            "Overrides AE_DATABASE_URL environment variable if provided."
+        ),
+    )
 
     args = parser.parse_args()
+
+    # Load environment defaults (e.g., AE_DATA_ROOT, AE_DATABASE_URL)
+    load_env_file()
 
     # Set up logging
     log_file = Path(args.log) if args.log else None
@@ -129,12 +152,14 @@ def main() -> None:
             logging.error("Failed to sync audio file: %s", args.path)
         return
 
-    # Validate input path
-    if not args.path:
+    # Resolve input path from CLI or environment
+    resolved_path = Path(args.path) if args.path else get_data_root()
+    if resolved_path is None:
         parser.print_help()
+        logging.error("No PATH provided. Set AE_DATA_ROOT or pass PATH.")
         return
 
-    path = Path(args.path)
+    path = resolved_path
     if not path.exists():
         logging.error("Path does not exist: %s", path)
         return
@@ -159,6 +184,19 @@ def main() -> None:
         )
 
     biomechanics_type = _infer_biomechanics_type_from_study(study_token)
+
+    # Determine database URL for optional persistence
+    db_url = None
+    if args.persist_to_db or args.db_url:
+        # Use explicit --db-url if provided, otherwise fall back to environment
+        db_url = args.db_url or os.getenv("AE_DATABASE_URL")
+        if db_url:
+            logging.info("Database persistence enabled: %s", db_url)
+        else:
+            logging.warning(
+                "Database persistence requested but no database URL available. "
+                "Set AE_DATABASE_URL or use --db-url."
+            )
 
     # Find participant directories
     participants = find_participant_directories(path)
@@ -190,19 +228,35 @@ def main() -> None:
         "Found %d participant directory(ies) to process", len(participants)
     )
 
-    # Process each participant with additional filtering for knee and maneuver
+    # Process each participant with optional database persistence
     success_count = 0
     failure_count = 0
     failed_participants: list[str] = []
 
     for participant_dir in participants:
-        if process_participant(
-            participant_dir,
-            entrypoint=args.entrypoint,
-            knee=args.knee,
-            maneuver=args.maneuver,
-            biomechanics_type=biomechanics_type,
-        ):
+        if args.persist_to_db or args.db_url:
+            # Use persistent processor with optional database integration
+            processor = create_persistent_processor(
+                participant_dir=participant_dir,
+                biomechanics_type=biomechanics_type,
+                db_url=db_url,
+            )
+            success = processor.process(
+                entrypoint=args.entrypoint,
+                knee=args.knee,
+                maneuver=args.maneuver,
+            )
+        else:
+            # Use standard processor without database persistence
+            success = process_participant(
+                participant_dir,
+                entrypoint=args.entrypoint,
+                knee=args.knee,
+                maneuver=args.maneuver,
+                biomechanics_type=biomechanics_type,
+            )
+
+        if success:
             success_count += 1
         else:
             failure_count += 1
