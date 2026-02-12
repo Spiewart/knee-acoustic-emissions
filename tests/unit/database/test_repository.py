@@ -124,8 +124,6 @@ def create_test_biomechanics_import(**kwargs):
         "duration_seconds": 120.0,
         "num_data_points": 12000,
         "num_passes": 1,
-        "biomech_qc_version": "1.0",
-        "biomechanics_qc_fail": False,
         "processing_date": datetime(2024, 1, 2, 12, 0, 0),
     }
     defaults.update(kwargs)
@@ -151,6 +149,18 @@ def create_test_movement_cycle(**kwargs):
         "biomechanics_qc_fail": False,
         "sync_qc_fail": False,
         "audio_qc_fail": False,
+        # Intermittent artifact QC
+        "audio_artifact_intermittent_fail": False,
+        "audio_artifact_intermittent_fail_ch1": False,
+        "audio_artifact_intermittent_fail_ch2": False,
+        "audio_artifact_intermittent_fail_ch3": False,
+        "audio_artifact_intermittent_fail_ch4": False,
+        # Periodic artifact QC
+        "audio_artifact_periodic_fail": False,
+        "audio_artifact_periodic_fail_ch1": False,
+        "audio_artifact_periodic_fail_ch2": False,
+        "audio_artifact_periodic_fail_ch3": False,
+        "audio_artifact_periodic_fail_ch4": False,
         "processing_date": datetime(2024, 1, 2, 12, 0, 0),
     }
     defaults.update(kwargs)

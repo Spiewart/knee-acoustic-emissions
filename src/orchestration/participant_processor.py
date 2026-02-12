@@ -188,35 +188,59 @@ class ManeuverProcessor:
             seen = set()
             overall_artifact_types = [x for x in overall_artifact_types if not (x in seen or seen.add(x))]
 
+            # Merge ALL fail types into overall qc_fail_segments:
+            # signal dropout + intermittent artifacts + continuous artifacts
+            all_fail_intervals = (
+                list(dropout_intervals or [])
+                + list(artifact_intervals or [])
+                + list(continuous_intervals or [])
+            )
+            overall_fail_segments = merge_bad_intervals(
+                all_fail_intervals, []
+            ) if all_fail_intervals else []
+
             qc_data = {
-                "qc_fail_segments": list(bad_intervals) if bad_intervals else [],
+                "qc_fail_segments": overall_fail_segments,
                 "qc_signal_dropout": bool(dropout_intervals),
                 "qc_signal_dropout_segments": list(dropout_intervals) if dropout_intervals else [],
                 "qc_artifact": bool(artifact_intervals),
                 "qc_artifact_segments": list(artifact_intervals) if artifact_intervals else [],
                 "qc_artifact_type": overall_artifact_types if artifact_intervals else [],
+                "qc_continuous_artifact": bool(continuous_intervals),
+                "qc_continuous_artifact_segments": list(continuous_intervals) if continuous_intervals else [],
             }
 
-            # Add continuous artifact results (spectral detection)
-            if continuous_intervals:
-                qc_data["qc_continuous_artifact"] = True
-                qc_data["qc_continuous_artifact_segments"] = list(continuous_intervals)
+            # Add per-channel QC results and merge into per-channel qc_fail_segments
             for ch_num in range(1, 5):
                 ch_name = f"ch{ch_num}"
-                if ch_name in continuous_per_mic and continuous_per_mic[ch_name]:
-                    qc_data[f"qc_continuous_artifact_ch{ch_num}"] = True
-                    qc_data[f"qc_continuous_artifact_segments_ch{ch_num}"] = list(continuous_per_mic[ch_name])
+                ch_fail_sources = []
 
-            # Add per-mic QC results with artifact types
-            for ch_num in range(1, 5):
-                ch_name = f"ch{ch_num}"
+                # Per-channel continuous artifact (spectral detection)
+                if ch_name in continuous_per_mic and continuous_per_mic[ch_name]:
+                    ch_continuous = list(continuous_per_mic[ch_name])
+                    qc_data[f"qc_continuous_artifact_ch{ch_num}"] = True
+                    qc_data[f"qc_continuous_artifact_segments_ch{ch_num}"] = ch_continuous
+                    ch_fail_sources.extend(ch_continuous)
+
+                # Per-channel signal dropout
                 if ch_name in dropout_per_mic and dropout_per_mic[ch_name]:
+                    ch_dropout = list(dropout_per_mic[ch_name])
                     qc_data[f"qc_signal_dropout_ch{ch_num}"] = True
-                    qc_data[f"qc_signal_dropout_segments_ch{ch_num}"] = list(dropout_per_mic[ch_name])
+                    qc_data[f"qc_signal_dropout_segments_ch{ch_num}"] = ch_dropout
+                    ch_fail_sources.extend(ch_dropout)
+
+                # Per-channel intermittent artifact
                 if ch_name in artifact_per_mic and artifact_per_mic[ch_name]:
                     qc_data[f"qc_artifact_ch{ch_num}"] = True
                     qc_data[f"qc_artifact_segments_ch{ch_num}"] = list(artifact_per_mic[ch_name])
                     qc_data[f"qc_artifact_type_ch{ch_num}"] = artifact_types_per_mic.get(ch_name, [])
+                    ch_fail_sources.extend(artifact_per_mic[ch_name])
+
+                # Merge all per-channel fail sources into qc_fail_segments_chX
+                qc_data[f"qc_fail_segments_ch{ch_num}"] = (
+                    merge_bad_intervals(ch_fail_sources, [])
+                    if ch_fail_sources else []
+                )
 
             self.audio = AudioData(
                 pkl_path=audio_pkl_path,
@@ -623,6 +647,21 @@ class ManeuverProcessor:
             logging.error(f"Failed to save logs: {e}", exc_info=True)
             return False
 
+    @staticmethod
+    def _unflatten_intervals(flat: list[float] | None) -> list[tuple[float, float]]:
+        """Convert flattened DB array [s1, e1, s2, e2, ...] to [(s1,e1), (s2,e2), ...]."""
+        if not flat or len(flat) % 2 != 0:
+            return []
+        return [(flat[i], flat[i + 1]) for i in range(0, len(flat), 2)]
+
+    @staticmethod
+    def _flatten_intervals(intervals: list[tuple[float, float]]) -> list[float]:
+        """Convert [(s1,e1), (s2,e2), ...] to flattened [s1, e1, s2, e2, ...]."""
+        result: list[float] = []
+        for start, end in intervals:
+            result.extend([float(start), float(end)])
+        return result
+
     def _persist_cycle_records(
         self,
         *,
@@ -737,6 +776,52 @@ class ManeuverProcessor:
                     else:
                         synchronization_id = getattr(sync_db_record, "id", None)
 
+                # --- Audio-stage QC: trim to cycle boundaries ---
+                from src.audio.raw_qc import trim_intervals_to_cycle
+
+                audio_qc_failures: list[str] = []
+
+                # Check signal dropout overlap with this cycle
+                has_dropout = False
+                for ch_num in range(1, 5):
+                    flat = getattr(audio_db_record, f"qc_signal_dropout_segments_ch{ch_num}", None)
+                    trimmed = trim_intervals_to_cycle(
+                        self._unflatten_intervals(flat), start_time_s, end_time_s
+                    )
+                    if trimmed:
+                        has_dropout = True
+                if has_dropout:
+                    audio_qc_failures.append("dropout")
+
+                # Check continuous artifact overlap with this cycle
+                has_continuous = False
+                for ch_num in range(1, 5):
+                    flat = getattr(audio_db_record, f"qc_continuous_artifact_segments_ch{ch_num}", None)
+                    trimmed = trim_intervals_to_cycle(
+                        self._unflatten_intervals(flat), start_time_s, end_time_s
+                    )
+                    if trimmed:
+                        has_continuous = True
+                if has_continuous:
+                    audio_qc_failures.append("continuous")
+
+                # --- Cycle-stage QC: intermittent artifacts ---
+                has_intermittent = any([
+                    qc.intermittent_intervals_ch1,
+                    qc.intermittent_intervals_ch2,
+                    qc.intermittent_intervals_ch3,
+                    qc.intermittent_intervals_ch4,
+                ])
+                if has_intermittent:
+                    audio_qc_failures.append("intermittent")
+
+                # --- Cycle-stage QC: periodic artifacts ---
+                if qc.periodic_noise_detected:
+                    audio_qc_failures.append("periodic")
+
+                # Aggregate audio QC fail
+                audio_qc_fail = len(audio_qc_failures) > 0
+
                 cycle = MovementCycle(
                     study=self.log.audio_record.study if self.log and self.log.audio_record else "AOA",
                     study_id=int(self.study_id),
@@ -755,11 +840,37 @@ class ManeuverProcessor:
                     end_time=end_time,
                     biomechanics_qc_fail=qc.is_outlier,
                     sync_qc_fail=not qc.sync_qc_pass,
+                    # Aggregate audio QC
+                    audio_qc_fail=audio_qc_fail,
+                    audio_qc_failures=audio_qc_failures if audio_qc_failures else None,
+                    # Intermittent artifacts (cycle-stage)
+                    audio_artifact_intermittent_fail=has_intermittent,
+                    audio_artifact_intermittent_fail_ch1=bool(qc.intermittent_intervals_ch1),
+                    audio_artifact_intermittent_fail_ch2=bool(qc.intermittent_intervals_ch2),
+                    audio_artifact_intermittent_fail_ch3=bool(qc.intermittent_intervals_ch3),
+                    audio_artifact_intermittent_fail_ch4=bool(qc.intermittent_intervals_ch4),
+                    audio_artifact_timestamps=self._flatten_intervals(
+                        qc.intermittent_intervals_ch1 + qc.intermittent_intervals_ch2
+                        + qc.intermittent_intervals_ch3 + qc.intermittent_intervals_ch4
+                    ) or None,
+                    audio_artifact_timestamps_ch1=self._flatten_intervals(qc.intermittent_intervals_ch1) or None,
+                    audio_artifact_timestamps_ch2=self._flatten_intervals(qc.intermittent_intervals_ch2) or None,
+                    audio_artifact_timestamps_ch3=self._flatten_intervals(qc.intermittent_intervals_ch3) or None,
+                    audio_artifact_timestamps_ch4=self._flatten_intervals(qc.intermittent_intervals_ch4) or None,
+                    # Periodic artifacts (sync-level, trimmed to cycle)
                     audio_artifact_periodic_fail=qc.periodic_noise_detected,
                     audio_artifact_periodic_fail_ch1=qc.periodic_noise_ch1,
                     audio_artifact_periodic_fail_ch2=qc.periodic_noise_ch2,
                     audio_artifact_periodic_fail_ch3=qc.periodic_noise_ch3,
                     audio_artifact_periodic_fail_ch4=qc.periodic_noise_ch4,
+                    audio_artifact_periodic_timestamps=self._flatten_intervals(
+                        qc.periodic_intervals_ch1 + qc.periodic_intervals_ch2
+                        + qc.periodic_intervals_ch3 + qc.periodic_intervals_ch4
+                    ) or None,
+                    audio_artifact_periodic_timestamps_ch1=self._flatten_intervals(qc.periodic_intervals_ch1) or None,
+                    audio_artifact_periodic_timestamps_ch2=self._flatten_intervals(qc.periodic_intervals_ch2) or None,
+                    audio_artifact_periodic_timestamps_ch3=self._flatten_intervals(qc.periodic_intervals_ch3) or None,
+                    audio_artifact_periodic_timestamps_ch4=self._flatten_intervals(qc.periodic_intervals_ch4) or None,
                 )
 
                 repo.save_movement_cycle(

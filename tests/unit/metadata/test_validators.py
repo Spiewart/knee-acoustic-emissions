@@ -38,6 +38,32 @@ def _base_audio_kwargs():
         "mic_4_position": "SPL",
         "processing_date": datetime(2024, 1, 1, 12, 0, 0),
         "processing_status": "success",
+        # QC fields (required, no defaults)
+        "qc_fail_segments": [],
+        "qc_fail_segments_ch1": [],
+        "qc_fail_segments_ch2": [],
+        "qc_fail_segments_ch3": [],
+        "qc_fail_segments_ch4": [],
+        "qc_signal_dropout": False,
+        "qc_signal_dropout_segments": [],
+        "qc_signal_dropout_ch1": False,
+        "qc_signal_dropout_segments_ch1": [],
+        "qc_signal_dropout_ch2": False,
+        "qc_signal_dropout_segments_ch2": [],
+        "qc_signal_dropout_ch3": False,
+        "qc_signal_dropout_segments_ch3": [],
+        "qc_signal_dropout_ch4": False,
+        "qc_signal_dropout_segments_ch4": [],
+        "qc_continuous_artifact": False,
+        "qc_continuous_artifact_segments": [],
+        "qc_continuous_artifact_ch1": False,
+        "qc_continuous_artifact_segments_ch1": [],
+        "qc_continuous_artifact_ch2": False,
+        "qc_continuous_artifact_segments_ch2": [],
+        "qc_continuous_artifact_ch3": False,
+        "qc_continuous_artifact_segments_ch3": [],
+        "qc_continuous_artifact_ch4": False,
+        "qc_continuous_artifact_segments_ch4": [],
     }
 
 
@@ -80,10 +106,23 @@ def _base_cycle_kwargs():
         "start_time_s": 0.0,
         "end_time_s": 1.0,
         "duration_s": 1.0,
-        "audio_start_time": datetime(2024, 1, 1, 10, 0, 0),
-        "audio_end_time": datetime(2024, 1, 1, 10, 0, 1),
+        "start_time": datetime(2024, 1, 1, 10, 0, 0),
+        "end_time": datetime(2024, 1, 1, 10, 0, 1),
         "biomechanics_qc_fail": False,
         "sync_qc_fail": False,
+        "audio_qc_fail": False,
+        # Intermittent artifact QC
+        "audio_artifact_intermittent_fail": False,
+        "audio_artifact_intermittent_fail_ch1": False,
+        "audio_artifact_intermittent_fail_ch2": False,
+        "audio_artifact_intermittent_fail_ch3": False,
+        "audio_artifact_intermittent_fail_ch4": False,
+        # Periodic artifact QC
+        "audio_artifact_periodic_fail": False,
+        "audio_artifact_periodic_fail_ch1": False,
+        "audio_artifact_periodic_fail_ch2": False,
+        "audio_artifact_periodic_fail_ch3": False,
+        "audio_artifact_periodic_fail_ch4": False,
     }
 
 
@@ -148,20 +187,20 @@ class TestSynchronizationValidators:
 
 
 class TestMovementCycleValidators:
-    def test_requires_bio_timestamps_when_biomech_id_set(self):
+    def test_audio_processing_id_must_be_positive(self):
         with pytest.raises(ValidationError):
             MovementCycle(
-                **_base_cycle_kwargs(),
-                biomechanics_import_id=1,
-                bio_start_time=None,
-                bio_end_time=None,
+                **_with_overrides(_base_cycle_kwargs(), audio_processing_id=0),
             )
 
-    def test_requires_pass_speed_when_sync_id_set(self):
+    def test_biomechanics_import_id_must_be_positive_if_set(self):
         with pytest.raises(ValidationError):
             MovementCycle(
-                **_base_cycle_kwargs(),
-                synchronization_id=1,
-                pass_number=None,
-                speed=None,
+                **_with_overrides(_base_cycle_kwargs(), biomechanics_import_id=-1),
+            )
+
+    def test_synchronization_id_must_be_positive_if_set(self):
+        with pytest.raises(ValidationError):
+            MovementCycle(
+                **_with_overrides(_base_cycle_kwargs(), synchronization_id=-1),
             )

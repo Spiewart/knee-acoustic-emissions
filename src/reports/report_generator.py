@@ -308,9 +308,6 @@ class ReportGenerator:
                 'Num Passes': record.num_passes,
                 'Duration (s)': record.duration_seconds,
                 'Num Data Points': record.num_data_points,
-                'Biomech QC Version': record.biomech_qc_version,
-                'QC Fail': record.biomechanics_qc_fail,
-                'QC Notes': record.biomechanics_qc_notes,
                 'Processing Date': record.processing_date,
                 'Processing Status': record.processing_status,
             })

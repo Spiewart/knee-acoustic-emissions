@@ -123,6 +123,18 @@ class TestInstantiation:
             biomechanics_qc_fail=False,
             sync_qc_fail=False,
             audio_qc_fail=False,
+            # Intermittent artifact QC
+            audio_artifact_intermittent_fail=False,
+            audio_artifact_intermittent_fail_ch1=False,
+            audio_artifact_intermittent_fail_ch2=False,
+            audio_artifact_intermittent_fail_ch3=False,
+            audio_artifact_intermittent_fail_ch4=False,
+            # Periodic artifact QC
+            audio_artifact_periodic_fail=False,
+            audio_artifact_periodic_fail_ch1=False,
+            audio_artifact_periodic_fail_ch2=False,
+            audio_artifact_periodic_fail_ch3=False,
+            audio_artifact_periodic_fail_ch4=False,
         )
 
         assert cycle.cycle_file == "cycle.pkl"
@@ -151,6 +163,18 @@ class TestInstantiation:
             biomechanics_qc_fail=False,
             sync_qc_fail=False,
             audio_qc_fail=False,
+            # Intermittent artifact QC
+            audio_artifact_intermittent_fail=False,
+            audio_artifact_intermittent_fail_ch1=False,
+            audio_artifact_intermittent_fail_ch2=False,
+            audio_artifact_intermittent_fail_ch3=False,
+            audio_artifact_intermittent_fail_ch4=False,
+            # Periodic artifact QC
+            audio_artifact_periodic_fail=False,
+            audio_artifact_periodic_fail_ch1=False,
+            audio_artifact_periodic_fail_ch2=False,
+            audio_artifact_periodic_fail_ch3=False,
+            audio_artifact_periodic_fail_ch4=False,
         )
         assert cycle.biomechanics_import_id == 2
 

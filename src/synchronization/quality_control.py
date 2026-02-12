@@ -7,6 +7,7 @@ Performs two-stage QC on synchronized recordings:
 
 import ast
 import dataclasses
+from dataclasses import dataclass, field
 import logging
 import re
 from datetime import datetime, timedelta
@@ -50,7 +51,9 @@ class SyncQCOutput:
     cycle_qc_results: list[CycleQCResult] = dataclasses.field(default_factory=list)
 
 
-class _CycleResult(NamedTuple):
+@dataclass
+class _CycleResult:
+    """Internal per-cycle QC result within synchronization QC."""
     cycle: pd.DataFrame
     index: int
     energy: float
@@ -67,6 +70,9 @@ class _CycleResult(NamedTuple):
     periodic_noise_ch4: bool = False
     sync_quality_score: float = 0.0  # Cross-modal sync quality score
     sync_qc_pass: bool = True  # Cross-modal sync QC pass/fail
+    # Per-channel artifact intervals (from detect_cycle_artifacts)
+    intermittent_intervals: dict = field(default_factory=dict)  # {ch: [(start, end), ...]}
+    periodic_intervals: dict = field(default_factory=dict)      # trimmed periodic intervals
 
 
 def _find_participant_dir(path: Path) -> Optional[Path]:
@@ -750,11 +756,27 @@ def perform_sync_qc(
             periodic_intervals_per_ch=trimmed_periodic_per_ch,
         )
 
+        # Extract per-channel intermittent intervals from cycle artifact results
+        channels = ["ch1", "ch2", "ch3", "ch4"]
+        intermittent_per_ch: dict[str, list[tuple[float, float]]] = {
+            ch: cycle_artifact_results.get(ch, {}).get("intermittent", [])
+            for ch in channels
+        }
+
         # Determine periodic noise detection from trimmed periodic
         periodic_noise_detected = any(
             bool(trimmed_periodic_per_ch.get(ch, []))
-            for ch in ["ch1", "ch2", "ch3", "ch4"]
+            for ch in channels
         )
+
+        # Determine intermittent noise detection
+        intermittent_detected = any(
+            bool(intermittent_per_ch.get(ch, []))
+            for ch in channels
+        )
+
+        # Audio QC fails if any cycle-level artifact detected
+        audio_qc_pass = not (periodic_noise_detected or intermittent_detected)
 
         # Run sync quality validation (Phase F)
         sync_valid, sync_quality_score, sync_reason = validate_sync_quality(
@@ -767,11 +789,11 @@ def perform_sync_qc(
                 index=idx,
                 energy=energy,
                 qc_pass=id(cycle_df) in clean_ids,
-                audio_qc_pass=True,  # Will be updated if raw audio QC finds issues
-                audio_qc_mic_1_pass=True,
-                audio_qc_mic_2_pass=True,
-                audio_qc_mic_3_pass=True,
-                audio_qc_mic_4_pass=True,
+                audio_qc_pass=audio_qc_pass,
+                audio_qc_mic_1_pass=not bool(intermittent_per_ch.get("ch1")) and not bool(trimmed_periodic_per_ch.get("ch1")),
+                audio_qc_mic_2_pass=not bool(intermittent_per_ch.get("ch2")) and not bool(trimmed_periodic_per_ch.get("ch2")),
+                audio_qc_mic_3_pass=not bool(intermittent_per_ch.get("ch3")) and not bool(trimmed_periodic_per_ch.get("ch3")),
+                audio_qc_mic_4_pass=not bool(intermittent_per_ch.get("ch4")) and not bool(trimmed_periodic_per_ch.get("ch4")),
                 periodic_noise_detected=periodic_noise_detected,
                 periodic_noise_ch1=bool(trimmed_periodic_per_ch.get('ch1', [])),
                 periodic_noise_ch2=bool(trimmed_periodic_per_ch.get('ch2', [])),
@@ -779,6 +801,8 @@ def perform_sync_qc(
                 periodic_noise_ch4=bool(trimmed_periodic_per_ch.get('ch4', [])),
                 sync_quality_score=sync_quality_score,
                 sync_qc_pass=sync_valid,
+                intermittent_intervals=intermittent_per_ch,
+                periodic_intervals=trimmed_periodic_per_ch,
             )
         )
 
@@ -1121,6 +1145,7 @@ def _save_qc_results(
             cycle_file=filename.name,
             is_outlier=not is_clean,
             acoustic_energy=float(result.energy),
+            biomechanics_qc_pass=not (not is_clean),  # outlier ↔ biomech fail
             sync_qc_pass=result.sync_qc_pass,
             sync_quality_score=result.sync_quality_score,
             audio_qc_pass=result.audio_qc_pass,
@@ -1133,6 +1158,14 @@ def _save_qc_results(
             periodic_noise_ch2=result.periodic_noise_ch2,
             periodic_noise_ch3=result.periodic_noise_ch3,
             periodic_noise_ch4=result.periodic_noise_ch4,
+            intermittent_intervals_ch1=result.intermittent_intervals.get("ch1", []),
+            intermittent_intervals_ch2=result.intermittent_intervals.get("ch2", []),
+            intermittent_intervals_ch3=result.intermittent_intervals.get("ch3", []),
+            intermittent_intervals_ch4=result.intermittent_intervals.get("ch4", []),
+            periodic_intervals_ch1=result.periodic_intervals.get("ch1", []),
+            periodic_intervals_ch2=result.periodic_intervals.get("ch2", []),
+            periodic_intervals_ch3=result.periodic_intervals.get("ch3", []),
+            periodic_intervals_ch4=result.periodic_intervals.get("ch4", []),
             pass_number=metadata_context.get("pass_number") if metadata_context else None,
             speed=metadata_context.get("speed") if metadata_context else None,
         ))

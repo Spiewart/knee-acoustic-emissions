@@ -105,40 +105,41 @@ class AudioProcessing(StudyMetadata):
     audio_qc_version: int = Field(default_factory=get_audio_qc_version)
 
     # ===== QC Fail Segments (overall + per channel) =====
-    qc_fail_segments: List[tuple] = Field(default_factory=list)
-    qc_fail_segments_ch1: List[tuple] = Field(default_factory=list)
-    qc_fail_segments_ch2: List[tuple] = Field(default_factory=list)
-    qc_fail_segments_ch3: List[tuple] = Field(default_factory=list)
-    qc_fail_segments_ch4: List[tuple] = Field(default_factory=list)
+    # No defaults — callers MUST explicitly populate all QC fields
+    qc_fail_segments: List[tuple] = Field(...)
+    qc_fail_segments_ch1: List[tuple] = Field(...)
+    qc_fail_segments_ch2: List[tuple] = Field(...)
+    qc_fail_segments_ch3: List[tuple] = Field(...)
+    qc_fail_segments_ch4: List[tuple] = Field(...)
 
     # ===== Signal Dropout QC =====
-    qc_signal_dropout: bool = False
-    qc_signal_dropout_segments: List[tuple] = Field(default_factory=list)
-    qc_signal_dropout_ch1: bool = False
-    qc_signal_dropout_segments_ch1: List[tuple] = Field(default_factory=list)
-    qc_signal_dropout_ch2: bool = False
-    qc_signal_dropout_segments_ch2: List[tuple] = Field(default_factory=list)
-    qc_signal_dropout_ch3: bool = False
-    qc_signal_dropout_segments_ch3: List[tuple] = Field(default_factory=list)
-    qc_signal_dropout_ch4: bool = False
-    qc_signal_dropout_segments_ch4: List[tuple] = Field(default_factory=list)
+    qc_signal_dropout: bool = Field(...)
+    qc_signal_dropout_segments: List[tuple] = Field(...)
+    qc_signal_dropout_ch1: bool = Field(...)
+    qc_signal_dropout_segments_ch1: List[tuple] = Field(...)
+    qc_signal_dropout_ch2: bool = Field(...)
+    qc_signal_dropout_segments_ch2: List[tuple] = Field(...)
+    qc_signal_dropout_ch3: bool = Field(...)
+    qc_signal_dropout_segments_ch3: List[tuple] = Field(...)
+    qc_signal_dropout_ch4: bool = Field(...)
+    qc_signal_dropout_segments_ch4: List[tuple] = Field(...)
 
     # ===== Continuous Artifact QC (detected at audio processing stage) =====
-    qc_continuous_artifact: bool = False
+    qc_continuous_artifact: bool = Field(...)
     qc_continuous_artifact_type: Optional[List[Literal["Intermittent", "Continuous"]]] = None
-    qc_continuous_artifact_segments: List[tuple] = Field(default_factory=list)
-    qc_continuous_artifact_ch1: bool = False
+    qc_continuous_artifact_segments: List[tuple] = Field(...)
+    qc_continuous_artifact_ch1: bool = Field(...)
     qc_continuous_artifact_type_ch1: Optional[List[Literal["Intermittent", "Continuous"]]] = None
-    qc_continuous_artifact_segments_ch1: List[tuple] = Field(default_factory=list)
-    qc_continuous_artifact_ch2: bool = False
+    qc_continuous_artifact_segments_ch1: List[tuple] = Field(...)
+    qc_continuous_artifact_ch2: bool = Field(...)
     qc_continuous_artifact_type_ch2: Optional[List[Literal["Intermittent", "Continuous"]]] = None
-    qc_continuous_artifact_segments_ch2: List[tuple] = Field(default_factory=list)
-    qc_continuous_artifact_ch3: bool = False
+    qc_continuous_artifact_segments_ch2: List[tuple] = Field(...)
+    qc_continuous_artifact_ch3: bool = Field(...)
     qc_continuous_artifact_type_ch3: Optional[List[Literal["Intermittent", "Continuous"]]] = None
-    qc_continuous_artifact_segments_ch3: List[tuple] = Field(default_factory=list)
-    qc_continuous_artifact_ch4: bool = False
+    qc_continuous_artifact_segments_ch3: List[tuple] = Field(...)
+    qc_continuous_artifact_ch4: bool = Field(...)
     qc_continuous_artifact_type_ch4: Optional[List[Literal["Intermittent", "Continuous"]]] = None
-    qc_continuous_artifact_segments_ch4: List[tuple] = Field(default_factory=list)
+    qc_continuous_artifact_segments_ch4: List[tuple] = Field(...)
 
     # ===== QC Status (auto-populated from segments) =====
     qc_not_passed: bool = False
@@ -330,9 +331,6 @@ class BiomechanicsImport(StudyMetadata):
     num_data_points: int = Field(...)
     num_passes: int = 0
 
-    # ===== QC Version =====
-    biomech_qc_version: int = Field(default_factory=get_biomech_qc_version)
-
     @field_validator("audio_processing_id")
     @classmethod
     def validate_audio_processing_id(cls, value: Optional[int]) -> Optional[int]:
@@ -340,10 +338,6 @@ class BiomechanicsImport(StudyMetadata):
         if value is not None and value <= 0:
             raise ValueError("audio_processing_id must be positive")
         return value
-
-    # ===== QC Metadata =====
-    biomechanics_qc_fail: bool = False
-    biomechanics_qc_notes: Optional[str] = None
 
     # ===== Processing Metadata =====
     processing_date: datetime = Field(...)
@@ -586,15 +580,15 @@ class MovementCycle(StudyMetadata):
     is_outlier: bool = Field(...)
     biomechanics_qc_fail: bool = Field(...)
     sync_qc_fail: bool = Field(...)
-    audio_qc_fail: bool = Field(default=False)
+    audio_qc_fail: bool = Field(...)
 
     # ===== Audio QC Details =====
     audio_qc_failures: Optional[List[Literal["dropout", "continuous", "intermittent", "periodic"]]] = None
-    audio_artifact_intermittent_fail: bool = Field(default=False)
-    audio_artifact_intermittent_fail_ch1: bool = Field(default=False)
-    audio_artifact_intermittent_fail_ch2: bool = Field(default=False)
-    audio_artifact_intermittent_fail_ch3: bool = Field(default=False)
-    audio_artifact_intermittent_fail_ch4: bool = Field(default=False)
+    audio_artifact_intermittent_fail: bool = Field(...)
+    audio_artifact_intermittent_fail_ch1: bool = Field(...)
+    audio_artifact_intermittent_fail_ch2: bool = Field(...)
+    audio_artifact_intermittent_fail_ch3: bool = Field(...)
+    audio_artifact_intermittent_fail_ch4: bool = Field(...)
     audio_artifact_timestamps: Optional[List[float]] = None
     audio_artifact_timestamps_ch1: Optional[List[float]] = None
     audio_artifact_timestamps_ch2: Optional[List[float]] = None
@@ -602,11 +596,11 @@ class MovementCycle(StudyMetadata):
     audio_artifact_timestamps_ch4: Optional[List[float]] = None
 
     # ===== Periodic Artifact QC (propagated from sync-level, trimmed to cycle) =====
-    audio_artifact_periodic_fail: bool = Field(default=False)
-    audio_artifact_periodic_fail_ch1: bool = Field(default=False)
-    audio_artifact_periodic_fail_ch2: bool = Field(default=False)
-    audio_artifact_periodic_fail_ch3: bool = Field(default=False)
-    audio_artifact_periodic_fail_ch4: bool = Field(default=False)
+    audio_artifact_periodic_fail: bool = Field(...)
+    audio_artifact_periodic_fail_ch1: bool = Field(...)
+    audio_artifact_periodic_fail_ch2: bool = Field(...)
+    audio_artifact_periodic_fail_ch3: bool = Field(...)
+    audio_artifact_periodic_fail_ch4: bool = Field(...)
     audio_artifact_periodic_timestamps: Optional[List[float]] = None
     audio_artifact_periodic_timestamps_ch1: Optional[List[float]] = None
     audio_artifact_periodic_timestamps_ch2: Optional[List[float]] = None
@@ -689,21 +683,33 @@ class CycleQCResult:
 
     # ===== QC Results =====
     acoustic_energy: float
-    biomechanics_qc_pass: bool = True
-    sync_qc_pass: bool = True
-    sync_quality_score: float = 0.0
-    audio_qc_pass: bool = True
-    audio_qc_mic_1_pass: bool = True
-    audio_qc_mic_2_pass: bool = True
-    audio_qc_mic_3_pass: bool = True
-    audio_qc_mic_4_pass: bool = True
+    biomechanics_qc_pass: bool
+    sync_qc_pass: bool
+    sync_quality_score: float
+    audio_qc_pass: bool
+    audio_qc_mic_1_pass: bool
+    audio_qc_mic_2_pass: bool
+    audio_qc_mic_3_pass: bool
+    audio_qc_mic_4_pass: bool
 
     # ===== Periodic Noise Detection =====
-    periodic_noise_detected: bool = False
-    periodic_noise_ch1: bool = False
-    periodic_noise_ch2: bool = False
-    periodic_noise_ch3: bool = False
-    periodic_noise_ch4: bool = False
+    periodic_noise_detected: bool
+    periodic_noise_ch1: bool
+    periodic_noise_ch2: bool
+    periodic_noise_ch3: bool
+    periodic_noise_ch4: bool
+
+    # ===== Intermittent Artifact Intervals (per-channel, cycle-level) =====
+    intermittent_intervals_ch1: list[tuple[float, float]]
+    intermittent_intervals_ch2: list[tuple[float, float]]
+    intermittent_intervals_ch3: list[tuple[float, float]]
+    intermittent_intervals_ch4: list[tuple[float, float]]
+
+    # ===== Periodic Artifact Intervals (per-channel, trimmed to cycle) =====
+    periodic_intervals_ch1: list[tuple[float, float]]
+    periodic_intervals_ch2: list[tuple[float, float]]
+    periodic_intervals_ch3: list[tuple[float, float]]
+    periodic_intervals_ch4: list[tuple[float, float]]
 
     # ===== Walk-Specific Metadata =====
     pass_number: Optional[int] = None
