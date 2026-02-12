@@ -221,7 +221,10 @@ class TestFullPipelineWalkingMultiplePassesAndSpeeds:
             from src.synchronization.quality_control import SyncQCOutput
 
             stem = Path(synced_pkl_path).stem
+            # Support both old format (Pass0001) and new short format (p1)
             match = re.search(r"pass(\d+)", stem, re.IGNORECASE)
+            if not match:
+                match = re.search(r"_p(\d+)(?:_|$)", stem)
             pass_num = int(match.group(1)) if match else 0
             base_duration = 0.75 + (pass_num * 0.1)
             cycles = [
