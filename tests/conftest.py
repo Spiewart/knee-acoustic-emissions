@@ -857,6 +857,16 @@ def synchronization_factory():
             "median_cycle_duration_s": 0.0,
             "min_cycle_duration_s": 0.0,
             "max_cycle_duration_s": 0.0,
+            "periodic_artifact_detected": False,
+            "periodic_artifact_detected_ch1": False,
+            "periodic_artifact_detected_ch2": False,
+            "periodic_artifact_detected_ch3": False,
+            "periodic_artifact_detected_ch4": False,
+            "periodic_artifact_segments": None,
+            "periodic_artifact_segments_ch1": None,
+            "periodic_artifact_segments_ch2": None,
+            "periodic_artifact_segments_ch3": None,
+            "periodic_artifact_segments_ch4": None,
         }
         defaults.update(overrides)
         return Synchronization(**defaults)
@@ -992,6 +1002,16 @@ def movement_cycle_factory():
             "biomechanics_qc_fail": False,
             "sync_qc_fail": False,
             "audio_qc_fail": False,
+            "audio_artifact_periodic_fail": False,
+            "audio_artifact_periodic_fail_ch1": False,
+            "audio_artifact_periodic_fail_ch2": False,
+            "audio_artifact_periodic_fail_ch3": False,
+            "audio_artifact_periodic_fail_ch4": False,
+            "audio_artifact_periodic_timestamps": None,
+            "audio_artifact_periodic_timestamps_ch1": None,
+            "audio_artifact_periodic_timestamps_ch2": None,
+            "audio_artifact_periodic_timestamps_ch3": None,
+            "audio_artifact_periodic_timestamps_ch4": None,
         }
         defaults.update(overrides)
         return MovementCycle(**defaults)

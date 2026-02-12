@@ -478,16 +478,38 @@ def detect_signal_dropout_per_mic(
     return per_mic_intervals
 
 
+@dataclass(frozen=True)
+class ContinuousArtifactThresholds:
+    """Thresholds for continuous background noise detection.
+
+    Continuous artifacts are persistent narrowband noise sources (fans, MRI
+    machines, HVAC) that last at least ``min_duration_s`` seconds. The 4-second
+    default spans ≥2 full maneuver cycles at the 0.25 Hz STS/FE cadence,
+    ensuring that exercise-related broadband sounds are not mis-classified.
+
+    Detection uses sliding-window Welch PSD to identify frequencies where the
+    peak-to-median power ratio exceeds ``peak_snr_threshold`` consistently.
+    """
+    min_duration_s: float = 4.0  # Minimum duration to classify as continuous
+    window_size_s: float = 2.0  # PSD sliding-window length
+    peak_snr_threshold: float = 10.0  # Peak/median power ratio for narrowband noise
+
+
+# Global default thresholds for continuous artifact detection
+DEFAULT_CONTINUOUS_THRESHOLDS = ContinuousArtifactThresholds()
+
+
 def _classify_artifact_type(
     intervals: List[Tuple[float, float]],
     *,
-    intermittent_threshold_s: float = 1.0,
+    intermittent_threshold_s: float = 4.0,
 ) -> List[str]:
     """Classify artifacts as 'Intermittent' or 'Continuous' based on duration.
 
     Args:
         intervals: List of (start_time, end_time) tuples
-        intermittent_threshold_s: Max duration (seconds) to classify as intermittent
+        intermittent_threshold_s: Max duration (seconds) to classify as intermittent.
+            Default is 4.0s (≥2 full maneuver cycles at 0.25 Hz cadence).
 
     Returns:
         List of artifact type strings ('Intermittent' or 'Continuous') per interval
@@ -603,30 +625,34 @@ def run_raw_audio_qc_per_mic(
     min_artifact_duration_s: float = 0.01,
     detect_periodic_noise: bool = False,
     periodic_noise_threshold: float = 0.3,
+    detect_continuous_noise: bool = True,
+    continuous_min_duration_s: float | None = None,
+    continuous_window_s: float | None = None,
+    continuous_snr_threshold: float | None = None,
 ) -> dict[str, List[Tuple[float, float]]]:
     """Run comprehensive raw audio QC checks per microphone.
 
-    Detects signal dropout and artifactual noise in raw audio recordings,
-    returning results separately for each microphone channel.
-
-    NOTE: Dropout thresholds are set conservatively to avoid false positives
-    on normal quiet periods in walking recordings. Only flags truly silent/missing
-    signal, not natural signal variations.
+    Detects signal dropout, spike artifacts, and continuous narrowband
+    background noise in raw audio recordings, returning results separately
+    for each microphone channel.
 
     Args:
         df: Audio DataFrame with time and channel data
         time_col: Name of time column
         audio_channels: List of channel names to check (default: ch1-ch4)
-        silence_threshold: Maximum RMS amplitude for silence detection (default: 0.01)
-        flatline_threshold: Maximum variance for flatline detection (default: 0.001)
+        silence_threshold: Maximum RMS amplitude for silence detection
+        flatline_threshold: Maximum variance for flatline detection
         spike_threshold_sigma: Number of standard deviations for spike detection
         dropout_window_s: Window size for dropout detection (seconds)
         spike_window_s: Window size for spike detection (seconds)
         min_dropout_duration_s: Minimum dropout duration to report
         min_artifact_duration_s: Minimum artifact duration to report
         detect_periodic_noise: Whether to detect periodic background noise
-        periodic_noise_threshold: Threshold for periodic noise detection (0-1),
-                                  higher = less sensitive (default: 0.3)
+        periodic_noise_threshold: Threshold for periodic noise detection (0-1)
+        detect_continuous_noise: Whether to detect continuous narrowband noise
+        continuous_min_duration_s: Minimum duration for continuous noise
+        continuous_window_s: PSD window size for continuous detection
+        continuous_snr_threshold: Peak/median ratio for narrowband detection
 
     Returns:
         Dictionary mapping channel name to list of (start_time, end_time) tuples
@@ -653,14 +679,33 @@ def run_raw_audio_qc_per_mic(
         periodic_noise_threshold=periodic_noise_threshold,
     )
 
-    # Merge dropout and artifact intervals per channel
+    # Continuous narrowband noise detection (spectral)
+    continuous_per_mic: dict[str, List[Tuple[float, float]]] = {}
+    if detect_continuous_noise:
+        continuous_per_mic = detect_continuous_background_noise_per_mic(
+            df,
+            time_col=time_col,
+            audio_channels=audio_channels,
+            min_duration_s=continuous_min_duration_s,
+            window_size_s=continuous_window_s,
+            peak_snr_threshold=continuous_snr_threshold,
+        )
+
+    # Merge dropout, artifact, and continuous intervals per channel
     per_mic_bad_intervals = {}
-    all_channels = set(list(dropout_per_mic.keys()) + list(artifact_per_mic.keys()))
+    all_channels = set(
+        list(dropout_per_mic.keys())
+        + list(artifact_per_mic.keys())
+        + list(continuous_per_mic.keys())
+    )
 
     for ch in all_channels:
         dropout_intervals = dropout_per_mic.get(ch, [])
         artifact_intervals = artifact_per_mic.get(ch, [])
-        merged = merge_bad_intervals(dropout_intervals, artifact_intervals)
+        continuous_intervals = continuous_per_mic.get(ch, [])
+        merged = merge_artifact_intervals(
+            dropout_intervals, artifact_intervals, continuous_intervals
+        )
         per_mic_bad_intervals[ch] = merged
 
     return per_mic_bad_intervals
@@ -1107,3 +1152,244 @@ def _detect_periodic_noise(
         return np.ones(len(data), dtype=bool)
     else:
         return np.zeros(len(data), dtype=bool)
+
+
+# ---------------------------------------------------------------------------
+# Phase C: Continuous background noise detection via sliding-window PSD
+# ---------------------------------------------------------------------------
+
+def detect_continuous_background_noise(
+    df: pd.DataFrame,
+    time_col: str = "tt",
+    audio_channels: list[str] | None = None,
+    *,
+    min_duration_s: float | None = None,
+    window_size_s: float | None = None,
+    peak_snr_threshold: float | None = None,
+) -> List[Tuple[float, float]]:
+    """Detect continuous narrowband background noise across all channels.
+
+    Uses a sliding-window Welch PSD approach to find time intervals where
+    a strong narrowband peak persists for at least ``min_duration_s``.  This
+    catches quiet but sustained noise sources (fans, HVAC, MRI hum) that
+    the spike-based detector in ``detect_artifactual_noise`` may miss.
+
+    Args:
+        df: Audio DataFrame with time and channel data.
+        time_col: Name of time column.
+        audio_channels: Channel names to check (default: ch1-ch4).
+        min_duration_s: Minimum duration to flag (default from
+            ``DEFAULT_CONTINUOUS_THRESHOLDS``).
+        window_size_s: Sliding PSD window length in seconds.
+        peak_snr_threshold: Peak-to-median power ratio for detection.
+
+    Returns:
+        Merged list of (start_time, end_time) tuples across all channels.
+    """
+    if min_duration_s is None:
+        min_duration_s = DEFAULT_CONTINUOUS_THRESHOLDS.min_duration_s
+    if window_size_s is None:
+        window_size_s = DEFAULT_CONTINUOUS_THRESHOLDS.window_size_s
+    if peak_snr_threshold is None:
+        peak_snr_threshold = DEFAULT_CONTINUOUS_THRESHOLDS.peak_snr_threshold
+    if audio_channels is None:
+        audio_channels = ["ch1", "ch2", "ch3", "ch4"]
+
+    available_channels = [ch for ch in audio_channels if ch in df.columns]
+    if not available_channels or time_col not in df.columns:
+        return []
+
+    time_s = _convert_time_to_seconds(df, time_col)
+    valid_times = time_s[np.isfinite(time_s)]
+    if len(valid_times) < 2:
+        return []
+
+    dt_median = float(np.median(np.diff(valid_times)))
+    if dt_median <= 0:
+        return []
+    fs = 1.0 / dt_median
+
+    combined_mask = np.zeros(len(df), dtype=bool)
+    for ch in available_channels:
+        ch_data = pd.to_numeric(df[ch], errors="coerce").to_numpy()
+        ch_mask = _sliding_window_psd_narrowband(
+            ch_data, fs, window_size_s, peak_snr_threshold
+        )
+        combined_mask |= ch_mask
+
+    intervals = _mask_to_intervals(combined_mask, time_s, min_duration_s=min_duration_s)
+    return intervals
+
+
+def detect_continuous_background_noise_per_mic(
+    df: pd.DataFrame,
+    time_col: str = "tt",
+    audio_channels: list[str] | None = None,
+    *,
+    min_duration_s: float | None = None,
+    window_size_s: float | None = None,
+    peak_snr_threshold: float | None = None,
+) -> dict[str, List[Tuple[float, float]]]:
+    """Detect continuous narrowband background noise per microphone channel.
+
+    Same algorithm as :func:`detect_continuous_background_noise` but returns
+    results per channel so that per-mic QC columns can be populated.
+
+    Returns:
+        Dictionary mapping channel name to list of (start, end) intervals.
+    """
+    if min_duration_s is None:
+        min_duration_s = DEFAULT_CONTINUOUS_THRESHOLDS.min_duration_s
+    if window_size_s is None:
+        window_size_s = DEFAULT_CONTINUOUS_THRESHOLDS.window_size_s
+    if peak_snr_threshold is None:
+        peak_snr_threshold = DEFAULT_CONTINUOUS_THRESHOLDS.peak_snr_threshold
+    if audio_channels is None:
+        audio_channels = ["ch1", "ch2", "ch3", "ch4"]
+
+    available_channels = [ch for ch in audio_channels if ch in df.columns]
+    if not available_channels or time_col not in df.columns:
+        return {}
+
+    time_s = _convert_time_to_seconds(df, time_col)
+    valid_times = time_s[np.isfinite(time_s)]
+    if len(valid_times) < 2:
+        return {}
+
+    dt_median = float(np.median(np.diff(valid_times)))
+    if dt_median <= 0:
+        return {}
+    fs = 1.0 / dt_median
+
+    per_mic: dict[str, List[Tuple[float, float]]] = {}
+    for ch in available_channels:
+        ch_data = pd.to_numeric(df[ch], errors="coerce").to_numpy()
+        ch_mask = _sliding_window_psd_narrowband(
+            ch_data, fs, window_size_s, peak_snr_threshold
+        )
+        per_mic[ch] = _mask_to_intervals(ch_mask, time_s, min_duration_s=min_duration_s)
+
+    return per_mic
+
+
+def _sliding_window_psd_narrowband(
+    data: np.ndarray,
+    fs: float,
+    window_size_s: float,
+    peak_snr_threshold: float,
+) -> np.ndarray:
+    """Return a boolean mask marking samples with narrowband spectral peaks.
+
+    Slides a window across *data*, computes a Welch PSD inside each window,
+    and marks the window as *narrowband noise* when the peak-to-median
+    spectral power ratio exceeds ``peak_snr_threshold`` (ignoring DC and
+    frequencies < 5 Hz).
+    """
+    from scipy.signal import welch as scipy_welch
+
+    n = len(data)
+    if n < 256:
+        return np.zeros(n, dtype=bool)
+
+    window_samples = max(int(fs * window_size_s), 256)
+    step = window_samples // 2  # 50 % overlap between consecutive windows
+
+    mask = np.zeros(n, dtype=bool)
+
+    for start_idx in range(0, n - window_samples + 1, step):
+        end_idx = start_idx + window_samples
+        segment = data[start_idx:end_idx]
+
+        try:
+            nperseg = min(window_samples, int(fs * 0.5))  # 0.5 s PSD sub-windows
+            nperseg = max(nperseg, 64)
+            freqs, psd = scipy_welch(
+                segment, fs=fs, nperseg=nperseg, noverlap=nperseg // 2
+            )
+        except Exception:
+            continue
+
+        if len(psd) == 0:
+            continue
+
+        # Ignore DC and very low frequencies
+        freq_mask = freqs > 5.0
+        if not np.any(freq_mask):
+            continue
+
+        psd_nondc = psd[freq_mask]
+        median_power = np.median(psd_nondc)
+        if median_power <= 0:
+            continue
+
+        peak_power = np.max(psd_nondc)
+        if peak_power / median_power >= peak_snr_threshold:
+            mask[start_idx:end_idx] = True
+
+    return mask
+
+
+# ---------------------------------------------------------------------------
+# Phase D: Interval trimming and merging utilities for cycle-level QC
+# ---------------------------------------------------------------------------
+
+def trim_intervals_to_cycle(
+    intervals: List[Tuple[float, float]],
+    cycle_start: float,
+    cycle_end: float,
+) -> List[Tuple[float, float]]:
+    """Clip artifact intervals to a movement cycle's time bounds.
+
+    Each interval that overlaps ``[cycle_start, cycle_end]`` is trimmed to
+    fit within the cycle bounds.  Non-overlapping intervals are discarded.
+
+    Args:
+        intervals: List of (start, end) artifact time intervals.
+        cycle_start: Cycle start time in seconds.
+        cycle_end: Cycle end time in seconds.
+
+    Returns:
+        List of trimmed (start, end) tuples within the cycle.
+    """
+    trimmed: List[Tuple[float, float]] = []
+    for start, end in intervals:
+        # Skip intervals with no overlap
+        if end <= cycle_start or start >= cycle_end:
+            continue
+        trimmed.append((max(start, cycle_start), min(end, cycle_end)))
+    return trimmed
+
+
+def merge_artifact_intervals(
+    *interval_lists: List[Tuple[float, float]],
+    merge_gap_s: float = 0.0,
+) -> List[Tuple[float, float]]:
+    """Merge multiple lists of artifact intervals into one sorted, non-overlapping list.
+
+    This generalises :func:`merge_bad_intervals` to accept an arbitrary number
+    of interval lists (intermittent, continuous, periodic, …) and merge them.
+
+    Args:
+        *interval_lists: One or more lists of (start, end) tuples.
+        merge_gap_s: Intervals separated by less than this gap are merged.
+
+    Returns:
+        Sorted, merged list of (start, end) tuples.
+    """
+    all_intervals: List[Tuple[float, float]] = []
+    for ilist in interval_lists:
+        all_intervals.extend(ilist)
+    if not all_intervals:
+        return []
+
+    sorted_intervals = sorted(all_intervals, key=lambda x: x[0])
+
+    merged = [sorted_intervals[0]]
+    for start, end in sorted_intervals[1:]:
+        prev_start, prev_end = merged[-1]
+        if start <= prev_end + merge_gap_s:
+            merged[-1] = (prev_start, max(prev_end, end))
+        else:
+            merged.append((start, end))
+
+    return merged

@@ -6,17 +6,20 @@ ensures that metadata correctly indicates which version of QC each file passed.
 
 Version History:
     Audio QC v1: Initial implementation with periodic audio detection
+    Audio QC v2: Continuous artifact threshold changed to 4s, spectral detection added
     Biomechanics QC v1: Basic biomechanics validation
+    Biomechanics QC v2: Sit-to-stand validation rewritten for bidirectional cycles
     Cycle QC v1: Initial cycle-level acoustic energy thresholding
+    Cycle QC v2: Intermittent + periodic artifact detection, sync QC improvements
 """
 
 from typing import Literal
 
 # Current QC version constants
 # Increment these when QC methods are modified
-AUDIO_QC_VERSION = 1
-BIOMECH_QC_VERSION = 1
-CYCLE_QC_VERSION = 1
+AUDIO_QC_VERSION = 2
+BIOMECH_QC_VERSION = 2
+CYCLE_QC_VERSION = 2
 
 
 def get_audio_qc_version() -> int:

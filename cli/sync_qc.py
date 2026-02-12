@@ -97,7 +97,7 @@ def main() -> int:
         logger.info(f"\nProcessing: {synced_file}")
 
         try:
-            clean_cycles, outlier_cycles, output_dir = perform_sync_qc(
+            qc_output = perform_sync_qc(
                 synced_file,
                 maneuver=args.maneuver,
                 speed=args.speed,
@@ -105,12 +105,12 @@ def main() -> int:
                 create_plots=not args.no_plots,
             )
 
-            total_clean += len(clean_cycles)
-            total_outliers += len(outlier_cycles)
+            total_clean += len(qc_output.clean_cycles)
+            total_outliers += len(qc_output.outlier_cycles)
 
             logger.info(
-                f"✓ Complete: {len(clean_cycles)} clean, {len(outlier_cycles)} outliers "
-                f"→ {output_dir}"
+                f"✓ Complete: {len(qc_output.clean_cycles)} clean, {len(qc_output.outlier_cycles)} outliers "
+                f"→ {qc_output.output_dir}"
             )
 
         except Exception as e:

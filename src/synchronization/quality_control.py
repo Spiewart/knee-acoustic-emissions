@@ -6,7 +6,7 @@ Performs two-stage QC on synchronized recordings:
 """
 
 import ast
-import json
+import dataclasses
 import logging
 import re
 from datetime import datetime, timedelta
@@ -28,9 +28,26 @@ from src.biomechanics.quality_control import (
     get_default_min_rom,
     validate_knee_angle_waveform,
 )
-from src.models import FullMovementCycleMetadata, MicrophonePosition
+from src.metadata import CycleQCResult
+from src.models import MicrophonePosition
 
 logger = logging.getLogger(__name__)
+
+
+@dataclasses.dataclass
+class SyncQCOutput:
+    """Structured return from perform_sync_qc(), replacing the legacy 4-tuple.
+
+    Carries both the cycle DataFrames and the per-cycle QC metadata
+    so downstream stages can build MovementCycle records without
+    reading JSON from disk.
+    """
+
+    clean_cycles: list[pd.DataFrame]
+    outlier_cycles: list[pd.DataFrame]
+    output_dir: Path
+    sync_periodic_results: Optional[dict] = None
+    cycle_qc_results: list[CycleQCResult] = dataclasses.field(default_factory=list)
 
 
 class _CycleResult(NamedTuple):
@@ -288,91 +305,6 @@ def _build_cycle_metadata_context(
         "audio_qc_bad_intervals": audio_qc_bad_intervals,
         "audio_qc_bad_intervals_per_mic": audio_qc_bad_intervals_per_mic,
     }
-
-
-def _build_cycle_metadata_for_cycle(
-    result: _CycleResult,
-    context: dict[str, Any],
-) -> FullMovementCycleMetadata:
-    return FullMovementCycleMetadata(
-        id=result.index,
-        cycle_index=result.index,
-        cycle_acoustic_energy=float(result.energy),
-        cycle_qc_pass=result.qc_pass,
-        audio_qc_pass=result.audio_qc_pass,
-        audio_qc_mic_1_pass=result.audio_qc_mic_1_pass,
-        audio_qc_mic_2_pass=result.audio_qc_mic_2_pass,
-        audio_qc_mic_3_pass=result.audio_qc_mic_3_pass,
-        audio_qc_mic_4_pass=result.audio_qc_mic_4_pass,
-        periodic_noise_detected=result.periodic_noise_detected,
-        periodic_noise_ch1=result.periodic_noise_ch1,
-        periodic_noise_ch2=result.periodic_noise_ch2,
-        periodic_noise_ch3=result.periodic_noise_ch3,
-        periodic_noise_ch4=result.periodic_noise_ch4,
-        sync_quality_score=result.sync_quality_score,
-        sync_qc_pass=result.sync_qc_pass,
-        scripted_maneuver=context["maneuver"],
-        speed=context["speed"],
-        pass_number=context["pass_number"],
-        study=context["study"],
-        study_id=context["study_id"],
-        knee=context["knee"],
-        audio_file_name=context["audio_file_name"],
-        audio_serial_number=context["audio_serial_number"],
-        audio_firmware_version=context["audio_firmware_version"],
-        date_of_recording=context["date_of_recording"],
-        microphones=context["microphones"],
-        microphone_notes=context["microphone_notes"],
-        audio_sync_time=context["audio_sync_time"],
-        biomech_file_name=context["biomech_file_name"],
-        biomech_sync_left_time=context["biomech_sync_left_time"],
-        biomech_sync_right_time=context["biomech_sync_right_time"],
-    )
-
-
-def _format_timedelta_readable(td: timedelta) -> str:
-    """Format a timedelta as a human-readable string.
-
-    Args:
-        td: timedelta to format
-
-    Returns:
-        String like "16.64 s" or "0.00 s"
-    """
-    total_seconds = td.total_seconds()
-    return f"{total_seconds:.3f} s"
-
-
-def _write_cycle_metadata_json(path: Path, metadata: FullMovementCycleMetadata) -> None:
-    """Write cycle metadata to JSON file with readable timedelta formatting.
-
-    Args:
-        path: Path to write JSON to
-        metadata: FullMovementCycleMetadata to serialize
-    """
-    try:
-        payload = metadata.model_dump(mode="json")
-
-        # Format timedeltas as readable strings
-        for key in ("audio_sync_time", "biomech_sync_left_time", "biomech_sync_right_time"):
-            if key in payload and payload[key] is not None:
-                # payload[key] is ISO 8601 duration string from model_dump
-                # Parse it back to timedelta to get the value
-                iso_str = payload[key]
-                if isinstance(iso_str, str):
-                    # ISO 8601 duration format like "PT16.636824S"
-                    # Simple parsing for seconds format
-                    if iso_str.startswith("PT") and iso_str.endswith("S"):
-                        seconds_str = iso_str[2:-1]
-                        try:
-                            seconds = float(seconds_str)
-                            payload[key] = _format_timedelta_readable(timedelta(seconds=seconds))
-                        except (ValueError, AttributeError):
-                            pass
-
-        path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-    except Exception as exc:  # pragma: no cover - metadata best effort
-        logger.warning("Failed to write metadata JSON %s: %s", path, exc)
 
 
 class MovementCycleQC:
@@ -659,7 +591,10 @@ def perform_sync_qc(
     biomech_min_rom: Optional[float] = None,
     create_plots: bool = True,
     bad_audio_segments: Optional[list[tuple[float, float]]] = None,
-) -> tuple[list[pd.DataFrame], list[pd.DataFrame], Path]:
+    bad_audio_segments_per_mic: Optional[dict[str, list[tuple[float, float]]]] = None,
+    continuous_artifact_segments: Optional[list[tuple[float, float]]] = None,
+    continuous_artifact_segments_per_mic: Optional[dict[str, list[tuple[float, float]]]] = None,
+) -> tuple[list[pd.DataFrame], list[pd.DataFrame], Path, Optional[dict]]:
     """Perform complete QC pipeline on a synchronized recording.
 
     Args:
@@ -672,12 +607,15 @@ def perform_sync_qc(
                         If None, uses maneuver-specific defaults.
         create_plots: Whether to create visualization plots.
         bad_audio_segments: Optional list of (start_time, end_time) tuples in audio coordinates
-                           indicating bad audio segments from raw audio QC. If None, attempts
-                           to load from processing log. Useful for providing segments from
-                           alternative sources (e.g., database) in the future.
+                           indicating bad audio segments from raw audio QC.
+        bad_audio_segments_per_mic: Per-channel bad audio segments dict (ch1→intervals).
+        continuous_artifact_segments: Continuous artifact intervals from audio-stage (Phase C).
+        continuous_artifact_segments_per_mic: Per-channel continuous artifact intervals.
 
     Returns:
-        Tuple of (clean_cycles, outlier_cycles, output_directory)
+        Tuple of (clean_cycles, outlier_cycles, output_directory, sync_periodic_results)
+        where sync_periodic_results is a dict with sync-level periodic artifact data
+        (or None if no periodic artifacts were detected).
 
     Raises:
         FileNotFoundError: If synced_pkl_path does not exist.
@@ -704,14 +642,14 @@ def perform_sync_qc(
         cycles = extract_movement_cycles(synced_df, maneuver=maneuver, speed=speed)
     except ValueError as exc:
         logger.warning("Skipping cycle extraction: %s", exc)
-        return [], [], output_dir or synced_pkl_path.parent
+        return [], [], output_dir or synced_pkl_path.parent, None
     logger.info(f"Extracted {len(cycles)} movement cycles")
 
     if not cycles:
         logger.warning("No movement cycles extracted")
-        return [], [], output_dir or synced_pkl_path.parent
+        return [], [], output_dir or synced_pkl_path.parent, None
 
-    # Perform QC analysis
+    # Perform QC analysis (Stage 1: acoustic threshold, Stage 2: biomechanics)
     qc = MovementCycleQC(
         maneuver=maneuver,
         speed=speed,
@@ -720,33 +658,108 @@ def perform_sync_qc(
     )
     clean_cycles, outlier_cycles = qc.analyze_cycles(cycles)
 
-    # Compute per-cycle metadata (retain original ordering)
+    # ----------------------------------------------------------------
+    # Phase E.1: Sync-level periodic artifact detection
+    # Run on the exercise portion of the full synchronized DataFrame
+    # ----------------------------------------------------------------
+    from src.audio.cycle_qc import (
+        detect_cycle_artifacts,
+        detect_periodic_artifacts_sync_level,
+        validate_sync_quality,
+    )
+    from src.audio.raw_qc import merge_artifact_intervals, trim_intervals_to_cycle
+
+    sync_periodic_per_ch = detect_periodic_artifacts_sync_level(
+        synced_df, cycles, time_col="tt"
+    )
+    sync_has_periodic = any(
+        bool(intervals) for intervals in sync_periodic_per_ch.values()
+    )
+    logger.info(
+        f"Sync-level periodic detection: {'detected' if sync_has_periodic else 'none'} "
+        f"across {sum(1 for v in sync_periodic_per_ch.values() if v)} channel(s)"
+    )
+
+    # Build sync_periodic_results for caller to persist on Synchronization record
+    sync_periodic_results: Optional[dict] = None
+    if sync_has_periodic:
+        # Merge all channels for overall segments
+        all_ch_intervals: list[tuple[float, float]] = []
+        for ch_intervals in sync_periodic_per_ch.values():
+            all_ch_intervals.extend(ch_intervals)
+        overall_segments = merge_artifact_intervals(all_ch_intervals) if all_ch_intervals else []
+
+        sync_periodic_results = {
+            "periodic_artifact_detected": True,
+            "periodic_artifact_segments": overall_segments,
+        }
+        for ch_name in ["ch1", "ch2", "ch3", "ch4"]:
+            ch_intervals = sync_periodic_per_ch.get(ch_name, [])
+            sync_periodic_results[f"periodic_artifact_detected_{ch_name}"] = bool(ch_intervals)
+            sync_periodic_results[f"periodic_artifact_segments_{ch_name}"] = ch_intervals
+
+    # Prepare continuous artifact intervals (per-channel, already in sync coordinates)
+    continuous_per_ch: dict[str, list[tuple[float, float]]] = {}
+    if continuous_artifact_segments_per_mic:
+        continuous_per_ch = continuous_artifact_segments_per_mic
+    elif continuous_artifact_segments:
+        # Broadcast overall to all channels
+        for ch in ["ch1", "ch2", "ch3", "ch4"]:
+            continuous_per_ch[ch] = list(continuous_artifact_segments)
+
+    # ----------------------------------------------------------------
+    # Per-cycle QC: intermittent + periodic (trimmed) + continuous (trimmed) + sync quality
+    # ----------------------------------------------------------------
     clean_ids = {id(cycle) for cycle in clean_cycles}
     cycle_results: list[_CycleResult] = []
-
-    # Import cycle QC functions locally to avoid circular imports
-    # TODO: Consider refactoring module structure to avoid this pattern
-    # (e.g., moving shared types to a separate module)
-    from src.audio.cycle_qc import (
-        check_cycle_periodic_noise,
-        validate_acoustic_waveform,
-    )
 
     for idx, cycle_df in enumerate(cycles):
         energy = qc._compute_cycle_acoustic_energy(cycle_df)
 
-        # Run cycle-level audio QC (periodic noise detection)
-        periodic_noise_results = check_cycle_periodic_noise(cycle_df)
-        periodic_noise_detected = any(periodic_noise_results.values())
+        # Get cycle time bounds
+        if "tt" in cycle_df.columns:
+            if isinstance(cycle_df["tt"].iloc[0], pd.Timedelta):
+                cycle_start = cycle_df["tt"].iloc[0].total_seconds()
+                cycle_end = cycle_df["tt"].iloc[-1].total_seconds()
+            else:
+                cycle_start = float(cycle_df["tt"].iloc[0])
+                cycle_end = float(cycle_df["tt"].iloc[-1])
+        else:
+            cycle_start = 0.0
+            cycle_end = 0.0
 
-        # Run waveform-based sync quality validation (replaces phase-based)
-        waveform_valid, validation_reason = validate_acoustic_waveform(
+        # Trim continuous artifacts to this cycle's bounds (Phase D)
+        trimmed_continuous_per_ch: dict[str, list[tuple[float, float]]] = {}
+        for ch, intervals in continuous_per_ch.items():
+            trimmed_continuous_per_ch[ch] = trim_intervals_to_cycle(
+                intervals, cycle_start, cycle_end
+            )
+
+        # Trim periodic artifacts to this cycle's bounds (Phase E.1 → E.2)
+        trimmed_periodic_per_ch: dict[str, list[tuple[float, float]]] = {}
+        for ch, intervals in sync_periodic_per_ch.items():
+            trimmed_periodic_per_ch[ch] = trim_intervals_to_cycle(
+                intervals, cycle_start, cycle_end
+            )
+
+        # Run per-cycle artifact detection (Phase E.2)
+        cycle_artifact_results = detect_cycle_artifacts(
             cycle_df,
-            maneuver=maneuver
+            maneuver=maneuver,
+            continuous_intervals_per_ch=trimmed_continuous_per_ch,
+            periodic_intervals_per_ch=trimmed_periodic_per_ch,
         )
-        # Convert waveform validation to sync quality score (1.0 if valid, 0.0 if not)
-        sync_quality_score = 1.0 if waveform_valid else 0.0
-        sync_qc_pass = waveform_valid
+
+        # Determine periodic noise detection from trimmed periodic
+        periodic_noise_detected = any(
+            bool(trimmed_periodic_per_ch.get(ch, []))
+            for ch in ["ch1", "ch2", "ch3", "ch4"]
+        )
+
+        # Run sync quality validation (Phase F)
+        sync_valid, sync_quality_score, sync_reason = validate_sync_quality(
+            cycle_df, maneuver=maneuver
+        )
 
         cycle_results.append(
             _CycleResult(
@@ -755,17 +768,17 @@ def perform_sync_qc(
                 energy=energy,
                 qc_pass=id(cycle_df) in clean_ids,
                 audio_qc_pass=True,  # Will be updated if raw audio QC finds issues
-                audio_qc_mic_1_pass=True,  # Per-mic QC, will be updated
+                audio_qc_mic_1_pass=True,
                 audio_qc_mic_2_pass=True,
                 audio_qc_mic_3_pass=True,
                 audio_qc_mic_4_pass=True,
                 periodic_noise_detected=periodic_noise_detected,
-                periodic_noise_ch1=periodic_noise_results.get('ch1', False),
-                periodic_noise_ch2=periodic_noise_results.get('ch2', False),
-                periodic_noise_ch3=periodic_noise_results.get('ch3', False),
-                periodic_noise_ch4=periodic_noise_results.get('ch4', False),
+                periodic_noise_ch1=bool(trimmed_periodic_per_ch.get('ch1', [])),
+                periodic_noise_ch2=bool(trimmed_periodic_per_ch.get('ch2', [])),
+                periodic_noise_ch3=bool(trimmed_periodic_per_ch.get('ch3', [])),
+                periodic_noise_ch4=bool(trimmed_periodic_per_ch.get('ch4', [])),
                 sync_quality_score=sync_quality_score,
-                sync_qc_pass=sync_qc_pass,
+                sync_qc_pass=sync_valid,
             )
         )
 
@@ -929,7 +942,7 @@ def perform_sync_qc(
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Save results and metadata
-    _save_qc_results(
+    cycle_qc_results = _save_qc_results(
         final_clean_cycles,
         final_outlier_cycles,
         output_dir,
@@ -941,7 +954,13 @@ def perform_sync_qc(
 
     logger.info(f"QC results saved to {output_dir}")
 
-    return final_clean_cycles, final_outlier_cycles, output_dir
+    return SyncQCOutput(
+        clean_cycles=final_clean_cycles,
+        outlier_cycles=final_outlier_cycles,
+        output_dir=output_dir,
+        sync_periodic_results=sync_periodic_results,
+        cycle_qc_results=cycle_qc_results,
+    )
 
 
 def _infer_maneuver_from_path(path: Path) -> str:
@@ -1025,8 +1044,8 @@ def _save_qc_results(
     *,
     cycle_results: Optional[list[_CycleResult]] = None,
     metadata_context: Optional[dict[str, Any]] = None,
-) -> None:
-    """Save QC results to disk.
+) -> list[CycleQCResult]:
+    """Save QC results to disk and build in-memory CycleQCResult objects.
 
     Args:
         clean_cycles: List of clean cycle DataFrames.
@@ -1035,13 +1054,18 @@ def _save_qc_results(
         file_stem: Stem of original file (for naming).
         create_plots: Whether to create visualization plots.
         cycle_results: Optional detailed cycle results including metadata.
-        metadata_context: Optional context for building metadata JSON files.
+        metadata_context: Optional context with pass_number/speed for walk maneuvers.
+
+    Returns:
+        List of CycleQCResult objects for in-memory consumption by downstream stages.
     """
     # Create subdirectories
     clean_dir = output_dir / "clean"
     outlier_dir = output_dir / "outliers"
     clean_dir.mkdir(parents=True, exist_ok=True)
     outlier_dir.mkdir(parents=True, exist_ok=True)
+
+    qc_results: list[CycleQCResult] = []
 
     # Fallback to legacy behavior when no metadata provided
     if cycle_results is None:
@@ -1064,7 +1088,7 @@ def _save_qc_results(
                 )
 
         logger.info(f"Saved {len(clean_cycles)} clean cycles and {len(outlier_cycles)} outliers")
-        return
+        return qc_results
 
     clean_counter = 0
     outlier_counter = 0
@@ -1091,14 +1115,30 @@ def _save_qc_results(
                 title_suffix="(OUTLIER)" if not is_clean else "",
             )
 
-        if metadata_context is not None:
-            try:
-                metadata = _build_cycle_metadata_for_cycle(result, metadata_context)
-                _write_cycle_metadata_json(filename.with_suffix(".json"), metadata)
-            except Exception as exc:  # pragma: no cover - metadata best effort
-                logger.warning("Failed to create metadata for %s: %s", filename, exc)
+        # Build in-memory CycleQCResult for downstream consumption
+        qc_results.append(CycleQCResult(
+            cycle_index=result.index,
+            cycle_file=filename.name,
+            is_outlier=not is_clean,
+            acoustic_energy=float(result.energy),
+            sync_qc_pass=result.sync_qc_pass,
+            sync_quality_score=result.sync_quality_score,
+            audio_qc_pass=result.audio_qc_pass,
+            audio_qc_mic_1_pass=result.audio_qc_mic_1_pass,
+            audio_qc_mic_2_pass=result.audio_qc_mic_2_pass,
+            audio_qc_mic_3_pass=result.audio_qc_mic_3_pass,
+            audio_qc_mic_4_pass=result.audio_qc_mic_4_pass,
+            periodic_noise_detected=result.periodic_noise_detected,
+            periodic_noise_ch1=result.periodic_noise_ch1,
+            periodic_noise_ch2=result.periodic_noise_ch2,
+            periodic_noise_ch3=result.periodic_noise_ch3,
+            periodic_noise_ch4=result.periodic_noise_ch4,
+            pass_number=metadata_context.get("pass_number") if metadata_context else None,
+            speed=metadata_context.get("speed") if metadata_context else None,
+        ))
 
     logger.info(f"Saved {clean_counter} clean cycles and {outlier_counter} outliers")
+    return qc_results
 
 
 def _create_cycle_plot(
@@ -1285,7 +1325,7 @@ def main() -> int:
         logger.info(f"\nProcessing: {synced_file}")
 
         try:
-            clean_cycles, outlier_cycles, output_dir = perform_sync_qc(
+            qc_output = perform_sync_qc(
                 synced_file,
                 maneuver=args.maneuver,
                 speed=args.speed,
@@ -1294,12 +1334,12 @@ def main() -> int:
                 create_plots=not args.no_plots,
             )
 
-            total_clean += len(clean_cycles)
-            total_outliers += len(outlier_cycles)
+            total_clean += len(qc_output.clean_cycles)
+            total_outliers += len(qc_output.outlier_cycles)
 
             logger.info(
-                f"✓ Complete: {len(clean_cycles)} clean, {len(outlier_cycles)} outliers "
-                f"→ {output_dir}"
+                f"✓ Complete: {len(qc_output.clean_cycles)} clean, {len(qc_output.outlier_cycles)} outliers "
+                f"→ {qc_output.output_dir}"
             )
 
         except Exception as e:

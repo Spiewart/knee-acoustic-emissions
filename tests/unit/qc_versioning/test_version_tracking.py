@@ -40,7 +40,7 @@ class TestQCVersionIntegration:
         )
 
         assert metadata.audio_qc_version == AUDIO_QC_VERSION
-        assert metadata.audio_qc_version == 1  # Current version
+        assert metadata.audio_qc_version == 2  # Current version
 
     def test_biomech_metadata_includes_version(self):
         """BiomechanicsFileMetadata should include current biomech QC version."""
@@ -54,7 +54,7 @@ class TestQCVersionIntegration:
         )
 
         assert metadata.biomech_qc_version == BIOMECH_QC_VERSION
-        assert metadata.biomech_qc_version == 1  # Current version
+        assert metadata.biomech_qc_version == 2  # Current version
 
     def test_cycle_metadata_includes_all_versions(self):
         """FullMovementCycleMetadata should include all three QC versions."""
@@ -97,10 +97,10 @@ class TestQCVersionIntegration:
         assert metadata.biomech_qc_version == BIOMECH_QC_VERSION
         assert metadata.cycle_qc_version == CYCLE_QC_VERSION
 
-        # Verify current values (all should be 1 initially)
-        assert metadata.audio_qc_version == 1
-        assert metadata.biomech_qc_version == 1
-        assert metadata.cycle_qc_version == 1
+        # Verify current values (all bumped to v2)
+        assert metadata.audio_qc_version == 2
+        assert metadata.biomech_qc_version == 2
+        assert metadata.cycle_qc_version == 2
 
     def test_metadata_serialization_includes_versions(self):
         """QC versions should be included when metadata is serialized."""

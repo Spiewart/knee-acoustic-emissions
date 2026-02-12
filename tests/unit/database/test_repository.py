@@ -101,7 +101,6 @@ def create_test_synchronization(**kwargs):
         "freq_time": 4.9,
         "sync_file_name": "test_sync.pkl",
         "sync_duration": 120.0,
-        "sync_qc_fail": False,
         "processing_date": datetime(2024, 1, 2, 12, 0, 0),
     }
     defaults.update(kwargs)

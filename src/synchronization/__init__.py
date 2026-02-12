@@ -5,6 +5,7 @@ Handles synchronization of audio and biomechanics data and quality control.
 
 from src.synchronization.quality_control import (
                                                  MovementCycleQC,
+                                                 SyncQCOutput,
                                                  find_synced_files,
                                                  perform_sync_qc,
 )
@@ -23,6 +24,7 @@ __all__ = [
     "get_bio_end_time",
     # quality_control
     "MovementCycleQC",
+    "SyncQCOutput",
     "perform_sync_qc",
     "find_synced_files",
 ]

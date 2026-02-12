@@ -1,6 +1,5 @@
 """Object-oriented participant processing with clear state management."""
 
-import json
 import logging
 import re
 from dataclasses import dataclass, field
@@ -11,7 +10,7 @@ from typing import Literal, Optional, cast
 import pandas as pd
 
 from src.biomechanics.importers import import_biomechanics_recordings
-from src.metadata import AudioProcessing, BiomechanicsImport, Synchronization
+from src.metadata import AudioProcessing, BiomechanicsImport, CycleQCResult, Synchronization
 from src.orchestration.processing_log import (
     KneeProcessingLog,
     ManeuverProcessingLog,
@@ -84,6 +83,7 @@ class CycleData:
     output_dir: Optional[Path] = None
     record: Optional[Synchronization] = None  # Synchronization record with cycle details
     sync_file_stem: Optional[str] = None
+    cycle_qc_results: list[CycleQCResult] = field(default_factory=list)
 
 
 
@@ -145,6 +145,8 @@ class ManeuverProcessor:
             # Run raw audio QC
             from src.audio.raw_qc import (
                 detect_artifactual_noise_per_mic,
+                detect_continuous_background_noise,
+                detect_continuous_background_noise_per_mic,
                 detect_signal_dropout_per_mic,
                 merge_bad_intervals,
                 run_raw_audio_qc,
@@ -153,6 +155,10 @@ class ManeuverProcessor:
             bad_intervals = merge_bad_intervals(dropout_intervals, artifact_intervals)
             dropout_per_mic = detect_signal_dropout_per_mic(audio_df)
             artifact_per_mic, artifact_types_per_mic = detect_artifactual_noise_per_mic(audio_df)
+
+            # Continuous narrowband background noise detection (spectral)
+            continuous_intervals = detect_continuous_background_noise(audio_df)
+            continuous_per_mic = detect_continuous_background_noise_per_mic(audio_df)
 
             fs = self._infer_sample_rate(audio_df)
 
@@ -190,6 +196,16 @@ class ManeuverProcessor:
                 "qc_artifact_segments": list(artifact_intervals) if artifact_intervals else [],
                 "qc_artifact_type": overall_artifact_types if artifact_intervals else [],
             }
+
+            # Add continuous artifact results (spectral detection)
+            if continuous_intervals:
+                qc_data["qc_continuous_artifact"] = True
+                qc_data["qc_continuous_artifact_segments"] = list(continuous_intervals)
+            for ch_num in range(1, 5):
+                ch_name = f"ch{ch_num}"
+                if ch_name in continuous_per_mic and continuous_per_mic[ch_name]:
+                    qc_data[f"qc_continuous_artifact_ch{ch_num}"] = True
+                    qc_data[f"qc_continuous_artifact_segments_ch{ch_num}"] = list(continuous_per_mic[ch_name])
 
             # Add per-mic QC results with artifact types
             for ch_num in range(1, 5):
@@ -379,7 +395,7 @@ class ManeuverProcessor:
                     output_dir = sync_data.output_path.parent
 
                     # Run complete QC pipeline (extraction + QC)
-                    clean_cycles, outlier_cycles, qc_output_dir = perform_sync_qc(
+                    qc_output = perform_sync_qc(
                         synced_pkl_path=sync_data.output_path,
                         output_dir=output_dir,
                         maneuver=maneuver,
@@ -389,10 +405,34 @@ class ManeuverProcessor:
                         bad_audio_segments=None,  # Will load from processing log
                     )
 
+                    clean_cycles = qc_output.clean_cycles
+                    outlier_cycles = qc_output.outlier_cycles
+
                     logging.info(
                         f"Extracted {len(clean_cycles)} clean and {len(outlier_cycles)} outlier cycles "
                         f"from {sync_data.output_path.name}"
                     )
+
+                    # Store sync-level periodic artifact results (Phase E.1)
+                    sync_periodic = qc_output.sync_periodic_results
+                    if sync_periodic and sync_data.record:
+                        sync_data.record.periodic_artifact_detected = sync_periodic.get(
+                            "periodic_artifact_detected", False
+                        )
+                        sync_data.record.periodic_artifact_segments = sync_periodic.get(
+                            "periodic_artifact_segments", None
+                        )
+                        for ch in ["ch1", "ch2", "ch3", "ch4"]:
+                            setattr(
+                                sync_data.record,
+                                f"periodic_artifact_detected_{ch}",
+                                sync_periodic.get(f"periodic_artifact_detected_{ch}", False),
+                            )
+                            setattr(
+                                sync_data.record,
+                                f"periodic_artifact_segments_{ch}",
+                                sync_periodic.get(f"periodic_artifact_segments_{ch}", None),
+                            )
 
                     # Update sync record with cycle statistics
                     sync_data.record.total_cycles_extracted = len(clean_cycles) + len(outlier_cycles)
@@ -433,9 +473,10 @@ class ManeuverProcessor:
                     # Store cycle record in CycleData (using the updated sync record)
                     cycle_data = CycleData(
                         synced_file_path=sync_data.output_path,
-                        output_dir=qc_output_dir,
+                        output_dir=qc_output.output_dir,
                         record=sync_data.record,  # Use the updated sync record directly
                         sync_file_stem=sync_data.output_path.stem,
+                        cycle_qc_results=qc_output.cycle_qc_results,
                     )
                     self.cycle_data.append(cycle_data)
 
@@ -492,7 +533,6 @@ class ManeuverProcessor:
     def save_logs(self) -> bool:
         """Update and save processing logs."""
         try:
-            import json
             from datetime import datetime, timedelta
 
             from src.db.repository import Repository
@@ -589,7 +629,6 @@ class ManeuverProcessor:
         sync_records_by_name: dict[str, object],
     ) -> None:
         """Persist per-cycle records to the database."""
-        import json
         from datetime import datetime, timedelta
 
         from src.metadata import MovementCycle
@@ -649,18 +688,19 @@ class ManeuverProcessor:
                 if sync_db_record is None and self.maneuver_key != "walk":
                     sync_db_record = base_sync_query.order_by(SynchronizationRecord.id.desc()).first()
 
+            # Build lookup from in-memory CycleQCResult objects
+            qc_by_file: dict[str, CycleQCResult] = {
+                r.cycle_file: r for r in cycle_data.cycle_qc_results
+            }
+
             for pkl_path in sorted(cycle_data.output_dir.rglob("*.pkl")):
                 if not pkl_path.name.startswith(sync_stem):
                     continue
 
-                metadata_path = pkl_path.with_suffix(".json")
-                metadata = {}
-                if metadata_path.exists():
-                    try:
-                        with open(metadata_path) as f:
-                            metadata = json.load(f)
-                    except Exception:
-                        metadata = {}
+                qc = qc_by_file.get(pkl_path.name)
+                if qc is None:
+                    logging.warning(f"No CycleQCResult for {pkl_path.name}, skipping")
+                    continue
 
                 try:
                     df = pd.read_pickle(pkl_path)
@@ -677,23 +717,9 @@ class ManeuverProcessor:
                 start_time = base_dt + timedelta(seconds=start_time_s)
                 end_time = base_dt + timedelta(seconds=end_time_s)
 
-                cycle_index = metadata.get("cycle_index")
-                if cycle_index is None or (isinstance(cycle_index, float) and pd.isna(cycle_index)):
-                    cycle_index = 0
+                pass_number = qc.pass_number
+                speed = qc.speed
 
-                cycle_qc_pass = metadata.get("cycle_qc_pass")
-                is_outlier = not cycle_qc_pass if cycle_qc_pass is not None else ("outlier" in pkl_path.name)
-
-                biomech_qc_pass = metadata.get("biomech_qc_pass")
-                sync_qc_pass = metadata.get("sync_qc_pass")
-
-                pass_number = metadata.get("pass_number") if metadata else None
-                if isinstance(pass_number, float) and pd.isna(pass_number):
-                    pass_number = None
-
-                speed = metadata.get("speed") if metadata else None
-                if isinstance(speed, float) and pd.isna(speed):
-                    speed = None
                 if sync_db_record is not None:
                     if pass_number is None:
                         pass_number = getattr(sync_db_record, "pass_number", None)
@@ -717,27 +743,20 @@ class ManeuverProcessor:
                     pass_number=pass_number,
                     speed=speed,
                     cycle_file=pkl_path.name,
-                    cycle_index=int(cycle_index),
-                    is_outlier=bool(is_outlier),
+                    cycle_index=int(qc.cycle_index),
+                    is_outlier=qc.is_outlier,
                     start_time_s=float(start_time_s),
                     end_time_s=float(end_time_s),
                     duration_s=float(duration_s),
                     start_time=start_time,
                     end_time=end_time,
-                    biomechanics_qc_fail=(not biomech_qc_pass) if biomech_qc_pass is not None else bool(is_outlier),
-                    sync_qc_fail=(not sync_qc_pass) if sync_qc_pass is not None else bool(is_outlier),
-                    audio_qc_fail=False,
-                    audio_qc_failures=None,
-                    audio_artifact_intermittent_fail=False,
-                    audio_artifact_intermittent_fail_ch1=False,
-                    audio_artifact_intermittent_fail_ch2=False,
-                    audio_artifact_intermittent_fail_ch3=False,
-                    audio_artifact_intermittent_fail_ch4=False,
-                    audio_artifact_timestamps=None,
-                    audio_artifact_timestamps_ch1=None,
-                    audio_artifact_timestamps_ch2=None,
-                    audio_artifact_timestamps_ch3=None,
-                    audio_artifact_timestamps_ch4=None,
+                    biomechanics_qc_fail=qc.is_outlier,
+                    sync_qc_fail=not qc.sync_qc_pass,
+                    audio_artifact_periodic_fail=qc.periodic_noise_detected,
+                    audio_artifact_periodic_fail_ch1=qc.periodic_noise_ch1,
+                    audio_artifact_periodic_fail_ch2=qc.periodic_noise_ch2,
+                    audio_artifact_periodic_fail_ch3=qc.periodic_noise_ch3,
+                    audio_artifact_periodic_fail_ch4=qc.periodic_noise_ch4,
                 )
 
                 repo.save_movement_cycle(

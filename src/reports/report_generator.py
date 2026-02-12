@@ -413,9 +413,19 @@ class ReportGenerator:
                 'Min Cycle Duration': record.min_cycle_duration_s,
                 'Max Cycle Duration': record.max_cycle_duration_s,
 
-                # QC and processing
-                'QC Fail': record.sync_qc_fail,
-                'QC Notes': record.sync_qc_notes,
+                # Periodic artifact detection (sync-level)
+                'Periodic Artifact Detected': record.periodic_artifact_detected,
+                'Periodic Artifact Ch1': record.periodic_artifact_detected_ch1,
+                'Periodic Artifact Ch2': record.periodic_artifact_detected_ch2,
+                'Periodic Artifact Ch3': record.periodic_artifact_detected_ch3,
+                'Periodic Artifact Ch4': record.periodic_artifact_detected_ch4,
+                'Periodic Artifact Segments': record.periodic_artifact_segments,
+                'Periodic Artifact Segments Ch1': record.periodic_artifact_segments_ch1,
+                'Periodic Artifact Segments Ch2': record.periodic_artifact_segments_ch2,
+                'Periodic Artifact Segments Ch3': record.periodic_artifact_segments_ch3,
+                'Periodic Artifact Segments Ch4': record.periodic_artifact_segments_ch4,
+
+                # Processing
                 'Processing Date': record.processing_date,
                 'Processing Status': record.processing_status,
             })
@@ -499,6 +509,16 @@ class ReportGenerator:
                 'Audio Artifact Timestamps Ch2': self._format_list_for_excel(record.audio_artifact_timestamps_ch2),
                 'Audio Artifact Timestamps Ch3': self._format_list_for_excel(record.audio_artifact_timestamps_ch3),
                 'Audio Artifact Timestamps Ch4': self._format_list_for_excel(record.audio_artifact_timestamps_ch4),
+                'Audio Artifact Periodic Fail': record.audio_artifact_periodic_fail,
+                'Audio Artifact Periodic Fail Ch1': record.audio_artifact_periodic_fail_ch1,
+                'Audio Artifact Periodic Fail Ch2': record.audio_artifact_periodic_fail_ch2,
+                'Audio Artifact Periodic Fail Ch3': record.audio_artifact_periodic_fail_ch3,
+                'Audio Artifact Periodic Fail Ch4': record.audio_artifact_periodic_fail_ch4,
+                'Audio Artifact Periodic Timestamps': self._format_list_for_excel(record.audio_artifact_periodic_timestamps),
+                'Audio Artifact Periodic Timestamps Ch1': self._format_list_for_excel(record.audio_artifact_periodic_timestamps_ch1),
+                'Audio Artifact Periodic Timestamps Ch2': self._format_list_for_excel(record.audio_artifact_periodic_timestamps_ch2),
+                'Audio Artifact Periodic Timestamps Ch3': self._format_list_for_excel(record.audio_artifact_periodic_timestamps_ch3),
+                'Audio Artifact Periodic Timestamps Ch4': self._format_list_for_excel(record.audio_artifact_periodic_timestamps_ch4),
                 'Processing Date': record.created_at,
             })
 

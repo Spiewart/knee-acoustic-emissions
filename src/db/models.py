@@ -396,9 +396,17 @@ class SynchronizationRecord(Base):
     max_cycle_duration_s = mapped_column(Float, nullable=True)
     method_agreement_span = mapped_column(Float, nullable=True)
 
-    # QC metadata (removed individual QC version columns - QC done at other stages)
-    sync_qc_fail: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    sync_qc_notes = mapped_column(Text, nullable=True)
+    # Periodic artifact detection (detected on full exercise portion of synced recording)
+    periodic_artifact_detected: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    periodic_artifact_detected_ch1: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    periodic_artifact_detected_ch2: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    periodic_artifact_detected_ch3: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    periodic_artifact_detected_ch4: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    periodic_artifact_segments = mapped_column(ARRAY(Float), nullable=True)
+    periodic_artifact_segments_ch1 = mapped_column(ARRAY(Float), nullable=True)
+    periodic_artifact_segments_ch2 = mapped_column(ARRAY(Float), nullable=True)
+    periodic_artifact_segments_ch3 = mapped_column(ARRAY(Float), nullable=True)
+    periodic_artifact_segments_ch4 = mapped_column(ARRAY(Float), nullable=True)
 
     # Processing metadata
     processing_date: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
@@ -470,12 +478,24 @@ class MovementCycleRecord(Base):
     audio_artifact_intermittent_fail_ch3: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     audio_artifact_intermittent_fail_ch4: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
-    # Audio artifact timestamps (intermittent artifacts within cycle)
+    # Audio artifact timestamps (all artifacts within cycle: intermittent + continuous + periodic)
     audio_artifact_timestamps = mapped_column(ARRAY(Float), nullable=True)
     audio_artifact_timestamps_ch1 = mapped_column(ARRAY(Float), nullable=True)
     audio_artifact_timestamps_ch2 = mapped_column(ARRAY(Float), nullable=True)
     audio_artifact_timestamps_ch3 = mapped_column(ARRAY(Float), nullable=True)
     audio_artifact_timestamps_ch4 = mapped_column(ARRAY(Float), nullable=True)
+
+    # Periodic artifact QC (propagated from sync-level detection, trimmed to cycle bounds)
+    audio_artifact_periodic_fail: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    audio_artifact_periodic_fail_ch1: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    audio_artifact_periodic_fail_ch2: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    audio_artifact_periodic_fail_ch3: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    audio_artifact_periodic_fail_ch4: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    audio_artifact_periodic_timestamps = mapped_column(ARRAY(Float), nullable=True)
+    audio_artifact_periodic_timestamps_ch1 = mapped_column(ARRAY(Float), nullable=True)
+    audio_artifact_periodic_timestamps_ch2 = mapped_column(ARRAY(Float), nullable=True)
+    audio_artifact_periodic_timestamps_ch3 = mapped_column(ARRAY(Float), nullable=True)
+    audio_artifact_periodic_timestamps_ch4 = mapped_column(ARRAY(Float), nullable=True)
 
     # QC versions
     biomechanics_qc_version = mapped_column(String(20), nullable=True)

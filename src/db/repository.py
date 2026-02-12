@@ -4,6 +4,8 @@ Provides high-level CRUD operations for all metadata entities,
 abstracting away SQLAlchemy session management and query construction.
 """
 
+from __future__ import annotations
+
 from datetime import datetime, timezone
 from typing import List, Optional
 
@@ -53,6 +55,21 @@ class Repository:
             "SynchronizationRecord": SynchronizationRecord,
             "MovementCycleRecord": MovementCycleRecord,
         }
+
+    @staticmethod
+    def _flatten_intervals(
+        intervals: list[tuple[float, float]] | None = None,
+    ) -> list[float] | None:
+        """Flatten a list of (start, end) tuples to [s1, e1, s2, e2, ...].
+
+        The DB stores artifact segments as ARRAY(Float) in flattened form.
+        """
+        if intervals is None:
+            return None
+        flat: list[float] = []
+        for start, end in intervals:
+            flat.extend([float(start), float(end)])
+        return flat if flat else None
 
     # ========================================================================
     # Study operations
@@ -501,7 +518,16 @@ class Repository:
             median_cycle_duration_s=getattr(sync, "median_cycle_duration_s", None),
             min_cycle_duration_s=getattr(sync, "min_cycle_duration_s", None),
             max_cycle_duration_s=getattr(sync, "max_cycle_duration_s", None),
-            sync_qc_fail=sync.sync_qc_fail,
+            periodic_artifact_detected=getattr(sync, "periodic_artifact_detected", False),
+            periodic_artifact_detected_ch1=getattr(sync, "periodic_artifact_detected_ch1", False),
+            periodic_artifact_detected_ch2=getattr(sync, "periodic_artifact_detected_ch2", False),
+            periodic_artifact_detected_ch3=getattr(sync, "periodic_artifact_detected_ch3", False),
+            periodic_artifact_detected_ch4=getattr(sync, "periodic_artifact_detected_ch4", False),
+            periodic_artifact_segments=self._flatten_intervals(getattr(sync, "periodic_artifact_segments", None)),
+            periodic_artifact_segments_ch1=self._flatten_intervals(getattr(sync, "periodic_artifact_segments_ch1", None)),
+            periodic_artifact_segments_ch2=self._flatten_intervals(getattr(sync, "periodic_artifact_segments_ch2", None)),
+            periodic_artifact_segments_ch3=self._flatten_intervals(getattr(sync, "periodic_artifact_segments_ch3", None)),
+            periodic_artifact_segments_ch4=self._flatten_intervals(getattr(sync, "periodic_artifact_segments_ch4", None)),
             processing_date=sync.processing_date,
             processing_status=sync.processing_status,
             error_message=sync.error_message,
@@ -566,7 +592,16 @@ class Repository:
         record.min_cycle_duration_s = getattr(sync, "min_cycle_duration_s", None)
         record.max_cycle_duration_s = getattr(sync, "max_cycle_duration_s", None)
         record.method_agreement_span = getattr(sync, "method_agreement_span", None)
-        record.sync_qc_fail = sync.sync_qc_fail
+        record.periodic_artifact_detected = getattr(sync, "periodic_artifact_detected", False)
+        record.periodic_artifact_detected_ch1 = getattr(sync, "periodic_artifact_detected_ch1", False)
+        record.periodic_artifact_detected_ch2 = getattr(sync, "periodic_artifact_detected_ch2", False)
+        record.periodic_artifact_detected_ch3 = getattr(sync, "periodic_artifact_detected_ch3", False)
+        record.periodic_artifact_detected_ch4 = getattr(sync, "periodic_artifact_detected_ch4", False)
+        record.periodic_artifact_segments = self._flatten_intervals(getattr(sync, "periodic_artifact_segments", None))
+        record.periodic_artifact_segments_ch1 = self._flatten_intervals(getattr(sync, "periodic_artifact_segments_ch1", None))
+        record.periodic_artifact_segments_ch2 = self._flatten_intervals(getattr(sync, "periodic_artifact_segments_ch2", None))
+        record.periodic_artifact_segments_ch3 = self._flatten_intervals(getattr(sync, "periodic_artifact_segments_ch3", None))
+        record.periodic_artifact_segments_ch4 = self._flatten_intervals(getattr(sync, "periodic_artifact_segments_ch4", None))
         record.processing_date = sync.processing_date
         record.processing_status = sync.processing_status
         record.error_message = sync.error_message
@@ -679,6 +714,16 @@ class Repository:
             audio_artifact_timestamps_ch2=cycle.audio_artifact_timestamps_ch2,
             audio_artifact_timestamps_ch3=cycle.audio_artifact_timestamps_ch3,
             audio_artifact_timestamps_ch4=cycle.audio_artifact_timestamps_ch4,
+            audio_artifact_periodic_fail=getattr(cycle, "audio_artifact_periodic_fail", False),
+            audio_artifact_periodic_fail_ch1=getattr(cycle, "audio_artifact_periodic_fail_ch1", False),
+            audio_artifact_periodic_fail_ch2=getattr(cycle, "audio_artifact_periodic_fail_ch2", False),
+            audio_artifact_periodic_fail_ch3=getattr(cycle, "audio_artifact_periodic_fail_ch3", False),
+            audio_artifact_periodic_fail_ch4=getattr(cycle, "audio_artifact_periodic_fail_ch4", False),
+            audio_artifact_periodic_timestamps=getattr(cycle, "audio_artifact_periodic_timestamps", None),
+            audio_artifact_periodic_timestamps_ch1=getattr(cycle, "audio_artifact_periodic_timestamps_ch1", None),
+            audio_artifact_periodic_timestamps_ch2=getattr(cycle, "audio_artifact_periodic_timestamps_ch2", None),
+            audio_artifact_periodic_timestamps_ch3=getattr(cycle, "audio_artifact_periodic_timestamps_ch3", None),
+            audio_artifact_periodic_timestamps_ch4=getattr(cycle, "audio_artifact_periodic_timestamps_ch4", None),
             cycle_file_path=cycles_file_path,
         )
 
@@ -719,6 +764,16 @@ class Repository:
         record.audio_artifact_timestamps_ch2 = cycle.audio_artifact_timestamps_ch2
         record.audio_artifact_timestamps_ch3 = cycle.audio_artifact_timestamps_ch3
         record.audio_artifact_timestamps_ch4 = cycle.audio_artifact_timestamps_ch4
+        record.audio_artifact_periodic_fail = getattr(cycle, "audio_artifact_periodic_fail", False)
+        record.audio_artifact_periodic_fail_ch1 = getattr(cycle, "audio_artifact_periodic_fail_ch1", False)
+        record.audio_artifact_periodic_fail_ch2 = getattr(cycle, "audio_artifact_periodic_fail_ch2", False)
+        record.audio_artifact_periodic_fail_ch3 = getattr(cycle, "audio_artifact_periodic_fail_ch3", False)
+        record.audio_artifact_periodic_fail_ch4 = getattr(cycle, "audio_artifact_periodic_fail_ch4", False)
+        record.audio_artifact_periodic_timestamps = getattr(cycle, "audio_artifact_periodic_timestamps", None)
+        record.audio_artifact_periodic_timestamps_ch1 = getattr(cycle, "audio_artifact_periodic_timestamps_ch1", None)
+        record.audio_artifact_periodic_timestamps_ch2 = getattr(cycle, "audio_artifact_periodic_timestamps_ch2", None)
+        record.audio_artifact_periodic_timestamps_ch3 = getattr(cycle, "audio_artifact_periodic_timestamps_ch3", None)
+        record.audio_artifact_periodic_timestamps_ch4 = getattr(cycle, "audio_artifact_periodic_timestamps_ch4", None)
         if cycles_file_path:
             record.cycle_file_path = cycles_file_path
         if biomechanics_import_id is not None:

@@ -214,7 +214,12 @@ class TestFullPipelineWalkingMultiplePassesAndSpeeds:
             acoustic_threshold,
             create_plots,
             bad_audio_segments,
+            bad_audio_segments_per_mic=None,
+            continuous_artifact_segments=None,
+            continuous_artifact_segments_per_mic=None,
         ):
+            from src.synchronization.quality_control import SyncQCOutput
+
             stem = Path(synced_pkl_path).stem
             match = re.search(r"pass(\d+)", stem, re.IGNORECASE)
             pass_num = int(match.group(1)) if match else 0
@@ -223,7 +228,11 @@ class TestFullPipelineWalkingMultiplePassesAndSpeeds:
                 pd.DataFrame({"tt": [0.0, base_duration]}),
                 pd.DataFrame({"tt": [0.0, base_duration + 0.05]}),
             ]
-            return cycles, [], output_dir
+            return SyncQCOutput(
+                clean_cycles=cycles,
+                outlier_cycles=[],
+                output_dir=output_dir,
+            )
 
         monkeypatch.setattr(
             "src.synchronization.quality_control.perform_sync_qc",

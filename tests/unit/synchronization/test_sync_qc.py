@@ -10,6 +10,7 @@ import pytest
 
 from src.synchronization.quality_control import (
     MovementCycleQC,
+    SyncQCOutput,
     _infer_maneuver_from_path,
     _infer_speed_from_path,
     find_synced_files,
@@ -250,33 +251,50 @@ class TestMovementCycleQC:
         assert len(clean) == 0
         assert len(outliers) == 1
 
-    def test_sit_to_stand_waveform_validation(self):
-        """Should validate proper sit-to-stand pattern."""
+    def test_sit_to_stand_waveform_validation_seated_start(self):
+        """Should validate proper sit→stand→sit (seated start) pattern."""
         cycle = _create_test_cycle(base_amplitude=1.0)
         n = len(cycle)
-        
-        # Valid sit-to-stand: high angle (sitting) to low angle (standing)
-        valid_pattern = 80 - 60 * (np.arange(n) / n)  # 80° to 20°
+
+        # Valid sit→stand→sit: starts at 80° (seated), drops to 10° (standing), returns to 80°
+        t = np.linspace(0, 2 * np.pi, n)
+        valid_pattern = 45 + 35 * np.cos(t)  # 80° → 10° → 80°
         cycle["Knee Angle Z"] = valid_pattern
-        
+
         qc = MovementCycleQC(maneuver="sit_to_stand", acoustic_threshold=0.0)
         clean, outliers = qc.analyze_cycles([cycle])
-        
+
         assert len(clean) == 1
         assert len(outliers) == 0
 
-    def test_sit_to_stand_rejects_increasing_pattern(self):
-        """Should reject sit-to-stand with increasing angle (wrong direction)."""
+    def test_sit_to_stand_waveform_validation_standing_start(self):
+        """Should validate proper stand→sit→stand (standing start) pattern."""
         cycle = _create_test_cycle(base_amplitude=1.0)
         n = len(cycle)
-        
-        # Invalid: angle increases instead of decreases
-        invalid_pattern = 20 + 60 * (np.arange(n) / n)  # 20° to 80° (backwards)
-        cycle["Knee Angle Z"] = invalid_pattern
-        
+
+        # Valid stand→sit→stand: starts at 10° (standing), rises to 80° (sitting), returns to 10°
+        t = np.linspace(0, 2 * np.pi, n)
+        valid_pattern = 45 - 35 * np.cos(t)  # 10° → 80° → 10°
+        cycle["Knee Angle Z"] = valid_pattern
+
         qc = MovementCycleQC(maneuver="sit_to_stand", acoustic_threshold=0.0)
         clean, outliers = qc.analyze_cycles([cycle])
-        
+
+        assert len(clean) == 1
+        assert len(outliers) == 0
+
+    def test_sit_to_stand_rejects_monotonic_pattern(self):
+        """Should reject monotonic (non-cyclic) sit-to-stand pattern."""
+        cycle = _create_test_cycle(base_amplitude=1.0)
+        n = len(cycle)
+
+        # Invalid: monotonic decrease — no return to starting position
+        invalid_pattern = 80 - 60 * (np.arange(n) / n)  # 80° to 20°
+        cycle["Knee Angle Z"] = invalid_pattern
+
+        qc = MovementCycleQC(maneuver="sit_to_stand", acoustic_threshold=0.0)
+        clean, outliers = qc.analyze_cycles([cycle])
+
         assert len(clean) == 0
         assert len(outliers) == 1
 
@@ -322,7 +340,7 @@ class TestPerformSyncQC:
 
         # Run the QC pipeline
         output_dir_base = tmp_path / "QC_Output"
-        clean, outliers, output_dir = perform_sync_qc(
+        qc_output = perform_sync_qc(
             synced_pkl_path,
             output_dir=output_dir_base,
             create_plots=False,  # Disable plotting in tests
@@ -330,13 +348,13 @@ class TestPerformSyncQC:
         )
 
         # syncd_walk fixture has 2 distinct gait cycles, all should be clean
-        assert len(clean) == 2
-        assert len(outliers) == 0
-        assert output_dir == output_dir_base / "MovementCycles"
+        assert len(qc_output.clean_cycles) == 2
+        assert len(qc_output.outlier_cycles) == 0
+        assert qc_output.output_dir == output_dir_base / "MovementCycles"
 
         # Check that output directories and files were created
-        clean_dir = output_dir / "clean"
-        outlier_dir = output_dir / "outliers"
+        clean_dir = qc_output.output_dir / "clean"
+        outlier_dir = qc_output.output_dir / "outliers"
         assert clean_dir.is_dir()
         assert outlier_dir.is_dir()
 
@@ -445,7 +463,9 @@ class TestSyncQCCLI:
         synced_file = tmp_path / "synced.pkl"
         synced_file.touch()
         mock_find_files.return_value = [synced_file]
-        mock_perform_qc.return_value = ([], [], tmp_path)
+        mock_perform_qc.return_value = SyncQCOutput(
+            clean_cycles=[], outlier_cycles=[], output_dir=tmp_path,
+        )
 
         with patch.object(
             sys, "argv", ["sync_qc.py", str(synced_file)]
@@ -466,7 +486,9 @@ class TestSyncQCCLI:
         synced_file = tmp_path / "synced.pkl"
         synced_file.touch()
         mock_find_files.return_value = [synced_file]
-        mock_perform_qc.return_value = ([], [], tmp_path)
+        mock_perform_qc.return_value = SyncQCOutput(
+            clean_cycles=[], outlier_cycles=[], output_dir=tmp_path,
+        )
 
         with patch.object(
             sys,

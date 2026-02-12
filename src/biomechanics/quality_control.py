@@ -25,6 +25,8 @@ MIN_ABSOLUTE_PROMINENCE = 5.0  # degrees - Minimum prominence to avoid noise det
 
 # Sit-to-stand validation parameters
 DEFAULT_STS_ANGLE_CHANGE_RATIO = 0.5  # Minimum angle change as fraction of ROM
+DEFAULT_STS_SEATED_THRESHOLD = 45.0  # degrees - Above this, participant is seated at start
+DEFAULT_STS_ENDPOINT_TOLERANCE = 20.0  # degrees - Start/end angle match tolerance for STS cycles
 
 # NaN filtering threshold
 MIN_VALID_DATA_FRACTION = 0.8  # Minimum fraction of non-NaN data points required
@@ -181,47 +183,110 @@ def validate_sit_to_stand_waveform(
     knee_angle: np.ndarray,
     rom: float,
     angle_change_ratio: float = DEFAULT_STS_ANGLE_CHANGE_RATIO,
+    seated_threshold: float = DEFAULT_STS_SEATED_THRESHOLD,
+    endpoint_tolerance: float = DEFAULT_STS_ENDPOINT_TOLERANCE,
 ) -> Tuple[bool, str]:
-    """Validate waveform pattern for sit-to-stand maneuvers.
-    
-    Sit-to-stand should exhibit:
-    1. High angle at start (sitting position, flexed knee)
-    2. Decrease to low angle (standing position, extended knee)
-    3. Generally monotonic decrease or clear transition
-    
+    """Validate waveform pattern for full sit-to-stand-sit cycles.
+
+    Handles both cycle orientations by inferring the starting position from
+    the initial knee angle:
+
+    - **Standing start** (initial angle < seated_threshold): expects a
+      low→high→low pattern (stand→sit→stand) with a sitting peak in the middle.
+    - **Seated start** (initial angle >= seated_threshold): expects a
+      high→low→high pattern (sit→stand→sit) with a standing trough in the middle.
+
+    Validation checks:
+    1. Start and end angles are roughly similar (same phase of cycle)
+    2. A prominent peak or trough exists in the middle 25-75% of the cycle
+    3. The peak/trough amplitude is substantial relative to ROM
+
     Args:
         knee_angle: Clean knee angle array (no NaNs)
         rom: Pre-computed range of motion
-        angle_change_ratio: Minimum angle change as fraction of ROM
-        
+        angle_change_ratio: Minimum peak/trough amplitude as fraction of ROM
+        seated_threshold: Angle threshold (degrees) above which participant
+                         is considered to start in seated position
+        endpoint_tolerance: Maximum allowed difference between start and end
+                          angles (degrees)
+
     Returns:
         Tuple of (is_valid, reason)
     """
-    # Check that we start relatively high and end relatively low
+    if len(knee_angle) < 10:
+        return False, "insufficient data points for sit-to-stand waveform validation"
+
     start_angle = knee_angle[0]
     end_angle = knee_angle[-1]
-    
-    # For sit-to-stand, we expect the angle to decrease
-    angle_change = start_angle - end_angle
-    
-    # The change should be substantial (at least specified fraction of ROM)
-    min_change = rom * angle_change_ratio
-    if angle_change < min_change:
-        return False, f"insufficient angle decrease: {angle_change:.1f}° < {min_change:.1f}°"
-    
-    # Check for general downward trend (allowing some variation)
-    # Split into thirds and check that later thirds have lower mean angles
-    third = len(knee_angle) // 3
-    if third == 0:
-        return False, "insufficient data points for sit-to-stand waveform validation"
-    
-    first_third_mean = np.mean(knee_angle[:third])
-    last_third_mean = np.mean(knee_angle[-third:])
-    
-    if last_third_mean > first_third_mean:
-        return False, "angle increases rather than decreases (not sit-to-stand pattern)"
-    
-    return True, f"ROM={rom:.1f}°, valid sit-to-stand pattern"
+
+    # Check that start and end angles are roughly similar (same phase)
+    endpoint_diff = abs(end_angle - start_angle)
+    if endpoint_diff > endpoint_tolerance:
+        return False, (
+            f"start/end angle mismatch: {endpoint_diff:.1f}° > {endpoint_tolerance:.1f}° "
+            f"(start={start_angle:.1f}°, end={end_angle:.1f}°)"
+        )
+
+    # Infer starting position from initial angle
+    starts_seated = start_angle >= seated_threshold
+
+    min_prominence = max(rom * angle_change_ratio, MIN_ABSOLUTE_PROMINENCE)
+    cycle_length = len(knee_angle)
+
+    if starts_seated:
+        # Sit→Stand→Sit: expect a trough (standing) in the middle
+        # Find minima (troughs) by searching for peaks in inverted signal
+        troughs, properties = find_peaks(-knee_angle, prominence=min_prominence)
+
+        if len(troughs) == 0:
+            return False, "no standing trough detected (sit→stand→sit pattern)"
+
+        # Find the most prominent trough
+        trough_idx = troughs[np.argmin(knee_angle[troughs])]
+        trough_position = trough_idx / cycle_length
+
+        if trough_position < 0.15 or trough_position > 0.85:
+            return False, (
+                f"standing trough at {trough_position*100:.0f}% of cycle "
+                f"(expected 15-85%)"
+            )
+
+        # Verify the trough is substantially lower than endpoints
+        trough_depth = start_angle - knee_angle[trough_idx]
+        min_depth = rom * angle_change_ratio
+        if trough_depth < min_depth:
+            return False, (
+                f"insufficient trough depth: {trough_depth:.1f}° < {min_depth:.1f}°"
+            )
+
+        return True, f"ROM={rom:.1f}°, valid sit→stand→sit pattern (seated start)"
+
+    else:
+        # Stand→Sit→Stand: expect a peak (sitting) in the middle
+        peaks, properties = find_peaks(knee_angle, prominence=min_prominence)
+
+        if len(peaks) == 0:
+            return False, "no sitting peak detected (stand→sit→stand pattern)"
+
+        # Find the most prominent peak
+        peak_idx = peaks[np.argmax(knee_angle[peaks])]
+        peak_position = peak_idx / cycle_length
+
+        if peak_position < 0.15 or peak_position > 0.85:
+            return False, (
+                f"sitting peak at {peak_position*100:.0f}% of cycle "
+                f"(expected 15-85%)"
+            )
+
+        # Verify the peak is substantially higher than endpoints
+        peak_height = knee_angle[peak_idx] - start_angle
+        min_height = rom * angle_change_ratio
+        if peak_height < min_height:
+            return False, (
+                f"insufficient peak height: {peak_height:.1f}° < {min_height:.1f}°"
+            )
+
+        return True, f"ROM={rom:.1f}°, valid stand→sit→stand pattern (standing start)"
 
 
 def validate_flexion_extension_waveform(

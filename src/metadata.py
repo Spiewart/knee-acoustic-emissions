@@ -474,8 +474,17 @@ class Synchronization(StudyMetadata):
     max_cycle_duration_s: Optional[float] = None
     method_agreement_span: Optional[float] = None
 
-    # ===== QC Status (removed individual QC version fields - QC done at other stages) =====
-    sync_qc_fail: bool = False
+    # ===== Periodic Artifact Detection (sync-level, on full exercise portion) =====
+    periodic_artifact_detected: bool = False
+    periodic_artifact_detected_ch1: bool = False
+    periodic_artifact_detected_ch2: bool = False
+    periodic_artifact_detected_ch3: bool = False
+    periodic_artifact_detected_ch4: bool = False
+    periodic_artifact_segments: Optional[List[tuple]] = None
+    periodic_artifact_segments_ch1: Optional[List[tuple]] = None
+    periodic_artifact_segments_ch2: Optional[List[tuple]] = None
+    periodic_artifact_segments_ch3: Optional[List[tuple]] = None
+    periodic_artifact_segments_ch4: Optional[List[tuple]] = None
 
     # ===== Processing Metadata =====
     processing_date: datetime = Field(default_factory=datetime.now)
@@ -580,7 +589,7 @@ class MovementCycle(StudyMetadata):
     audio_qc_fail: bool = Field(default=False)
 
     # ===== Audio QC Details =====
-    audio_qc_failures: Optional[List[Literal["dropout", "continuous", "intermittent"]]] = None
+    audio_qc_failures: Optional[List[Literal["dropout", "continuous", "intermittent", "periodic"]]] = None
     audio_artifact_intermittent_fail: bool = Field(default=False)
     audio_artifact_intermittent_fail_ch1: bool = Field(default=False)
     audio_artifact_intermittent_fail_ch2: bool = Field(default=False)
@@ -591,6 +600,18 @@ class MovementCycle(StudyMetadata):
     audio_artifact_timestamps_ch2: Optional[List[float]] = None
     audio_artifact_timestamps_ch3: Optional[List[float]] = None
     audio_artifact_timestamps_ch4: Optional[List[float]] = None
+
+    # ===== Periodic Artifact QC (propagated from sync-level, trimmed to cycle) =====
+    audio_artifact_periodic_fail: bool = Field(default=False)
+    audio_artifact_periodic_fail_ch1: bool = Field(default=False)
+    audio_artifact_periodic_fail_ch2: bool = Field(default=False)
+    audio_artifact_periodic_fail_ch3: bool = Field(default=False)
+    audio_artifact_periodic_fail_ch4: bool = Field(default=False)
+    audio_artifact_periodic_timestamps: Optional[List[float]] = None
+    audio_artifact_periodic_timestamps_ch1: Optional[List[float]] = None
+    audio_artifact_periodic_timestamps_ch2: Optional[List[float]] = None
+    audio_artifact_periodic_timestamps_ch3: Optional[List[float]] = None
+    audio_artifact_periodic_timestamps_ch4: Optional[List[float]] = None
 
     # ===== QC Version Tracking =====
     biomechanics_qc_version: int = Field(default_factory=get_biomech_qc_version)
@@ -646,3 +667,44 @@ class MovementCycle(StudyMetadata):
         if (self.pass_number is None) != (self.speed is None):
             raise ValueError("pass_number and speed must both be set when one is provided")
         return self
+
+
+# ============================================================================
+# INTER-STAGE DATA TRANSFER - Replaces JSON round-trip
+# ============================================================================
+
+@dataclass(kw_only=True)
+class CycleQCResult:
+    """Per-cycle QC results for in-memory transfer between processing stages.
+
+    Built by _save_qc_results() from _CycleResult + metadata context.
+    Consumed by _persist_cycle_records() to build MovementCycle objects
+    without reading JSON from disk.
+    """
+
+    # ===== Cycle Identification =====
+    cycle_index: int
+    cycle_file: str  # pickle filename (e.g., "stem_cycle_000.pkl")
+    is_outlier: bool
+
+    # ===== QC Results =====
+    acoustic_energy: float
+    biomechanics_qc_pass: bool = True
+    sync_qc_pass: bool = True
+    sync_quality_score: float = 0.0
+    audio_qc_pass: bool = True
+    audio_qc_mic_1_pass: bool = True
+    audio_qc_mic_2_pass: bool = True
+    audio_qc_mic_3_pass: bool = True
+    audio_qc_mic_4_pass: bool = True
+
+    # ===== Periodic Noise Detection =====
+    periodic_noise_detected: bool = False
+    periodic_noise_ch1: bool = False
+    periodic_noise_ch2: bool = False
+    periodic_noise_ch3: bool = False
+    periodic_noise_ch4: bool = False
+
+    # ===== Walk-Specific Metadata =====
+    pass_number: Optional[int] = None
+    speed: Optional[Literal["slow", "fast", "medium", "comfortable"]] = None
