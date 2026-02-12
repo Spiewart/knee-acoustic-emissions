@@ -338,6 +338,10 @@ class SynchronizationRecord(Base):
     audio_processing_id: Mapped[int] = mapped_column(Integer, ForeignKey("audio_processing.id"), nullable=False)
     biomechanics_import_id: Mapped[int] = mapped_column(Integer, ForeignKey("biomechanics_imports.id"), nullable=False)
 
+    # Maneuver metadata (denormalized from audio_processing for semantic uniqueness)
+    knee: Mapped[str] = mapped_column(String(10), nullable=False)  # left, right
+    maneuver: Mapped[str] = mapped_column(String(20), nullable=False)  # fe, sts, walk
+
     # Walk-specific metadata (optional, inherited from parent records)
     pass_number = mapped_column(Integer, nullable=True)
     speed = mapped_column(String(20), nullable=True)
@@ -425,9 +429,12 @@ class SynchronizationRecord(Base):
     )
 
     __table_args__ = (
+        CheckConstraint("knee IN ('left', 'right')", name="sync_valid_knee"),
+        CheckConstraint("maneuver IN ('fe', 'sts', 'walk')", name="sync_valid_maneuver"),
         CheckConstraint("processing_status IN ('not_processed', 'success', 'error')", name="sync_valid_status"),
-        # Unique constraint: file names must be unique in study context
-        UniqueConstraint("participant_id", "sync_file_name", name="uq_synchronization"),
+        # Semantic uniqueness: one sync record per (participant, knee, maneuver, pass, speed)
+        UniqueConstraint("participant_id", "knee", "maneuver", "pass_number", "speed",
+                         name="uq_synchronization"),
     )
 
 
@@ -448,6 +455,12 @@ class MovementCycleRecord(Base):
     audio_processing_id: Mapped[int] = mapped_column(Integer, ForeignKey("audio_processing.id"), nullable=False)
     biomechanics_import_id = mapped_column(Integer, ForeignKey("biomechanics_imports.id"), nullable=True)
     synchronization_id = mapped_column(Integer, ForeignKey("synchronizations.id"), nullable=True)
+
+    # Maneuver metadata (denormalized for semantic uniqueness)
+    knee: Mapped[str] = mapped_column(String(10), nullable=False)  # left, right
+    maneuver: Mapped[str] = mapped_column(String(20), nullable=False)  # fe, sts, walk
+    pass_number = mapped_column(Integer, nullable=True)  # Walk-specific
+    speed = mapped_column(String(20), nullable=True)  # Walk-specific
 
     # Cycle identification
     cycle_file: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -517,6 +530,9 @@ class MovementCycleRecord(Base):
     synchronization: Mapped["SynchronizationRecord"] = relationship("SynchronizationRecord", back_populates="movement_cycles")
 
     __table_args__ = (
-        # Unique constraint: file names must be unique in study context
-        UniqueConstraint("participant_id", "cycle_file", name="uq_movement_cycle"),
+        CheckConstraint("knee IN ('left', 'right')", name="cycle_valid_knee"),
+        CheckConstraint("maneuver IN ('fe', 'sts', 'walk')", name="cycle_valid_maneuver"),
+        # Semantic uniqueness: one cycle per (participant, knee, maneuver, pass, speed, cycle_index)
+        UniqueConstraint("participant_id", "knee", "maneuver", "pass_number", "speed",
+                         "cycle_index", name="uq_movement_cycle"),
     )

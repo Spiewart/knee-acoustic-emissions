@@ -409,6 +409,10 @@ class Synchronization(StudyMetadata):
     audio_processing_id: int = Field(...)  # ID of related AudioProcessing record
     biomechanics_import_id: int = Field(...)  # ID of related BiomechanicsImport record
 
+    # ===== Maneuver Metadata =====
+    knee: Literal["right", "left"] = Field(...)
+    maneuver: Literal["fe", "sts", "walk"] = Field(...)
+
     # ===== Walk-Specific Metadata =====
     pass_number: Optional[int] = None
     speed: Optional[Literal["slow", "fast", "medium", "comfortable"]] = None
@@ -558,6 +562,10 @@ class MovementCycle(StudyMetadata):
     audio_processing_id: int = Field(...)  # ID of related AudioProcessing record
     biomechanics_import_id: Optional[int] = None  # ID of related BiomechanicsImport (optional)
     synchronization_id: Optional[int] = None  # ID of related Synchronization (optional)
+
+    # ===== Maneuver Metadata =====
+    knee: Literal["right", "left"] = Field(...)
+    maneuver: Literal["fe", "sts", "walk"] = Field(...)
 
     # ===== Walk-Specific Metadata =====
     pass_number: Optional[int] = None

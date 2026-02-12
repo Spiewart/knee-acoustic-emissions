@@ -83,6 +83,8 @@ def create_test_synchronization(**kwargs):
     defaults = {
         "study": "AOA",
         "study_id": 1012,
+        "knee": "left",
+        "maneuver": "walk",
         "pass_number": 1,  # Required for walk
         "speed": "medium",  # Required for walk (removed "normal")
         "audio_processing_id": 1,  # Dummy FK, will be overridden by caller
@@ -138,6 +140,8 @@ def create_test_movement_cycle(**kwargs):
         "audio_processing_id": 1,  # Dummy FK, will be overridden by caller
         "biomechanics_import_id": None,
         "synchronization_id": None,
+        "knee": "left",
+        "maneuver": "walk",
         "cycle_file": "test_cycle.pkl",
         "cycle_index": 0,
         "is_outlier": False,

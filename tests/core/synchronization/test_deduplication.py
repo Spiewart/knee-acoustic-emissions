@@ -56,6 +56,8 @@ class TestSyncDeduplication:
                 study_id=5001,
                 audio_processing_id=audio_record.id,
                 biomechanics_import_id=biomech_record.id,
+                knee="right",
+                maneuver="walk",
                 sync_file_name=sync_file_name,
             )
             repository.save_synchronization(
@@ -116,8 +118,11 @@ class TestSyncDeduplication:
                 study_id=5002,
                 audio_processing_id=audio_record.id,
                 biomechanics_import_id=biomech_record.id,
+                knee="left",
+                maneuver="sts",
                 sync_file_name=sync_file_name,
                 pass_number=None,
+                speed=None,
             )
             repository.save_synchronization(
                 sync,
@@ -178,6 +183,10 @@ class TestMovementCyclePersistence:
             study_id=5003,
             audio_processing_id=audio_record.id,
             biomechanics_import_id=biomech_record.id,
+            knee="right",
+            maneuver="fe",
+            pass_number=None,
+            speed=None,
             sync_file_name="AOA5003_fe_sync.pkl",
         )
         sync_record = repository.save_synchronization(
@@ -195,6 +204,10 @@ class TestMovementCyclePersistence:
                 audio_processing_id=audio_record.id,
                 biomechanics_import_id=biomech_record.id,
                 synchronization_id=sync_record.id,
+                knee="right",
+                maneuver="fe",
+                pass_number=None,
+                speed=None,
                 cycle_file=f"fe_cycle_{i:02d}.pkl",
                 cycle_index=i,
             )
@@ -367,6 +380,8 @@ class TestAggregationPerManeuver:
                 study_id=5005,
                 audio_processing_id=audio_walk_record.id,
                 biomechanics_import_id=biomech_walk_record.id,
+                knee="right",
+                maneuver="walk",
                 sync_file_name=f"AOA5005_walk_Pass{i:04d}_sync.pkl",
                 pass_number=i,
             )
@@ -399,6 +414,10 @@ class TestAggregationPerManeuver:
             study_id=5005,
             audio_processing_id=audio_sts_record.id,
             biomechanics_import_id=biomech_sts_record.id,
+            knee="right",
+            maneuver="sts",
+            pass_number=None,
+            speed=None,
             sync_file_name="AOA5005_sts_sync.pkl",
         )
         repository.save_synchronization(

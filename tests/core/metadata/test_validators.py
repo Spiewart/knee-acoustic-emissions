@@ -90,6 +90,8 @@ def _base_sync_kwargs():
         "study_id": 1011,
         "audio_processing_id": 1,
         "biomechanics_import_id": 1,
+        "knee": "left",
+        "maneuver": "walk",
         "sync_file_name": "sync.pkl",
         "processing_date": datetime(2024, 1, 1, 12, 0, 0),
     }
@@ -100,6 +102,8 @@ def _base_cycle_kwargs():
         "study": "AOA",
         "study_id": 1011,
         "audio_processing_id": 1,
+        "knee": "left",
+        "maneuver": "walk",
         "cycle_file": "cycle_0001.pkl",
         "cycle_index": 0,
         "is_outlier": False,

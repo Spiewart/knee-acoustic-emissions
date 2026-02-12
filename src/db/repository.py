@@ -429,17 +429,22 @@ class Repository:
         """
         participant = self.get_or_create_participant(sync.study, sync.study_id)
 
-        # Check if record already exists by sync file name (unique constraint)
-        existing = None
-        if sync.sync_file_name:
-            existing = self.session.execute(
-                select(SynchronizationRecord).where(
-                    and_(
-                        SynchronizationRecord.participant_id == participant.id,
-                        SynchronizationRecord.sync_file_name == sync.sync_file_name,
-                    )
+        # Check if record already exists by semantic key (unique constraint)
+        existing = self.session.execute(
+            select(SynchronizationRecord).where(
+                and_(
+                    SynchronizationRecord.participant_id == participant.id,
+                    SynchronizationRecord.knee == sync.knee,
+                    SynchronizationRecord.maneuver == sync.maneuver,
+                    SynchronizationRecord.pass_number == sync.pass_number
+                    if sync.pass_number is not None
+                    else SynchronizationRecord.pass_number.is_(None),
+                    SynchronizationRecord.speed == sync.speed
+                    if sync.speed is not None
+                    else SynchronizationRecord.speed.is_(None),
                 )
-            ).scalar_one_or_none()
+            )
+        ).scalar_one_or_none()
 
         if existing:
             # Update existing record
@@ -479,6 +484,8 @@ class Repository:
             participant_id=participant_id,
             audio_processing_id=audio_processing_id,
             biomechanics_import_id=biomechanics_import_id,
+            knee=sync.knee,
+            maneuver=sync.maneuver,
             pass_number=sync.pass_number,
             speed=sync.speed,
             bio_left_sync_time=sync.bio_left_sync_time,
@@ -541,6 +548,8 @@ class Repository:
             sync: Synchronization Pydantic model (sync-specific fields only)
             sync_file_path: Optional new path to sync .pkl file
         """
+        record.knee = sync.knee
+        record.maneuver = sync.maneuver
         record.pass_number = sync.pass_number
         record.speed = sync.speed
         record.bio_left_sync_time = sync.bio_left_sync_time
@@ -629,12 +638,20 @@ class Repository:
         """
         participant = self.get_or_create_participant(cycle.study, cycle.study_id)
 
-        # Check if record already exists by cycle file name (unique constraint)
+        # Check if record already exists by semantic key (unique constraint)
         existing = self.session.execute(
             select(MovementCycleRecord).where(
                 and_(
                     MovementCycleRecord.participant_id == participant.id,
-                    MovementCycleRecord.cycle_file == cycle.cycle_file,
+                    MovementCycleRecord.knee == cycle.knee,
+                    MovementCycleRecord.maneuver == cycle.maneuver,
+                    MovementCycleRecord.pass_number == cycle.pass_number
+                    if cycle.pass_number is not None
+                    else MovementCycleRecord.pass_number.is_(None),
+                    MovementCycleRecord.speed == cycle.speed
+                    if cycle.speed is not None
+                    else MovementCycleRecord.speed.is_(None),
+                    MovementCycleRecord.cycle_index == cycle.cycle_index,
                 )
             )
         ).scalar_one_or_none()
@@ -687,6 +704,10 @@ class Repository:
             audio_processing_id=audio_processing_id,
             biomechanics_import_id=biomechanics_import_id,
             synchronization_id=synchronization_id,
+            knee=cycle.knee,
+            maneuver=cycle.maneuver,
+            pass_number=cycle.pass_number,
+            speed=cycle.speed,
             cycle_file=cycle.cycle_file,
             cycle_index=cycle.cycle_index,
             is_outlier=cycle.is_outlier,
@@ -739,6 +760,10 @@ class Repository:
             synchronization_id: Optional FK to SynchronizationRecord
             cycles_file_path: Optional new path to cycles .pkl file
         """
+        record.knee = cycle.knee
+        record.maneuver = cycle.maneuver
+        record.pass_number = cycle.pass_number
+        record.speed = cycle.speed
         record.is_outlier = cycle.is_outlier
         record.start_time_s = cycle.start_time_s
         record.end_time_s = cycle.end_time_s

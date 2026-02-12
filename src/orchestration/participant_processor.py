@@ -11,9 +11,13 @@ import pandas as pd
 
 from src.biomechanics.importers import import_biomechanics_recordings
 from src.metadata import AudioProcessing, BiomechanicsImport, CycleQCResult, Synchronization
+from src.orchestration.participant import (
+    _normalize_maneuver as _expand_maneuver_shorthand,
+)
 from src.orchestration.processing_log import (
     KneeProcessingLog,
     ManeuverProcessingLog,
+    _normalize_maneuver as _maneuver_to_db_code,
     create_audio_record_from_data,
     create_biomechanics_record_from_data,
     create_sync_record_from_data,
@@ -361,6 +365,7 @@ class ManeuverProcessor:
                     "bio_left_stomp_time": bio_left,
                     "bio_right_stomp_time": bio_right,
                     "knee_side": self.knee_side.lower(),
+                    "maneuver": self.maneuver_key,
                     "pass_number": sync_data.pass_number,
                     "speed": sync_data.speed,
                     "detection_results": detection_results,
@@ -408,11 +413,12 @@ class ManeuverProcessor:
                     # Extract speed from output path if available (for walking)
                     speed = None
                     if maneuver == "walk":
-                        # Try to infer from filename: left_walk_Pass001_slow_Synced.pkl
+                        # Infer speed from filename: left_walk_p1_slow.pkl
                         filename = sync_data.output_path.stem
-                        for s in ["slow", "medium", "fast"]:
+                        for s in ["slow", "medium", "normal", "fast"]:
                             if s in filename.lower():
-                                speed = s
+                                # Normalize "normal" → "medium" for DB consistency
+                                speed = "medium" if s == "normal" else s
                                 break
 
                     # Determine output directory for cycle files
@@ -648,11 +654,27 @@ class ManeuverProcessor:
             return False
 
     @staticmethod
-    def _unflatten_intervals(flat: list[float] | None) -> list[tuple[float, float]]:
-        """Convert flattened DB array [s1, e1, s2, e2, ...] to [(s1,e1), (s2,e2), ...]."""
-        if not flat or len(flat) % 2 != 0:
+    def _unflatten_intervals(
+        flat: list[float] | list[list[float]] | list[tuple[float, float]] | None,
+    ) -> list[tuple[float, float]]:
+        """Convert DB segment data to [(start, end), ...] tuple pairs.
+
+        PostgreSQL ARRAY(Float) columns return nested lists when the data
+        was originally stored as list[tuple].  This method handles both
+        formats:
+          - Nested: [[s1, e1], [s2, e2], ...]  (from PostgreSQL round-trip)
+          - Flat:   [s1, e1, s2, e2, ...]       (from explicit flattening)
+        """
+        if not flat:
             return []
-        return [(flat[i], flat[i + 1]) for i in range(0, len(flat), 2)]
+        # Detect nested format: first element is a list or tuple of length 2
+        first = flat[0]
+        if isinstance(first, (list, tuple)):
+            return [(float(pair[0]), float(pair[1])) for pair in flat]
+        # Flat format: pair up consecutive elements
+        if len(flat) % 2 != 0:
+            return []
+        return [(float(flat[i]), float(flat[i + 1])) for i in range(0, len(flat), 2)]
 
     @staticmethod
     def _flatten_intervals(intervals: list[tuple[float, float]]) -> list[float]:
@@ -828,6 +850,8 @@ class ManeuverProcessor:
                     audio_processing_id=audio_db_record.id,
                     biomechanics_import_id=biomech_db_record.id if biomech_db_record else None,
                     synchronization_id=synchronization_id,
+                    knee=self.knee_side.lower(),
+                    maneuver=_maneuver_to_db_code(self.maneuver_key),
                     pass_number=pass_number,
                     speed=speed,
                     cycle_file=pkl_path.name,
@@ -1221,17 +1245,20 @@ class ManeuverProcessor:
 
     def _generate_sync_output_path(self, recording) -> Path:
         """Generate output path for synchronized data."""
+        from src.studies.file_naming import generate_sync_filename
+
         synced_dir = self.maneuver_dir / "synced"
         synced_dir.mkdir(exist_ok=True)
 
-        # Generate filename based on recording metadata
         speed = getattr(recording, "speed", None)
         pass_num = getattr(recording, "pass_number", None)
 
-        if speed and pass_num:
-            filename = f"{self.knee_side}_{self.maneuver_key}_Pass{pass_num:04d}_{speed}.pkl"
-        else:
-            filename = f"{self.knee_side}_{self.maneuver_key}.pkl"
+        filename = generate_sync_filename(
+            knee=self.knee_side.lower(),
+            maneuver=_maneuver_to_db_code(self.maneuver_key),
+            pass_number=pass_num,
+            speed=speed,
+        )
 
         return synced_dir / filename
 
@@ -1265,8 +1292,7 @@ class KneeProcessor:
         try:
             # Normalize maneuver if provided (convert CLI shorthand like "fe" to internal format)
             if maneuver:
-                from src.orchestration.participant import _normalize_maneuver
-                maneuver = _normalize_maneuver(maneuver)
+                maneuver = _expand_maneuver_shorthand(maneuver)
             maneuvers_to_process = [maneuver] if maneuver else ["walk", "sit_to_stand", "flexion_extension"]
 
             for maneuver_key in maneuvers_to_process:
@@ -1359,8 +1385,12 @@ class ParticipantProcessor:
         self,
         participant_dir: Path,
         biomechanics_type: Optional[str] = None,
+        study_name: str = "AOA",
     ):
+        from src.studies import get_study_config
+
         self.participant_dir = participant_dir
+        self.study_config = get_study_config(study_name)
         self.study_id = participant_dir.name.lstrip("#")
         self.biomechanics_type = biomechanics_type
         self.biomechanics_file = self._find_biomechanics_file()
@@ -1383,9 +1413,10 @@ class ParticipantProcessor:
             knees_to_process = [knee] if knee else ["Left", "Right"]
 
             for knee_side in knees_to_process:
-                knee_dir = self.participant_dir / f"{knee_side} Knee"
+                knee_dir_name = self.study_config.get_knee_directory_name(knee_side.lower())
+                knee_dir = self.participant_dir / knee_dir_name
                 if not knee_dir.exists():
-                    logging.warning(f"{knee_side} Knee directory not found")
+                    logging.warning(f"{knee_dir_name} directory not found")
                     continue
 
                 processor = KneeProcessor(
@@ -1441,16 +1472,19 @@ class ParticipantProcessor:
                 pass
 
     def _find_biomechanics_file(self) -> Path:
-        """Find the biomechanics Excel file."""
+        """Find the biomechanics Excel file using study-specific naming pattern."""
         motion_capture_dir = self.participant_dir / "Motion Capture"
         if not motion_capture_dir.exists():
             raise FileNotFoundError(f"Motion Capture directory not found in {self.participant_dir}")
 
-        excel_files = list(motion_capture_dir.glob(f"AOA{self.study_id}_Biomechanics_Full_Set.xlsx"))
-        if excel_files:
-            return excel_files[0]
+        biomech_pattern = self.study_config.get_biomechanics_file_pattern(self.study_id)
+        found = self.study_config.find_excel_file(motion_capture_dir, biomech_pattern)
+        if found:
+            return found
 
-        raise FileNotFoundError(f"Biomechanics Excel file not found in {motion_capture_dir}")
+        raise FileNotFoundError(
+            f"Biomechanics Excel file matching '{biomech_pattern}' not found in {motion_capture_dir}"
+        )
 
     def _validate_maneuver_dirs(
         self,

@@ -642,6 +642,7 @@ def create_sync_record_from_data(
     synced_df: pd.DataFrame,
     audio_stomp_time: Optional[float],
     knee_side: str,  # Required: "left" or "right"
+    maneuver: str = "walk",  # Required: DB maneuver code ("fe", "sts", "walk")
     bio_left_stomp_time: Optional[float] = None,
     bio_right_stomp_time: Optional[float] = None,
     pass_number: Optional[int] = None,
@@ -712,6 +713,7 @@ def create_sync_record_from_data(
         pass_number=pass_number,
         speed=speed_value,
         knee=knee_side_lower,
+        maneuver=_normalize_maneuver(maneuver),
         # Biomechanics sync times (biomechanics is synced to audio: audio t=0 = sync t=0)
         bio_left_sync_time=_timedelta_to_seconds(bio_left_stomp_time),
         bio_right_sync_time=_timedelta_to_seconds(bio_right_stomp_time),

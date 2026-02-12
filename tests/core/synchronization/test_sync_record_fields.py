@@ -16,6 +16,8 @@ def _create_test_record(**kwargs):
         "study_id": 1001,
         "audio_processing_id": 1,
         "biomechanics_import_id": 1,
+        "knee": "left",
+        "maneuver": "walk",
         "pass_number": 1,
         "speed": "comfortable",
         "bio_left_sync_time": 0.0,

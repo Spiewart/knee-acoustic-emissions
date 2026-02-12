@@ -172,6 +172,7 @@ def get_acoustics_metadata(
     metadata_file_path: str,
     scripted_maneuver: Literal["walk", "sit_to_stand", "flexion_extension"],
     knee: Literal["left", "right"],
+    acoustics_sheet_name: str = "Acoustic Notes",
 ) -> AcousticsFileMetadata:
     """Gets acoustics metadata for a given acoustics file legend.
 
@@ -201,7 +202,7 @@ def get_acoustics_metadata(
                           validated acoustics metadata.
     """
     metadata_df: pd.DataFrame = pd.read_excel(
-        metadata_file_path, sheet_name="Acoustic Notes", header=None
+        metadata_file_path, sheet_name=acoustics_sheet_name, header=None
     )
 
     # Find the starting row for the desired knee's data

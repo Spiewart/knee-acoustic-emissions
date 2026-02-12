@@ -103,7 +103,19 @@ def _infer_knee_from_path(path: Path) -> Optional[str]:
 
 
 def _parse_pass_number(file_stem: str) -> Optional[int]:
+    """Extract pass number from sync filename stem.
+
+    Supports both old format (Pass0001) and new short format (p1).
+    """
+    # Try old format first: "Pass0001", "pass0007"
     match = re.search(r"pass(\d+)", file_stem, re.IGNORECASE)
+    if match:
+        try:
+            return int(match.group(1))
+        except ValueError:
+            return None
+    # Try new short format: "_p1_", "_p7_", "_p11"
+    match = re.search(r"_p(\d+)(?:_|$)", file_stem)
     if match:
         try:
             return int(match.group(1))
@@ -1019,12 +1031,15 @@ def _infer_speed_from_path(path: Path) -> Optional[str]:
 
     Returns:
         Speed level (slow, medium, fast) or None.
+        Note: "normal" in filenames is mapped to "medium" for DB consistency.
     """
     path_str = str(path).lower()
 
     if "slow" in path_str:
         return "slow"
     elif "medium" in path_str:
+        return "medium"
+    elif "normal" in path_str:
         return "medium"
     elif "fast" in path_str:
         return "fast"
@@ -1035,24 +1050,29 @@ def _infer_speed_from_path(path: Path) -> Optional[str]:
 def _infer_pass_number_from_path(path: Path) -> Optional[int]:
     """Infer pass number from file path.
 
-    For walking maneuvers, synced files are named like:
-    Left_walk_Pass0001_slow.pkl
+    Supports both old format (Pass0001) and new short format (p1).
 
     Args:
         path: Path to synchronized pickle file.
 
     Returns:
-        Pass number (1-9999) for walk maneuvers, None otherwise.
+        Pass number for walk maneuvers, None otherwise.
     """
     import re
 
-    # Look for pattern like "Pass0001", "Pass0002", etc.
     path_str = str(path)
+    # Try old format: "Pass0001", "Pass0002", etc.
     match = re.search(r'Pass(\d{4})', path_str, re.IGNORECASE)
     if match:
-        pass_num_str = match.group(1)
         try:
-            return int(pass_num_str)
+            return int(match.group(1))
+        except ValueError:
+            return None
+    # Try new short format: "_p1_", "_p7_", "_p11"
+    match = re.search(r'_p(\d+)(?:_|\.)', path_str)
+    if match:
+        try:
+            return int(match.group(1))
         except ValueError:
             return None
 
