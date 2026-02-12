@@ -413,62 +413,65 @@ class ManeuverProcessor:
                         f"from {sync_data.output_path.name}"
                     )
 
-                    # Store sync-level periodic artifact results (Phase E.1)
-                    sync_periodic = qc_output.sync_periodic_results
-                    if sync_periodic and sync_data.record:
-                        sync_data.record.periodic_artifact_detected = sync_periodic.get(
-                            "periodic_artifact_detected", False
-                        )
-                        sync_data.record.periodic_artifact_segments = sync_periodic.get(
-                            "periodic_artifact_segments", None
-                        )
-                        for ch in ["ch1", "ch2", "ch3", "ch4"]:
-                            setattr(
-                                sync_data.record,
-                                f"periodic_artifact_detected_{ch}",
-                                sync_periodic.get(f"periodic_artifact_detected_{ch}", False),
+                    # Update sync record with cycle stats and periodic artifacts
+                    # (record is None when entering from cycles entrypoint)
+                    if sync_data.record is not None:
+                        # Store sync-level periodic artifact results (Phase E.1)
+                        sync_periodic = qc_output.sync_periodic_results
+                        if sync_periodic:
+                            sync_data.record.periodic_artifact_detected = sync_periodic.get(
+                                "periodic_artifact_detected", False
                             )
-                            setattr(
-                                sync_data.record,
-                                f"periodic_artifact_segments_{ch}",
-                                sync_periodic.get(f"periodic_artifact_segments_{ch}", None),
+                            sync_data.record.periodic_artifact_segments = sync_periodic.get(
+                                "periodic_artifact_segments", None
                             )
+                            for ch in ["ch1", "ch2", "ch3", "ch4"]:
+                                setattr(
+                                    sync_data.record,
+                                    f"periodic_artifact_detected_{ch}",
+                                    sync_periodic.get(f"periodic_artifact_detected_{ch}", False),
+                                )
+                                setattr(
+                                    sync_data.record,
+                                    f"periodic_artifact_segments_{ch}",
+                                    sync_periodic.get(f"periodic_artifact_segments_{ch}", None),
+                                )
 
-                    # Update sync record with cycle statistics
-                    sync_data.record.total_cycles_extracted = len(clean_cycles) + len(outlier_cycles)
-                    sync_data.record.clean_cycles = len(clean_cycles)
-                    sync_data.record.outlier_cycles = len(outlier_cycles)
+                        # Update sync record with cycle statistics
+                        sync_data.record.total_cycles_extracted = len(clean_cycles) + len(outlier_cycles)
+                        sync_data.record.clean_cycles = len(clean_cycles)
+                        sync_data.record.outlier_cycles = len(outlier_cycles)
 
-                    # Calculate cycle duration statistics from ALL cycles (clean + outliers)
-                    all_cycles = clean_cycles + outlier_cycles
-                    if all_cycles:
-                        cycle_durations = []
-                        for cycle in all_cycles:
-                            duration_value = None
-                            if hasattr(cycle, "duration_s"):
-                                duration_value = cycle.duration_s
-                            elif isinstance(cycle, dict):
-                                duration_value = cycle.get("duration_s") or cycle.get("duration_seconds")
-                            elif isinstance(cycle, pd.DataFrame):
-                                if "tt" in cycle.columns and len(cycle) > 1:
-                                    delta = cycle["tt"].iloc[-1] - cycle["tt"].iloc[0]
-                                    if hasattr(delta, "total_seconds"):
-                                        duration_value = delta.total_seconds()
-                                    else:
-                                        try:
-                                            duration_value = float(delta)
-                                        except (TypeError, ValueError):
-                                            duration_value = None
+                        # Calculate cycle duration statistics from ALL cycles (clean + outliers)
+                        all_cycles = clean_cycles + outlier_cycles
+                        if all_cycles:
+                            cycle_durations = []
+                            for cycle in all_cycles:
+                                duration_value = None
+                                if hasattr(cycle, "duration_s"):
+                                    duration_value = cycle.duration_s
+                                elif isinstance(cycle, dict):
+                                    duration_value = cycle.get("duration_s") or cycle.get("duration_seconds")
+                                elif isinstance(cycle, pd.DataFrame):
+                                    if "tt" in cycle.columns and len(cycle) > 1:
+                                        delta = cycle["tt"].iloc[-1] - cycle["tt"].iloc[0]
+                                        if hasattr(delta, "total_seconds"):
+                                            duration_value = delta.total_seconds()
+                                        else:
+                                            try:
+                                                duration_value = float(delta)
+                                            except (TypeError, ValueError):
+                                                duration_value = None
 
-                            if duration_value is not None:
-                                cycle_durations.append(float(duration_value))
+                                if duration_value is not None:
+                                    cycle_durations.append(float(duration_value))
 
-                        if cycle_durations:
-                            import statistics
-                            sync_data.record.mean_cycle_duration_s = statistics.mean(cycle_durations)
-                            sync_data.record.median_cycle_duration_s = statistics.median(cycle_durations)
-                            sync_data.record.min_cycle_duration_s = min(cycle_durations)
-                            sync_data.record.max_cycle_duration_s = max(cycle_durations)
+                            if cycle_durations:
+                                import statistics
+                                sync_data.record.mean_cycle_duration_s = statistics.mean(cycle_durations)
+                                sync_data.record.median_cycle_duration_s = statistics.median(cycle_durations)
+                                sync_data.record.min_cycle_duration_s = min(cycle_durations)
+                                sync_data.record.max_cycle_duration_s = max(cycle_durations)
 
                     # Store cycle record in CycleData (using the updated sync record)
                     cycle_data = CycleData(

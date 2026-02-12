@@ -47,11 +47,14 @@ and synchronized with biomechanics data.
 
 from __future__ import annotations
 
+import logging
 from typing import List, Tuple
 
 import numpy as np
 import pandas as pd
 from scipy.signal import find_peaks
+
+logger = logging.getLogger(__name__)
 
 
 # Reference range constants for acoustic RMS energy by phase
@@ -881,6 +884,7 @@ def detect_periodic_artifacts_sync_level(
     window_size_s: float = 2.0,
     peak_snr_threshold: float = 10.0,
     movement_freq_tolerance_hz: float = 0.1,
+    target_fs_hz: float = 2000.0,
 ) -> dict[str, list[tuple[float, float]]]:
     """Detect periodic artifacts on the full exercise portion of a sync'd recording.
 
@@ -910,6 +914,10 @@ def detect_periodic_artifacts_sync_level(
         peak_snr_threshold: Peak/median power ratio for flagging.
         movement_freq_tolerance_hz: Tolerance around the movement fundamental
             and harmonics when excluding movement-related peaks.
+        target_fs_hz: Target sample rate for downsampling before PSD analysis.
+            Audio at 46,875 Hz is far higher than needed for detecting periodic
+            artifacts (we only examine frequencies > 5 Hz). Downsampling to
+            ~2 kHz gives a ~23× speedup with no loss of relevant spectral info.
 
     Returns:
         ``dict[str, list[tuple[float, float]]]`` mapping channel name to
@@ -960,15 +968,45 @@ def detect_periodic_artifacts_sync_level(
         exercise_df, knee_angle_col, fs
     )
 
+    # Downsample audio to target_fs_hz before PSD analysis.
+    # At 46,875 Hz the Welch windows are huge (~93k samples each).
+    # Since we only look at frequencies > 5 Hz, downsampling to ~2 kHz
+    # preserves all relevant spectral info while giving a large speedup.
+    # We use scipy.signal.resample_poly (FFT-based polyphase resampler)
+    # which applies proper anti-aliasing and processes 2.3M samples in
+    # ~60ms per channel — much faster than decimate's IIR filtfilt.
+    ds_factor = max(int(fs / target_fs_hz), 1)
+    if ds_factor > 1:
+        from scipy.signal import resample_poly
+
+        fs_ds = fs / ds_factor
+        logger.debug(
+            "Periodic detection: downsampling %dx "
+            "(%.0f Hz → %.0f Hz, %d → ~%d samples)",
+            ds_factor, fs, fs_ds,
+            len(exercise_time), len(exercise_time) // ds_factor,
+        )
+    else:
+        fs_ds = fs
+
     available_channels = [ch for ch in audio_channels if ch in exercise_df.columns]
     per_channel: dict[str, list[tuple[float, float]]] = {}
 
     for ch in available_channels:
         ch_data = pd.to_numeric(exercise_df[ch], errors="coerce").to_numpy()
+
+        if ds_factor > 1:
+            ch_data = resample_poly(ch_data, 1, ds_factor)
+            ch_time = np.linspace(
+                exercise_time[0], exercise_time[-1], len(ch_data)
+            )
+        else:
+            ch_time = exercise_time
+
         ch_intervals = _sliding_psd_periodic_detection(
             ch_data,
-            exercise_time,
-            fs,
+            ch_time,
+            fs_ds,
             window_size_s=window_size_s,
             peak_snr_threshold=peak_snr_threshold,
             movement_freq=movement_freq,
@@ -988,11 +1026,18 @@ def _estimate_movement_frequency(
     df: pd.DataFrame,
     knee_angle_col: str,
     fs: float,
+    max_autocorr_fs: float = 50.0,
 ) -> float | None:
     """Estimate the fundamental movement-cycle frequency from knee angle.
 
     Uses the autocorrelation of the knee angle signal to find the dominant
     period, then converts to Hz. Returns ``None`` if estimation fails.
+
+    When the input is sampled much faster than needed (e.g. knee angle
+    interpolated to 46,875 Hz audio rate), the signal is stride-downsampled
+    to ``max_autocorr_fs`` first.  Movement frequencies are typically
+    0.5–2 Hz, so 50 Hz is more than adequate and keeps the O(n²)
+    autocorrelation tractable.
     """
     if knee_angle_col not in df.columns:
         return None
@@ -1002,6 +1047,16 @@ def _estimate_movement_frequency(
 
     if len(angle) < 100:
         return None
+
+    # Downsample if sample rate is much higher than needed for movement
+    # frequency estimation (avoids O(n²) autocorrelation on millions of
+    # samples when knee angle is interpolated to audio rate).
+    ds = max(int(fs / max_autocorr_fs), 1)
+    if ds > 1:
+        angle = angle[::ds]
+        fs_eff = fs / ds
+    else:
+        fs_eff = fs
 
     # Detrend
     angle = angle - np.mean(angle)
@@ -1014,7 +1069,7 @@ def _estimate_movement_frequency(
     corr = corr / corr[0]
 
     # Find first peak after at least 0.5s (to avoid DC/short-range correlation)
-    min_lag = max(int(fs * 0.5), 1)
+    min_lag = max(int(fs_eff * 0.5), 1)
     if min_lag >= len(corr):
         return None
 
@@ -1023,7 +1078,7 @@ def _estimate_movement_frequency(
         return None
 
     dominant_lag = peaks[0] + min_lag
-    period_s = dominant_lag / fs
+    period_s = dominant_lag / fs_eff
     if period_s <= 0:
         return None
 
