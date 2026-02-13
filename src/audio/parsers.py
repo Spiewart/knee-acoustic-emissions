@@ -159,7 +159,8 @@ def extract_file_name_and_notes(
     Returns:
         Tuple of (file_name, notes)
     """
-    file_name = maneuver_df["File Name"].values[0]
+    raw_file_name = maneuver_df["File Name"].values[0]
+    file_name = "" if pd.isna(raw_file_name) else str(raw_file_name)
     notes = None
 
     if pd.notna(maneuver_df["Notes"].values[0]):
