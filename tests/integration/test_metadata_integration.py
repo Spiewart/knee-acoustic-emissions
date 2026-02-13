@@ -133,6 +133,18 @@ class TestInstantiation:
             audio_artifact_intermittent_fail_ch2=False,
             audio_artifact_intermittent_fail_ch3=False,
             audio_artifact_intermittent_fail_ch4=False,
+            # Dropout artifact QC (audio-stage, trimmed to cycle)
+            audio_artifact_dropout_fail=False,
+            audio_artifact_dropout_fail_ch1=False,
+            audio_artifact_dropout_fail_ch2=False,
+            audio_artifact_dropout_fail_ch3=False,
+            audio_artifact_dropout_fail_ch4=False,
+            # Continuous artifact QC (audio-stage, trimmed to cycle)
+            audio_artifact_continuous_fail=False,
+            audio_artifact_continuous_fail_ch1=False,
+            audio_artifact_continuous_fail_ch2=False,
+            audio_artifact_continuous_fail_ch3=False,
+            audio_artifact_continuous_fail_ch4=False,
             # Periodic artifact QC
             audio_artifact_periodic_fail=False,
             audio_artifact_periodic_fail_ch1=False,
@@ -175,6 +187,18 @@ class TestInstantiation:
             audio_artifact_intermittent_fail_ch2=False,
             audio_artifact_intermittent_fail_ch3=False,
             audio_artifact_intermittent_fail_ch4=False,
+            # Dropout artifact QC (audio-stage, trimmed to cycle)
+            audio_artifact_dropout_fail=False,
+            audio_artifact_dropout_fail_ch1=False,
+            audio_artifact_dropout_fail_ch2=False,
+            audio_artifact_dropout_fail_ch3=False,
+            audio_artifact_dropout_fail_ch4=False,
+            # Continuous artifact QC (audio-stage, trimmed to cycle)
+            audio_artifact_continuous_fail=False,
+            audio_artifact_continuous_fail_ch1=False,
+            audio_artifact_continuous_fail_ch2=False,
+            audio_artifact_continuous_fail_ch3=False,
+            audio_artifact_continuous_fail_ch4=False,
             # Periodic artifact QC
             audio_artifact_periodic_fail=False,
             audio_artifact_periodic_fail_ch1=False,

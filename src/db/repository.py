@@ -9,7 +9,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import List, Optional
 
-from sqlalchemy import and_, select
+from sqlalchemy import and_, select, update
 from sqlalchemy.orm import Session, joinedload
 
 from src.db.models import (
@@ -20,6 +20,10 @@ from src.db.models import (
     StudyRecord,
     SynchronizationRecord,
 )
+
+# Type alias: most code works with StudyRecord (the enrollment).
+# ParticipantRecord is the permanent identity anchor.
+_StudyOrParticipant = StudyRecord
 from src.metadata import (
     AudioProcessing,
     BiomechanicsImport,
@@ -72,64 +76,51 @@ class Repository:
         return flat if flat else None
 
     # ========================================================================
-    # Study operations
-    # ========================================================================
-
-    def get_or_create_study(self, study_name: str) -> StudyRecord:
-        """Get existing study or create new one.
-
-        Args:
-            study_name: Study name (AOA, preOA, SMoCK)
-
-        Returns:
-            Study record
-        """
-        study = self.session.execute(
-            select(StudyRecord).where(StudyRecord.name == study_name)
-        ).scalar_one_or_none()
-
-        if study is None:
-            study = StudyRecord(name=study_name)
-            self.session.add(study)
-            self.session.flush()
-
-        return study
-
-    # ========================================================================
-    # Participant operations
+    # Participant + Study operations
     # ========================================================================
 
     def get_or_create_participant(
         self, study_name: str, participant_number: int
-    ) -> ParticipantRecord:
-        """Get existing participant or create new one.
+    ) -> StudyRecord:
+        """Get or create a study enrollment for a participant.
+
+        Ensures a permanent ParticipantRecord exists, then gets or creates
+        the StudyRecord linking that participant to the named study.
 
         Args:
             study_name: Study name (AOA, preOA, SMoCK)
-            participant_number: Participant ID within study (study_id column)
+            participant_number: Participant number within study (e.g. 1016)
 
         Returns:
-            Participant record
+            StudyRecord — its ``id`` is the FK used by all downstream tables.
         """
-        study = self.get_or_create_study(study_name)
-
-        participant = self.session.execute(
-            select(ParticipantRecord).where(
+        # Look up existing study enrollment by semantic key
+        study = self.session.execute(
+            select(StudyRecord).where(
                 and_(
-                    ParticipantRecord.study_participant_id == study.id,
-                    ParticipantRecord.study_id == participant_number,
+                    StudyRecord.study_name == study_name,
+                    StudyRecord.study_participant_id == participant_number,
                 )
             )
         ).scalar_one_or_none()
 
-        if participant is None:
-            participant = ParticipantRecord(
-                study_participant_id=study.id, study_id=participant_number
-            )
-            self.session.add(participant)
-            self.session.flush()
+        if study is not None:
+            return study
 
-        return participant
+        # First encounter — create permanent participant + enrollment
+        participant = ParticipantRecord()
+        self.session.add(participant)
+        self.session.flush()
+
+        study = StudyRecord(
+            participant_id=participant.id,
+            study_name=study_name,
+            study_participant_id=participant_number,
+        )
+        self.session.add(study)
+        self.session.flush()
+
+        return study
 
     # ========================================================================
     # Audio processing operations
@@ -152,13 +143,13 @@ class Repository:
         Returns:
             Audio processing record
         """
-        participant = self.get_or_create_participant(audio.study, audio.study_id)
+        study = self.get_or_create_participant(audio.study, audio.study_id)
 
         # Check if record already exists
         existing = self.session.execute(
             select(AudioProcessingRecord).where(
                 and_(
-                    AudioProcessingRecord.participant_id == participant.id,
+                    AudioProcessingRecord.study_id == study.id,
                     AudioProcessingRecord.audio_file_name == audio.audio_file_name,
                     AudioProcessingRecord.knee == audio.knee,
                     AudioProcessingRecord.maneuver == audio.maneuver,
@@ -176,7 +167,7 @@ class Repository:
         else:
             # Create new record
             record = self._create_audio_processing_record(
-                participant.id, audio, pkl_file_path, biomechanics_import_id
+                study.id, audio, pkl_file_path, biomechanics_import_id
             )
             self.session.add(record)
 
@@ -185,7 +176,7 @@ class Repository:
 
     def _create_audio_processing_record(
         self,
-        participant_id: int,
+        study_id: int,
         audio: AudioProcessing,
         pkl_file_path: Optional[str],
         biomechanics_import_id: Optional[int] = None,
@@ -193,7 +184,7 @@ class Repository:
         """Create new audio processing record from Pydantic model.
 
         Args:
-            participant_id: ID of participant
+            study_id: FK to StudyRecord
             audio: AudioProcessing Pydantic model (audio-specific fields only)
             pkl_file_path: Optional path to .pkl file on disk
             biomechanics_import_id: Optional FK to BiomechanicsImportRecord (recorded simultaneously)
@@ -202,8 +193,9 @@ class Repository:
             New AudioProcessingRecord
         """
         return AudioProcessingRecord(
-            participant_id=participant_id,
+            study_id=study_id,
             biomechanics_import_id=biomechanics_import_id,
+            is_active=True,
             audio_file_name=audio.audio_file_name,
             device_serial=audio.device_serial,
             firmware_version=audio.firmware_version,
@@ -251,19 +243,14 @@ class Repository:
             qc_signal_dropout_segments_ch4=audio.qc_signal_dropout_segments_ch4,
             # ===== Continuous Artifact QC =====
             qc_continuous_artifact=audio.qc_continuous_artifact,
-            qc_artifact_type=audio.qc_continuous_artifact_type,
             qc_continuous_artifact_segments=audio.qc_continuous_artifact_segments,
             qc_continuous_artifact_ch1=audio.qc_continuous_artifact_ch1,
-            qc_artifact_type_ch1=audio.qc_continuous_artifact_type_ch1,
             qc_continuous_artifact_segments_ch1=audio.qc_continuous_artifact_segments_ch1,
             qc_continuous_artifact_ch2=audio.qc_continuous_artifact_ch2,
-            qc_artifact_type_ch2=audio.qc_continuous_artifact_type_ch2,
             qc_continuous_artifact_segments_ch2=audio.qc_continuous_artifact_segments_ch2,
             qc_continuous_artifact_ch3=audio.qc_continuous_artifact_ch3,
-            qc_artifact_type_ch3=audio.qc_continuous_artifact_type_ch3,
             qc_continuous_artifact_segments_ch3=audio.qc_continuous_artifact_segments_ch3,
             qc_continuous_artifact_ch4=audio.qc_continuous_artifact_ch4,
-            qc_artifact_type_ch4=audio.qc_continuous_artifact_type_ch4,
             qc_continuous_artifact_segments_ch4=audio.qc_continuous_artifact_segments_ch4,
             processing_date=audio.processing_date,
             processing_status=audio.processing_status,
@@ -284,6 +271,7 @@ class Repository:
             audio: AudioProcessing Pydantic model (audio-specific fields only)
             pkl_file_path: Optional new path to .pkl file
         """
+        record.is_active = True  # Re-activate if previously deactivated
         record.file_size_mb = audio.file_size_mb
         record.device_serial = audio.device_serial
         record.firmware_version = audio.firmware_version
@@ -319,19 +307,14 @@ class Repository:
         record.qc_signal_dropout_segments_ch4 = audio.qc_signal_dropout_segments_ch4
         # ===== Continuous Artifact QC =====
         record.qc_continuous_artifact = audio.qc_continuous_artifact
-        record.qc_artifact_type = audio.qc_continuous_artifact_type
         record.qc_continuous_artifact_segments = audio.qc_continuous_artifact_segments
         record.qc_continuous_artifact_ch1 = audio.qc_continuous_artifact_ch1
-        record.qc_artifact_type_ch1 = audio.qc_continuous_artifact_type_ch1
         record.qc_continuous_artifact_segments_ch1 = audio.qc_continuous_artifact_segments_ch1
         record.qc_continuous_artifact_ch2 = audio.qc_continuous_artifact_ch2
-        record.qc_artifact_type_ch2 = audio.qc_continuous_artifact_type_ch2
         record.qc_continuous_artifact_segments_ch2 = audio.qc_continuous_artifact_segments_ch2
         record.qc_continuous_artifact_ch3 = audio.qc_continuous_artifact_ch3
-        record.qc_artifact_type_ch3 = audio.qc_continuous_artifact_type_ch3
         record.qc_continuous_artifact_segments_ch3 = audio.qc_continuous_artifact_segments_ch3
         record.qc_continuous_artifact_ch4 = audio.qc_continuous_artifact_ch4
-        record.qc_artifact_type_ch4 = audio.qc_continuous_artifact_type_ch4
         record.qc_continuous_artifact_segments_ch4 = audio.qc_continuous_artifact_segments_ch4
         record.processing_date = audio.processing_date
         record.processing_status = audio.processing_status
@@ -358,13 +341,13 @@ class Repository:
         Returns:
             Biomechanics import record
         """
-        participant = self.get_or_create_participant(biomech.study, biomech.study_id)
+        study = self.get_or_create_participant(biomech.study, biomech.study_id)
 
         # Check if record already exists
         existing = self.session.execute(
             select(BiomechanicsImportRecord).where(
                 and_(
-                    BiomechanicsImportRecord.participant_id == participant.id,
+                    BiomechanicsImportRecord.study_id == study.id,
                     BiomechanicsImportRecord.biomechanics_file == biomech.biomechanics_file,
                     BiomechanicsImportRecord.knee == biomech.knee,
                     BiomechanicsImportRecord.maneuver == biomech.maneuver,
@@ -374,6 +357,7 @@ class Repository:
 
         if existing:
             # Update existing record
+            existing.is_active = True  # Re-activate if previously deactivated
             existing.processing_date = biomech.processing_date
             existing.processing_status = biomech.processing_status
             if audio_processing_id is not None:
@@ -383,7 +367,8 @@ class Repository:
         else:
             # Create new record
             record = BiomechanicsImportRecord(
-                participant_id=participant.id,
+                study_id=study.id,
+                is_active=True,
                 biomechanics_file=biomech.biomechanics_file,
                 sheet_name=biomech.sheet_name,
                 biomechanics_type=biomech.biomechanics_type,
@@ -427,13 +412,13 @@ class Repository:
         Returns:
             Synchronization record
         """
-        participant = self.get_or_create_participant(sync.study, sync.study_id)
+        study = self.get_or_create_participant(sync.study, sync.study_id)
 
         # Check if record already exists by semantic key (unique constraint)
         existing = self.session.execute(
             select(SynchronizationRecord).where(
                 and_(
-                    SynchronizationRecord.participant_id == participant.id,
+                    SynchronizationRecord.study_id == study.id,
                     SynchronizationRecord.knee == sync.knee,
                     SynchronizationRecord.maneuver == sync.maneuver,
                     SynchronizationRecord.pass_number == sync.pass_number
@@ -453,7 +438,7 @@ class Repository:
         else:
             # Create new record
             record = self._create_synchronization_record(
-                participant.id, sync, audio_processing_id, biomechanics_import_id, sync_file_path
+                study.id, sync, audio_processing_id, biomechanics_import_id, sync_file_path
             )
             self.session.add(record)
 
@@ -462,7 +447,7 @@ class Repository:
 
     def _create_synchronization_record(
         self,
-        participant_id: int,
+        study_id: int,
         sync: Synchronization,
         audio_processing_id: int,
         biomechanics_import_id: int,
@@ -471,7 +456,7 @@ class Repository:
         """Create new synchronization record from Pydantic model.
 
         Args:
-            participant_id: ID of participant
+            study_id: FK to StudyRecord
             sync: Synchronization Pydantic model (sync-specific fields only)
             audio_processing_id: FK to AudioProcessingRecord
             biomechanics_import_id: FK to BiomechanicsImportRecord
@@ -481,9 +466,10 @@ class Repository:
             New SynchronizationRecord
         """
         return SynchronizationRecord(
-            participant_id=participant_id,
+            study_id=study_id,
             audio_processing_id=audio_processing_id,
             biomechanics_import_id=biomechanics_import_id,
+            is_active=True,
             knee=sync.knee,
             maneuver=sync.maneuver,
             pass_number=sync.pass_number,
@@ -548,6 +534,7 @@ class Repository:
             sync: Synchronization Pydantic model (sync-specific fields only)
             sync_file_path: Optional new path to sync .pkl file
         """
+        record.is_active = True  # Re-activate if previously deactivated
         record.knee = sync.knee
         record.maneuver = sync.maneuver
         record.pass_number = sync.pass_number
@@ -636,13 +623,13 @@ class Repository:
         Returns:
             Movement cycle record
         """
-        participant = self.get_or_create_participant(cycle.study, cycle.study_id)
+        study = self.get_or_create_participant(cycle.study, cycle.study_id)
 
         # Check if record already exists by semantic key (unique constraint)
         existing = self.session.execute(
             select(MovementCycleRecord).where(
                 and_(
-                    MovementCycleRecord.participant_id == participant.id,
+                    MovementCycleRecord.study_id == study.id,
                     MovementCycleRecord.knee == cycle.knee,
                     MovementCycleRecord.maneuver == cycle.maneuver,
                     MovementCycleRecord.pass_number == cycle.pass_number
@@ -665,7 +652,7 @@ class Repository:
         else:
             # Create new record
             record = self._create_movement_cycle_record(
-                participant.id,
+                study.id,
                 cycle,
                 audio_processing_id,
                 biomechanics_import_id,
@@ -679,7 +666,7 @@ class Repository:
 
     def _create_movement_cycle_record(
         self,
-        participant_id: int,
+        study_id: int,
         cycle: MovementCycle,
         audio_processing_id: int,
         biomechanics_import_id: Optional[int],
@@ -689,7 +676,7 @@ class Repository:
         """Create new movement cycle record from Pydantic model.
 
         Args:
-            participant_id: ID of participant
+            study_id: FK to StudyRecord
             cycle: MovementCycle Pydantic model (cycle-specific fields only)
             audio_processing_id: FK to AudioProcessingRecord
             biomechanics_import_id: Optional FK to BiomechanicsImportRecord
@@ -700,10 +687,11 @@ class Repository:
             New MovementCycleRecord
         """
         return MovementCycleRecord(
-            participant_id=participant_id,
+            study_id=study_id,
             audio_processing_id=audio_processing_id,
             biomechanics_import_id=biomechanics_import_id,
             synchronization_id=synchronization_id,
+            is_active=True,
             knee=cycle.knee,
             maneuver=cycle.maneuver,
             pass_number=cycle.pass_number,
@@ -730,16 +718,36 @@ class Repository:
             audio_artifact_timestamps_ch2=cycle.audio_artifact_timestamps_ch2,
             audio_artifact_timestamps_ch3=cycle.audio_artifact_timestamps_ch3,
             audio_artifact_timestamps_ch4=cycle.audio_artifact_timestamps_ch4,
-            audio_artifact_periodic_fail=getattr(cycle, "audio_artifact_periodic_fail", False),
-            audio_artifact_periodic_fail_ch1=getattr(cycle, "audio_artifact_periodic_fail_ch1", False),
-            audio_artifact_periodic_fail_ch2=getattr(cycle, "audio_artifact_periodic_fail_ch2", False),
-            audio_artifact_periodic_fail_ch3=getattr(cycle, "audio_artifact_periodic_fail_ch3", False),
-            audio_artifact_periodic_fail_ch4=getattr(cycle, "audio_artifact_periodic_fail_ch4", False),
-            audio_artifact_periodic_timestamps=getattr(cycle, "audio_artifact_periodic_timestamps", None),
-            audio_artifact_periodic_timestamps_ch1=getattr(cycle, "audio_artifact_periodic_timestamps_ch1", None),
-            audio_artifact_periodic_timestamps_ch2=getattr(cycle, "audio_artifact_periodic_timestamps_ch2", None),
-            audio_artifact_periodic_timestamps_ch3=getattr(cycle, "audio_artifact_periodic_timestamps_ch3", None),
-            audio_artifact_periodic_timestamps_ch4=getattr(cycle, "audio_artifact_periodic_timestamps_ch4", None),
+            audio_artifact_dropout_fail=cycle.audio_artifact_dropout_fail,
+            audio_artifact_dropout_fail_ch1=cycle.audio_artifact_dropout_fail_ch1,
+            audio_artifact_dropout_fail_ch2=cycle.audio_artifact_dropout_fail_ch2,
+            audio_artifact_dropout_fail_ch3=cycle.audio_artifact_dropout_fail_ch3,
+            audio_artifact_dropout_fail_ch4=cycle.audio_artifact_dropout_fail_ch4,
+            audio_artifact_dropout_timestamps=cycle.audio_artifact_dropout_timestamps,
+            audio_artifact_dropout_timestamps_ch1=cycle.audio_artifact_dropout_timestamps_ch1,
+            audio_artifact_dropout_timestamps_ch2=cycle.audio_artifact_dropout_timestamps_ch2,
+            audio_artifact_dropout_timestamps_ch3=cycle.audio_artifact_dropout_timestamps_ch3,
+            audio_artifact_dropout_timestamps_ch4=cycle.audio_artifact_dropout_timestamps_ch4,
+            audio_artifact_continuous_fail=cycle.audio_artifact_continuous_fail,
+            audio_artifact_continuous_fail_ch1=cycle.audio_artifact_continuous_fail_ch1,
+            audio_artifact_continuous_fail_ch2=cycle.audio_artifact_continuous_fail_ch2,
+            audio_artifact_continuous_fail_ch3=cycle.audio_artifact_continuous_fail_ch3,
+            audio_artifact_continuous_fail_ch4=cycle.audio_artifact_continuous_fail_ch4,
+            audio_artifact_continuous_timestamps=cycle.audio_artifact_continuous_timestamps,
+            audio_artifact_continuous_timestamps_ch1=cycle.audio_artifact_continuous_timestamps_ch1,
+            audio_artifact_continuous_timestamps_ch2=cycle.audio_artifact_continuous_timestamps_ch2,
+            audio_artifact_continuous_timestamps_ch3=cycle.audio_artifact_continuous_timestamps_ch3,
+            audio_artifact_continuous_timestamps_ch4=cycle.audio_artifact_continuous_timestamps_ch4,
+            audio_artifact_periodic_fail=cycle.audio_artifact_periodic_fail,
+            audio_artifact_periodic_fail_ch1=cycle.audio_artifact_periodic_fail_ch1,
+            audio_artifact_periodic_fail_ch2=cycle.audio_artifact_periodic_fail_ch2,
+            audio_artifact_periodic_fail_ch3=cycle.audio_artifact_periodic_fail_ch3,
+            audio_artifact_periodic_fail_ch4=cycle.audio_artifact_periodic_fail_ch4,
+            audio_artifact_periodic_timestamps=cycle.audio_artifact_periodic_timestamps,
+            audio_artifact_periodic_timestamps_ch1=cycle.audio_artifact_periodic_timestamps_ch1,
+            audio_artifact_periodic_timestamps_ch2=cycle.audio_artifact_periodic_timestamps_ch2,
+            audio_artifact_periodic_timestamps_ch3=cycle.audio_artifact_periodic_timestamps_ch3,
+            audio_artifact_periodic_timestamps_ch4=cycle.audio_artifact_periodic_timestamps_ch4,
             cycle_file_path=cycles_file_path,
         )
 
@@ -760,6 +768,7 @@ class Repository:
             synchronization_id: Optional FK to SynchronizationRecord
             cycles_file_path: Optional new path to cycles .pkl file
         """
+        record.is_active = True  # Re-activate if previously deactivated
         record.knee = cycle.knee
         record.maneuver = cycle.maneuver
         record.pass_number = cycle.pass_number
@@ -784,16 +793,36 @@ class Repository:
         record.audio_artifact_timestamps_ch2 = cycle.audio_artifact_timestamps_ch2
         record.audio_artifact_timestamps_ch3 = cycle.audio_artifact_timestamps_ch3
         record.audio_artifact_timestamps_ch4 = cycle.audio_artifact_timestamps_ch4
-        record.audio_artifact_periodic_fail = getattr(cycle, "audio_artifact_periodic_fail", False)
-        record.audio_artifact_periodic_fail_ch1 = getattr(cycle, "audio_artifact_periodic_fail_ch1", False)
-        record.audio_artifact_periodic_fail_ch2 = getattr(cycle, "audio_artifact_periodic_fail_ch2", False)
-        record.audio_artifact_periodic_fail_ch3 = getattr(cycle, "audio_artifact_periodic_fail_ch3", False)
-        record.audio_artifact_periodic_fail_ch4 = getattr(cycle, "audio_artifact_periodic_fail_ch4", False)
-        record.audio_artifact_periodic_timestamps = getattr(cycle, "audio_artifact_periodic_timestamps", None)
-        record.audio_artifact_periodic_timestamps_ch1 = getattr(cycle, "audio_artifact_periodic_timestamps_ch1", None)
-        record.audio_artifact_periodic_timestamps_ch2 = getattr(cycle, "audio_artifact_periodic_timestamps_ch2", None)
-        record.audio_artifact_periodic_timestamps_ch3 = getattr(cycle, "audio_artifact_periodic_timestamps_ch3", None)
-        record.audio_artifact_periodic_timestamps_ch4 = getattr(cycle, "audio_artifact_periodic_timestamps_ch4", None)
+        record.audio_artifact_dropout_fail = cycle.audio_artifact_dropout_fail
+        record.audio_artifact_dropout_fail_ch1 = cycle.audio_artifact_dropout_fail_ch1
+        record.audio_artifact_dropout_fail_ch2 = cycle.audio_artifact_dropout_fail_ch2
+        record.audio_artifact_dropout_fail_ch3 = cycle.audio_artifact_dropout_fail_ch3
+        record.audio_artifact_dropout_fail_ch4 = cycle.audio_artifact_dropout_fail_ch4
+        record.audio_artifact_dropout_timestamps = cycle.audio_artifact_dropout_timestamps
+        record.audio_artifact_dropout_timestamps_ch1 = cycle.audio_artifact_dropout_timestamps_ch1
+        record.audio_artifact_dropout_timestamps_ch2 = cycle.audio_artifact_dropout_timestamps_ch2
+        record.audio_artifact_dropout_timestamps_ch3 = cycle.audio_artifact_dropout_timestamps_ch3
+        record.audio_artifact_dropout_timestamps_ch4 = cycle.audio_artifact_dropout_timestamps_ch4
+        record.audio_artifact_continuous_fail = cycle.audio_artifact_continuous_fail
+        record.audio_artifact_continuous_fail_ch1 = cycle.audio_artifact_continuous_fail_ch1
+        record.audio_artifact_continuous_fail_ch2 = cycle.audio_artifact_continuous_fail_ch2
+        record.audio_artifact_continuous_fail_ch3 = cycle.audio_artifact_continuous_fail_ch3
+        record.audio_artifact_continuous_fail_ch4 = cycle.audio_artifact_continuous_fail_ch4
+        record.audio_artifact_continuous_timestamps = cycle.audio_artifact_continuous_timestamps
+        record.audio_artifact_continuous_timestamps_ch1 = cycle.audio_artifact_continuous_timestamps_ch1
+        record.audio_artifact_continuous_timestamps_ch2 = cycle.audio_artifact_continuous_timestamps_ch2
+        record.audio_artifact_continuous_timestamps_ch3 = cycle.audio_artifact_continuous_timestamps_ch3
+        record.audio_artifact_continuous_timestamps_ch4 = cycle.audio_artifact_continuous_timestamps_ch4
+        record.audio_artifact_periodic_fail = cycle.audio_artifact_periodic_fail
+        record.audio_artifact_periodic_fail_ch1 = cycle.audio_artifact_periodic_fail_ch1
+        record.audio_artifact_periodic_fail_ch2 = cycle.audio_artifact_periodic_fail_ch2
+        record.audio_artifact_periodic_fail_ch3 = cycle.audio_artifact_periodic_fail_ch3
+        record.audio_artifact_periodic_fail_ch4 = cycle.audio_artifact_periodic_fail_ch4
+        record.audio_artifact_periodic_timestamps = cycle.audio_artifact_periodic_timestamps
+        record.audio_artifact_periodic_timestamps_ch1 = cycle.audio_artifact_periodic_timestamps_ch1
+        record.audio_artifact_periodic_timestamps_ch2 = cycle.audio_artifact_periodic_timestamps_ch2
+        record.audio_artifact_periodic_timestamps_ch3 = cycle.audio_artifact_periodic_timestamps_ch3
+        record.audio_artifact_periodic_timestamps_ch4 = cycle.audio_artifact_periodic_timestamps_ch4
         if cycles_file_path:
             record.cycle_file_path = cycles_file_path
         if biomechanics_import_id is not None:
@@ -801,6 +830,66 @@ class Repository:
         if synchronization_id is not None:
             record.synchronization_id = synchronization_id
         record.updated_at = datetime.now(timezone.utc)
+
+    # ========================================================================
+    # Soft-delete: deactivate records not seen in latest processing run
+    # ========================================================================
+
+    def deactivate_unseen_records(
+        self,
+        study_id: int,
+        knee: str,
+        maneuver: str,
+        seen_audio_ids: set[int],
+        seen_biomech_ids: set[int],
+        seen_sync_ids: set[int],
+        seen_cycle_ids: set[int],
+    ) -> dict[str, int]:
+        """Mark records not present in the latest processing run as inactive.
+
+        Only affects records matching the given (study_id, knee, maneuver)
+        scope. Records for other knees/maneuvers are untouched.
+
+        Args:
+            study_id: FK to StudyRecord (studies.id)
+            knee: Knee side (left, right)
+            maneuver: Maneuver code (fe, sts, walk)
+            seen_audio_ids: IDs of audio records persisted in this run
+            seen_biomech_ids: IDs of biomechanics records persisted in this run
+            seen_sync_ids: IDs of sync records persisted in this run
+            seen_cycle_ids: IDs of cycle records persisted in this run
+
+        Returns:
+            Dict with counts of records deactivated per table.
+        """
+        counts: dict[str, int] = {}
+
+        for table_name, model, seen_ids in [
+            ("audio_processing", AudioProcessingRecord, seen_audio_ids),
+            ("biomechanics_imports", BiomechanicsImportRecord, seen_biomech_ids),
+            ("synchronizations", SynchronizationRecord, seen_sync_ids),
+            ("movement_cycles", MovementCycleRecord, seen_cycle_ids),
+        ]:
+            stmt = (
+                update(model)
+                .where(
+                    and_(
+                        model.study_id == study_id,
+                        model.knee == knee,
+                        model.maneuver == maneuver,
+                        model.is_active == True,  # noqa: E712 — SQLAlchemy requires ==
+                    )
+                )
+                .values(is_active=False, updated_at=datetime.now(timezone.utc))
+            )
+            if seen_ids:
+                stmt = stmt.where(model.id.not_in(seen_ids))
+
+            result = self.session.execute(stmt)
+            counts[table_name] = result.rowcount
+
+        self.session.flush()
+        return counts
 
     # ========================================================================
     # Query operations
@@ -812,24 +901,28 @@ class Repository:
         participant_number: Optional[int] = None,
         maneuver: Optional[str] = None,
         knee: Optional[str] = None,
+        include_inactive: bool = False,
     ) -> List[AudioProcessingRecord]:
         """Query audio processing records with filters.
 
         Args:
             study_name: Filter by study name
-            participant_number: Filter by participant study_id
+            participant_number: Filter by participant study_participant_id
             maneuver: Filter by maneuver
             knee: Filter by knee
+            include_inactive: If False (default), only return active records
 
         Returns:
             List of matching audio processing records
         """
-        query = select(AudioProcessingRecord).join(ParticipantRecord)
+        query = select(AudioProcessingRecord).join(StudyRecord)
+        if not include_inactive:
+            query = query.where(AudioProcessingRecord.is_active == True)  # noqa: E712
 
         if study_name:
-            query = query.join(StudyRecord).where(StudyRecord.name == study_name)
+            query = query.where(StudyRecord.study_name == study_name)
         if participant_number is not None:
-            query = query.where(ParticipantRecord.study_id == participant_number)
+            query = query.where(StudyRecord.study_participant_id == participant_number)
         if maneuver:
             query = query.where(AudioProcessingRecord.maneuver == maneuver)
         if knee:
@@ -843,24 +936,28 @@ class Repository:
         participant_number: Optional[int] = None,
         maneuver: Optional[str] = None,
         knee: Optional[str] = None,
+        include_inactive: bool = False,
     ) -> List[BiomechanicsImportRecord]:
         """Query biomechanics import records with filters.
 
         Args:
             study_name: Filter by study name
-            participant_number: Filter by participant study_id
+            participant_number: Filter by participant study_participant_id
             maneuver: Filter by maneuver
             knee: Filter by knee
+            include_inactive: If False (default), only return active records
 
         Returns:
             List of matching biomechanics import records
         """
-        query = select(BiomechanicsImportRecord).join(ParticipantRecord)
+        query = select(BiomechanicsImportRecord).join(StudyRecord)
+        if not include_inactive:
+            query = query.where(BiomechanicsImportRecord.is_active == True)  # noqa: E712
 
         if study_name:
-            query = query.join(StudyRecord).where(StudyRecord.name == study_name)
+            query = query.where(StudyRecord.study_name == study_name)
         if participant_number is not None:
-            query = query.where(ParticipantRecord.study_id == participant_number)
+            query = query.where(StudyRecord.study_participant_id == participant_number)
         if maneuver:
             query = query.where(BiomechanicsImportRecord.maneuver == maneuver)
         if knee:
@@ -874,24 +971,28 @@ class Repository:
         participant_number: Optional[int] = None,
         maneuver: Optional[str] = None,
         knee: Optional[str] = None,
+        include_inactive: bool = False,
     ) -> List[SynchronizationRecord]:
         """Query synchronization records with filters.
 
         Args:
             study_name: Filter by study name
-            participant_number: Filter by participant study_id
+            participant_number: Filter by participant study_participant_id
             maneuver: Filter by maneuver
             knee: Filter by knee
+            include_inactive: If False (default), only return active records
 
         Returns:
             List of matching synchronization records
         """
-        query = select(SynchronizationRecord).join(ParticipantRecord)
+        query = select(SynchronizationRecord).join(StudyRecord)
+        if not include_inactive:
+            query = query.where(SynchronizationRecord.is_active == True)  # noqa: E712
 
         if study_name:
-            query = query.join(StudyRecord).where(StudyRecord.name == study_name)
+            query = query.where(StudyRecord.study_name == study_name)
         if participant_number is not None:
-            query = query.where(ParticipantRecord.study_id == participant_number)
+            query = query.where(StudyRecord.study_participant_id == participant_number)
         if maneuver:
             query = query.where(SynchronizationRecord.maneuver == maneuver)
         if knee:
@@ -905,24 +1006,28 @@ class Repository:
         participant_number: Optional[int] = None,
         maneuver: Optional[str] = None,
         knee: Optional[str] = None,
+        include_inactive: bool = False,
     ) -> List[MovementCycleRecord]:
         """Query movement cycle records with filters.
 
         Args:
             study_name: Filter by study name
-            participant_number: Filter by participant study_id
+            participant_number: Filter by participant study_participant_id
             maneuver: Filter by maneuver
             knee: Filter by knee
+            include_inactive: If False (default), only return active records
 
         Returns:
             List of matching movement cycle records
         """
-        query = select(MovementCycleRecord).join(ParticipantRecord)
+        query = select(MovementCycleRecord).join(StudyRecord)
+        if not include_inactive:
+            query = query.where(MovementCycleRecord.is_active == True)  # noqa: E712
 
         if study_name:
-            query = query.join(StudyRecord).where(StudyRecord.name == study_name)
+            query = query.where(StudyRecord.study_name == study_name)
         if participant_number is not None:
-            query = query.where(ParticipantRecord.study_id == participant_number)
+            query = query.where(StudyRecord.study_participant_id == participant_number)
         if maneuver:
             query = query.where(MovementCycleRecord.maneuver == maneuver)
         if knee:

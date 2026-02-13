@@ -141,7 +141,7 @@ class TestSyncUniqueConstraintPreventsDoubles:
 
         # Count sync records for this participant
         count = db_session.query(SynchronizationRecord).filter(
-            SynchronizationRecord.participant_id == audio_record.participant_id,
+            SynchronizationRecord.study_id == audio_record.study_id,
             SynchronizationRecord.knee == "left",
             SynchronizationRecord.maneuver == "walk",
         ).count()

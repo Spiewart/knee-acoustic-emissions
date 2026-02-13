@@ -126,19 +126,14 @@ class AudioProcessing(StudyMetadata):
 
     # ===== Continuous Artifact QC (detected at audio processing stage) =====
     qc_continuous_artifact: bool = Field(...)
-    qc_continuous_artifact_type: Optional[List[Literal["Intermittent", "Continuous"]]] = None
     qc_continuous_artifact_segments: List[tuple] = Field(...)
     qc_continuous_artifact_ch1: bool = Field(...)
-    qc_continuous_artifact_type_ch1: Optional[List[Literal["Intermittent", "Continuous"]]] = None
     qc_continuous_artifact_segments_ch1: List[tuple] = Field(...)
     qc_continuous_artifact_ch2: bool = Field(...)
-    qc_continuous_artifact_type_ch2: Optional[List[Literal["Intermittent", "Continuous"]]] = None
     qc_continuous_artifact_segments_ch2: List[tuple] = Field(...)
     qc_continuous_artifact_ch3: bool = Field(...)
-    qc_continuous_artifact_type_ch3: Optional[List[Literal["Intermittent", "Continuous"]]] = None
     qc_continuous_artifact_segments_ch3: List[tuple] = Field(...)
     qc_continuous_artifact_ch4: bool = Field(...)
-    qc_continuous_artifact_type_ch4: Optional[List[Literal["Intermittent", "Continuous"]]] = None
     qc_continuous_artifact_segments_ch4: List[tuple] = Field(...)
 
     # ===== QC Status (auto-populated from segments) =====
@@ -275,19 +270,14 @@ class AudioProcessing(StudyMetadata):
             "QC Signal Dropout Ch4": self.qc_signal_dropout_ch4,
             "QC Signal Dropout Segments Ch4": self.qc_signal_dropout_segments_ch4,
             "QC Continuous Artifact": self.qc_continuous_artifact,
-            "QC Continuous Artifact Type": self.qc_continuous_artifact_type,
             "QC Continuous Artifact Segments": self.qc_continuous_artifact_segments,
             "QC Continuous Artifact Ch1": self.qc_continuous_artifact_ch1,
-            "QC Continuous Artifact Type Ch1": self.qc_continuous_artifact_type_ch1,
             "QC Continuous Artifact Segments Ch1": self.qc_continuous_artifact_segments_ch1,
             "QC Continuous Artifact Ch2": self.qc_continuous_artifact_ch2,
-            "QC Continuous Artifact Type Ch2": self.qc_continuous_artifact_type_ch2,
             "QC Continuous Artifact Segments Ch2": self.qc_continuous_artifact_segments_ch2,
             "QC Continuous Artifact Ch3": self.qc_continuous_artifact_ch3,
-            "QC Continuous Artifact Type Ch3": self.qc_continuous_artifact_type_ch3,
             "QC Continuous Artifact Segments Ch3": self.qc_continuous_artifact_segments_ch3,
             "QC Continuous Artifact Ch4": self.qc_continuous_artifact_ch4,
-            "QC Continuous Artifact Type Ch4": self.qc_continuous_artifact_type_ch4,
             "QC Continuous Artifact Segments Ch4": self.qc_continuous_artifact_segments_ch4,
         })
         return result
@@ -602,6 +592,30 @@ class MovementCycle(StudyMetadata):
     audio_artifact_timestamps_ch2: Optional[List[float]] = None
     audio_artifact_timestamps_ch3: Optional[List[float]] = None
     audio_artifact_timestamps_ch4: Optional[List[float]] = None
+
+    # ===== Audio-Stage Dropout Artifacts (trimmed to cycle boundaries) =====
+    audio_artifact_dropout_fail: bool = Field(...)
+    audio_artifact_dropout_fail_ch1: bool = Field(...)
+    audio_artifact_dropout_fail_ch2: bool = Field(...)
+    audio_artifact_dropout_fail_ch3: bool = Field(...)
+    audio_artifact_dropout_fail_ch4: bool = Field(...)
+    audio_artifact_dropout_timestamps: Optional[List[float]] = None
+    audio_artifact_dropout_timestamps_ch1: Optional[List[float]] = None
+    audio_artifact_dropout_timestamps_ch2: Optional[List[float]] = None
+    audio_artifact_dropout_timestamps_ch3: Optional[List[float]] = None
+    audio_artifact_dropout_timestamps_ch4: Optional[List[float]] = None
+
+    # ===== Audio-Stage Continuous Artifacts (trimmed to cycle boundaries) =====
+    audio_artifact_continuous_fail: bool = Field(...)
+    audio_artifact_continuous_fail_ch1: bool = Field(...)
+    audio_artifact_continuous_fail_ch2: bool = Field(...)
+    audio_artifact_continuous_fail_ch3: bool = Field(...)
+    audio_artifact_continuous_fail_ch4: bool = Field(...)
+    audio_artifact_continuous_timestamps: Optional[List[float]] = None
+    audio_artifact_continuous_timestamps_ch1: Optional[List[float]] = None
+    audio_artifact_continuous_timestamps_ch2: Optional[List[float]] = None
+    audio_artifact_continuous_timestamps_ch3: Optional[List[float]] = None
+    audio_artifact_continuous_timestamps_ch4: Optional[List[float]] = None
 
     # ===== Periodic Artifact QC (propagated from sync-level, trimmed to cycle) =====
     audio_artifact_periodic_fail: bool = Field(...)

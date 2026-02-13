@@ -210,7 +210,7 @@ class TestAudioExcelSheetQCColumns:
 
         generator = ReportGenerator(db_session)
         sheet = generator.generate_audio_sheet(
-            participant_id=record.participant_id,
+            study_id=record.study_id,
             maneuver="walk",
             knee="left",
         )
@@ -279,7 +279,7 @@ class TestAudioExcelSheetQCColumns:
 
         generator = ReportGenerator(db_session)
         sheet = generator.generate_audio_sheet(
-            participant_id=record.participant_id,
+            study_id=record.study_id,
             maneuver="walk",
             knee="left",
         )

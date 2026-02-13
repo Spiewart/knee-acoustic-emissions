@@ -71,7 +71,7 @@ class TestSyncDeduplication:
         report = ReportGenerator(db_session)
         output_path = report.save_to_excel(
             tmp_path / "test_dedup.xlsx",
-            participant_id=audio_record.participant_id,
+            participant_id=audio_record.study_id,
             maneuver="walk",
             knee="right",
         )
@@ -135,7 +135,7 @@ class TestSyncDeduplication:
         report = ReportGenerator(db_session)
         output_path = report.save_to_excel(
             tmp_path / "test_sync_sheet.xlsx",
-            participant_id=audio_record.participant_id,
+            participant_id=audio_record.study_id,
             maneuver="sts",
             knee="left",
         )
@@ -223,7 +223,7 @@ class TestMovementCyclePersistence:
         report = ReportGenerator(db_session)
         output_path = report.save_to_excel(
             tmp_path / "test_cycles.xlsx",
-            participant_id=audio_record.participant_id,
+            participant_id=audio_record.study_id,
             maneuver="fe",
             knee="right",
         )
@@ -318,7 +318,7 @@ class TestMovementCyclePersistence:
         report = ReportGenerator(db_session)
         output_path = report.save_to_excel(
             tmp_path / "test_outlier_col.xlsx",
-            participant_id=audio_record.participant_id,
+            participant_id=audio_record.study_id,
             maneuver="walk",
             knee="left",
         )
@@ -431,7 +431,7 @@ class TestAggregationPerManeuver:
         report = ReportGenerator(db_session)
         output_path = report.save_to_excel(
             tmp_path / "test_walk_report.xlsx",
-            participant_id=audio_walk_record.participant_id,
+            participant_id=audio_walk_record.study_id,
             maneuver="walk",
             knee="right",
         )
@@ -449,7 +449,7 @@ class TestAggregationPerManeuver:
         # Generate report for STS maneuver only
         output_path_sts = report.save_to_excel(
             tmp_path / "test_sts_report.xlsx",
-            participant_id=audio_sts_record.participant_id,
+            participant_id=audio_sts_record.study_id,
             maneuver="sts",
             knee="right",
         )

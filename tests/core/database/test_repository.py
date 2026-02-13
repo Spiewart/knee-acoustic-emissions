@@ -159,6 +159,18 @@ def create_test_movement_cycle(**kwargs):
         "audio_artifact_intermittent_fail_ch2": False,
         "audio_artifact_intermittent_fail_ch3": False,
         "audio_artifact_intermittent_fail_ch4": False,
+        # Dropout artifact QC (audio-stage, trimmed to cycle)
+        "audio_artifact_dropout_fail": False,
+        "audio_artifact_dropout_fail_ch1": False,
+        "audio_artifact_dropout_fail_ch2": False,
+        "audio_artifact_dropout_fail_ch3": False,
+        "audio_artifact_dropout_fail_ch4": False,
+        # Continuous artifact QC (audio-stage, trimmed to cycle)
+        "audio_artifact_continuous_fail": False,
+        "audio_artifact_continuous_fail_ch1": False,
+        "audio_artifact_continuous_fail_ch2": False,
+        "audio_artifact_continuous_fail_ch3": False,
+        "audio_artifact_continuous_fail_ch4": False,
         # Periodic artifact QC
         "audio_artifact_periodic_fail": False,
         "audio_artifact_periodic_fail_ch1": False,
@@ -256,52 +268,55 @@ def repository(test_session):
 class TestDatabaseModels:
     """Test SQLAlchemy ORM models."""
 
-    def test_create_study(self, test_session):
-        """Test creating a study record."""
-        study = StudyRecord(name="AOA")
-        test_session.add(study)
-        test_session.commit()
-
-        assert study.id is not None
-        assert study.name == "AOA"
-        assert study.created_at is not None
-
     def test_create_participant(self, test_session):
-        """Test creating a participant record."""
-        study = StudyRecord(name="AOA")
-        test_session.add(study)
-        test_session.flush()
-
-        participant = ParticipantRecord(
-            study_participant_id=study.id,
-            study_id=1011
-        )
+        """Test creating a permanent participant identity record."""
+        participant = ParticipantRecord()
         test_session.add(participant)
         test_session.commit()
 
         assert participant.id is not None
-        assert participant.study_id == 1011
-        assert participant.study.name == "AOA"
+        assert participant.created_at is not None
 
-    def test_unique_study_participant(self, test_session):
-        """Test that study+study_id is unique."""
-        study = StudyRecord(name="AOA")
-        test_session.add(study)
+    def test_create_study_enrollment(self, test_session):
+        """Test creating a study enrollment record linked to a participant."""
+        participant = ParticipantRecord()
+        test_session.add(participant)
         test_session.flush()
 
-        participant1 = ParticipantRecord(
-            study_participant_id=study.id,
-            study_id=1011
+        study = StudyRecord(
+            participant_id=participant.id,
+            study_name="AOA",
+            study_participant_id=1011,
         )
-        test_session.add(participant1)
+        test_session.add(study)
         test_session.commit()
 
-        # Try to create duplicate
-        participant2 = ParticipantRecord(
-            study_participant_id=study.id,
-            study_id=1011
+        assert study.id is not None
+        assert study.study_name == "AOA"
+        assert study.study_participant_id == 1011
+        assert study.participant.id == participant.id
+
+    def test_unique_study_participant(self, test_session):
+        """Test that (study_name, study_participant_id) is unique."""
+        participant = ParticipantRecord()
+        test_session.add(participant)
+        test_session.flush()
+
+        study1 = StudyRecord(
+            participant_id=participant.id,
+            study_name="AOA",
+            study_participant_id=1011,
         )
-        test_session.add(participant2)
+        test_session.add(study1)
+        test_session.commit()
+
+        # Try to create duplicate enrollment
+        study2 = StudyRecord(
+            participant_id=participant.id,
+            study_name="AOA",
+            study_participant_id=1011,
+        )
+        test_session.add(study2)
 
         with pytest.raises(Exception):  # Should raise integrity error
             test_session.commit()
@@ -310,23 +325,16 @@ class TestDatabaseModels:
 class TestRepository:
     """Test repository layer."""
 
-    def test_get_or_create_study(self, repository):
-        """Test getting or creating a study."""
-        study1 = repository.get_or_create_study("AOA")
-        assert study1.name == "AOA"
-
-        # Should return same study on second call
-        study2 = repository.get_or_create_study("AOA")
-        assert study1.id == study2.id
-
     def test_get_or_create_participant(self, repository):
-        """Test getting or creating a participant."""
-        participant1 = repository.get_or_create_participant("AOA", 1011)
-        assert participant1.study_id == 1011
+        """Test getting or creating a participant + study enrollment."""
+        study1 = repository.get_or_create_participant("AOA", 1011)
+        assert study1.study_participant_id == 1011
+        assert study1.study_name == "AOA"
+        assert study1.participant_id is not None
 
-        # Should return same participant on second call
-        participant2 = repository.get_or_create_participant("AOA", 1011)
-        assert participant1.id == participant2.id
+        # Should return same study enrollment on second call
+        study2 = repository.get_or_create_participant("AOA", 1011)
+        assert study1.id == study2.id
 
     def test_save_audio_processing(self, repository):
         """Test saving audio processing record (without biomechanics FK)."""

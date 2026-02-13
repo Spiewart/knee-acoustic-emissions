@@ -12,24 +12,20 @@ from sqlalchemy import select
 from src.db.models import (
     AudioProcessingRecord,
     MovementCycleRecord,
-    ParticipantRecord,
     StudyRecord,
     SynchronizationRecord,
 )
 from src.orchestration.participant import process_participant
 
 
-def _get_participant_id(session, study_name: str, participant_number: int) -> int:
+def _get_study_id(session, study_name: str, participant_number: int) -> int:
     study = session.execute(
-        select(StudyRecord).where(StudyRecord.name == study_name)
-    ).scalar_one()
-    participant = session.execute(
-        select(ParticipantRecord).where(
-            ParticipantRecord.study_participant_id == study.id,
-            ParticipantRecord.study_id == participant_number,
+        select(StudyRecord).where(
+            StudyRecord.study_name == study_name,
+            StudyRecord.study_participant_id == participant_number,
         )
     ).scalar_one()
-    return participant.id
+    return study.id
 
 
 def _get_latest_log_file(maneuver_dir: Path) -> Path:
@@ -52,10 +48,10 @@ class TestFakeDirectoryProcessingIntegration:
         )
         assert success, "Bin stage should succeed with valid .bin files"
 
-        participant_id = _get_participant_id(db_session, "AOA", 1011)
+        study_id = _get_study_id(db_session, "AOA", 1011)
         audio_records = db_session.execute(
             select(AudioProcessingRecord).where(
-                AudioProcessingRecord.participant_id == participant_id,
+                AudioProcessingRecord.study_id == study_id,
                 AudioProcessingRecord.knee == "left",
                 AudioProcessingRecord.maneuver == "fe",
             )
@@ -95,10 +91,10 @@ class TestFakeDirectoryProcessingIntegration:
         )
         assert success_2, "Second bin stage should succeed"
 
-        participant_id = _get_participant_id(db_session, "AOA", 1011)
+        study_id = _get_study_id(db_session, "AOA", 1011)
         audio_records = db_session.execute(
             select(AudioProcessingRecord).where(
-                AudioProcessingRecord.participant_id == participant_id,
+                AudioProcessingRecord.study_id == study_id,
                 AudioProcessingRecord.knee == "left",
                 AudioProcessingRecord.maneuver == "fe",
             )
@@ -119,10 +115,10 @@ class TestFakeDirectoryProcessingIntegration:
         )
         assert success, "Sync stage should succeed"
 
-        participant_id = _get_participant_id(db_session, "AOA", 1011)
+        study_id = _get_study_id(db_session, "AOA", 1011)
         audio_record = db_session.execute(
             select(AudioProcessingRecord).where(
-                AudioProcessingRecord.participant_id == participant_id,
+                AudioProcessingRecord.study_id == study_id,
                 AudioProcessingRecord.knee == "left",
                 AudioProcessingRecord.maneuver == "fe",
             )
@@ -130,7 +126,7 @@ class TestFakeDirectoryProcessingIntegration:
 
         sync_records = db_session.execute(
             select(SynchronizationRecord).where(
-                SynchronizationRecord.participant_id == participant_id,
+                SynchronizationRecord.study_id == study_id,
                 SynchronizationRecord.audio_processing_id == audio_record.id,
             )
         ).scalars().all()
@@ -168,10 +164,10 @@ class TestFakeDirectoryProcessingIntegration:
         )
         assert success, "Cycles stage should succeed"
 
-        participant_id = _get_participant_id(db_session, "AOA", 1011)
+        study_id = _get_study_id(db_session, "AOA", 1011)
         audio_record = db_session.execute(
             select(AudioProcessingRecord).where(
-                AudioProcessingRecord.participant_id == participant_id,
+                AudioProcessingRecord.study_id == study_id,
                 AudioProcessingRecord.knee == "left",
                 AudioProcessingRecord.maneuver == "fe",
             )
@@ -179,7 +175,7 @@ class TestFakeDirectoryProcessingIntegration:
 
         cycle_records = db_session.execute(
             select(MovementCycleRecord).where(
-                MovementCycleRecord.participant_id == participant_id,
+                MovementCycleRecord.study_id == study_id,
                 MovementCycleRecord.audio_processing_id == audio_record.id,
             )
         ).scalars().all()

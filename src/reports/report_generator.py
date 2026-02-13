@@ -82,12 +82,12 @@ class ReportGenerator:
         # Already a string or other type
         return value
 
-    def generate_audio_sheet(self, participant_id: int, maneuver: str,
+    def generate_audio_sheet(self, study_id: int, maneuver: str,
                            knee: str) -> pd.DataFrame:
         """Query database and generate Audio Processing sheet.
 
         Args:
-            participant_id: Participant ID
+            study_id: Study enrollment ID (studies.id)
             maneuver: Maneuver code (walk, sts, fe)
             knee: Knee side (left, right)
 
@@ -97,9 +97,10 @@ class ReportGenerator:
         from src.db.models import AudioProcessingRecord
 
         query = self.session.query(AudioProcessingRecord).filter(
-            AudioProcessingRecord.participant_id == participant_id,
+            AudioProcessingRecord.study_id == study_id,
             AudioProcessingRecord.maneuver == maneuver,
             AudioProcessingRecord.knee == knee,
+            AudioProcessingRecord.is_active == True,  # noqa: E712
         )
 
         records = query.all()
@@ -115,8 +116,8 @@ class ReportGenerator:
                 ).first()
 
             # Get participant number to show in Excel (not database ID)
-            participant_record = record.participant
-            participant_number = participant_record.study_id if participant_record else record.participant_id
+            study_record = record.study
+            participant_number = study_record.study_participant_id if study_record else record.study_id
 
             # Parse recording datetime from audio file name (most reliable source)
             from src.orchestration.processing_log import _parse_audio_filename
@@ -185,11 +186,6 @@ class ReportGenerator:
                 'QC Continuous Artifact Segments Ch3': record.qc_continuous_artifact_segments_ch3,
                 'QC Continuous Artifact Ch4': record.qc_continuous_artifact_ch4,
                 'QC Continuous Artifact Segments Ch4': record.qc_continuous_artifact_segments_ch4,
-                'QC Artifact Type': self._format_list_for_excel(record.qc_artifact_type),
-                'QC Artifact Type Ch1': self._format_list_for_excel(record.qc_artifact_type_ch1),
-                'QC Artifact Type Ch2': self._format_list_for_excel(record.qc_artifact_type_ch2),
-                'QC Artifact Type Ch3': self._format_list_for_excel(record.qc_artifact_type_ch3),
-                'QC Artifact Type Ch4': self._format_list_for_excel(record.qc_artifact_type_ch4),
                 'Audio QC Version': record.audio_qc_version,
             })
 
@@ -266,12 +262,12 @@ class ReportGenerator:
 
         return df[ordered_cols]
 
-    def generate_biomechanics_sheet(self, participant_id: int, maneuver: str,
+    def generate_biomechanics_sheet(self, study_id: int, maneuver: str,
                                    knee: str) -> pd.DataFrame:
         """Query database and generate Biomechanics Import sheet.
 
         Args:
-            participant_id: Participant ID
+            study_id: Study enrollment ID (studies.id)
             maneuver: Maneuver code (walk, sts, fe)
             knee: Knee side (left, right)
 
@@ -281,9 +277,10 @@ class ReportGenerator:
         from src.db.models import BiomechanicsImportRecord
 
         query = self.session.query(BiomechanicsImportRecord).filter(
-            BiomechanicsImportRecord.participant_id == participant_id,
+            BiomechanicsImportRecord.study_id == study_id,
             BiomechanicsImportRecord.maneuver == maneuver,
             BiomechanicsImportRecord.knee == knee,
+            BiomechanicsImportRecord.is_active == True,  # noqa: E712
         )
 
         records = query.all()
@@ -291,8 +288,8 @@ class ReportGenerator:
         data = []
         for record in records:
             # Get participant number to show in Excel (not database ID)
-            participant_record = record.participant
-            participant_number = participant_record.study_id if participant_record else record.participant_id
+            study_record = record.study
+            participant_number = study_record.study_participant_id if study_record else record.study_id
 
             data.append({
                 'Biomechanics Import ID': record.id,
@@ -320,12 +317,12 @@ class ReportGenerator:
             df = df[df["Sync File"].notna()].drop_duplicates(subset=["Sync File"])
         return df
 
-    def generate_synchronization_sheet(self, participant_id: int, maneuver: str,
+    def generate_synchronization_sheet(self, study_id: int, maneuver: str,
                                       knee: str) -> pd.DataFrame:
         """Query database and generate Synchronization sheet.
 
         Args:
-            participant_id: Participant ID
+            study_id: Study enrollment ID (studies.id)
             maneuver: Maneuver code (walk, sts, fe)
             knee: Knee side (left, right)
 
@@ -341,9 +338,10 @@ class ReportGenerator:
                 SynchronizationRecord.audio_processing_id == AudioProcessingRecord.id,
             )
             .filter(
-                SynchronizationRecord.participant_id == participant_id,
+                SynchronizationRecord.study_id == study_id,
                 AudioProcessingRecord.maneuver == maneuver,
                 AudioProcessingRecord.knee == knee,
+                SynchronizationRecord.is_active == True,  # noqa: E712
             )
             .order_by(
                 SynchronizationRecord.pass_number,
@@ -356,8 +354,8 @@ class ReportGenerator:
         data = []
         for record in records:
             # Get participant number to show in Excel (not database ID)
-            participant_record = record.participant
-            participant_number = participant_record.study_id if participant_record else record.participant_id
+            study_record = record.study
+            participant_number = study_record.study_participant_id if study_record else record.study_id
 
             data.append({
                 'Synchronization ID': record.id,
@@ -429,12 +427,12 @@ class ReportGenerator:
 
         return pd.DataFrame(data) if data else pd.DataFrame()
 
-    def generate_movement_cycles_sheet(self, participant_id: int, maneuver: str,
+    def generate_movement_cycles_sheet(self, study_id: int, maneuver: str,
                                       knee: str) -> pd.DataFrame:
         """Query database and generate Movement Cycles sheet.
 
         Args:
-            participant_id: Participant ID
+            study_id: Study enrollment ID (studies.id)
             maneuver: Maneuver code (walk, sts, fe)
             knee: Knee side (left, right)
 
@@ -456,9 +454,10 @@ class ReportGenerator:
         ).outerjoin(
             SynchronizationRecord, MovementCycleRecord.synchronization_id == SynchronizationRecord.id
         ).filter(
-            MovementCycleRecord.participant_id == participant_id,
+            MovementCycleRecord.study_id == study_id,
             AudioProcessingRecord.maneuver == maneuver,
             AudioProcessingRecord.knee == knee,
+            MovementCycleRecord.is_active == True,  # noqa: E712
         ).order_by(
             func.coalesce(SynchronizationRecord.pass_number, 0),
             MovementCycleRecord.cycle_index
@@ -474,8 +473,8 @@ class ReportGenerator:
             speed = sync_record.speed if sync_record else None
 
             # Get participant number to show in Excel (not database ID)
-            participant_record = record.participant
-            participant_number = participant_record.study_id if participant_record else record.participant_id
+            study_record = record.study
+            participant_number = study_record.study_participant_id if study_record else record.study_id
 
             data.append({
                 'Movement Cycle ID': record.id,
@@ -506,6 +505,26 @@ class ReportGenerator:
                 'Audio Artifact Timestamps Ch2': self._format_list_for_excel(record.audio_artifact_timestamps_ch2),
                 'Audio Artifact Timestamps Ch3': self._format_list_for_excel(record.audio_artifact_timestamps_ch3),
                 'Audio Artifact Timestamps Ch4': self._format_list_for_excel(record.audio_artifact_timestamps_ch4),
+                'Audio Artifact Dropout Fail': record.audio_artifact_dropout_fail,
+                'Audio Artifact Dropout Fail Ch1': record.audio_artifact_dropout_fail_ch1,
+                'Audio Artifact Dropout Fail Ch2': record.audio_artifact_dropout_fail_ch2,
+                'Audio Artifact Dropout Fail Ch3': record.audio_artifact_dropout_fail_ch3,
+                'Audio Artifact Dropout Fail Ch4': record.audio_artifact_dropout_fail_ch4,
+                'Audio Artifact Dropout Timestamps': self._format_list_for_excel(record.audio_artifact_dropout_timestamps),
+                'Audio Artifact Dropout Timestamps Ch1': self._format_list_for_excel(record.audio_artifact_dropout_timestamps_ch1),
+                'Audio Artifact Dropout Timestamps Ch2': self._format_list_for_excel(record.audio_artifact_dropout_timestamps_ch2),
+                'Audio Artifact Dropout Timestamps Ch3': self._format_list_for_excel(record.audio_artifact_dropout_timestamps_ch3),
+                'Audio Artifact Dropout Timestamps Ch4': self._format_list_for_excel(record.audio_artifact_dropout_timestamps_ch4),
+                'Audio Artifact Continuous Fail': record.audio_artifact_continuous_fail,
+                'Audio Artifact Continuous Fail Ch1': record.audio_artifact_continuous_fail_ch1,
+                'Audio Artifact Continuous Fail Ch2': record.audio_artifact_continuous_fail_ch2,
+                'Audio Artifact Continuous Fail Ch3': record.audio_artifact_continuous_fail_ch3,
+                'Audio Artifact Continuous Fail Ch4': record.audio_artifact_continuous_fail_ch4,
+                'Audio Artifact Continuous Timestamps': self._format_list_for_excel(record.audio_artifact_continuous_timestamps),
+                'Audio Artifact Continuous Timestamps Ch1': self._format_list_for_excel(record.audio_artifact_continuous_timestamps_ch1),
+                'Audio Artifact Continuous Timestamps Ch2': self._format_list_for_excel(record.audio_artifact_continuous_timestamps_ch2),
+                'Audio Artifact Continuous Timestamps Ch3': self._format_list_for_excel(record.audio_artifact_continuous_timestamps_ch3),
+                'Audio Artifact Continuous Timestamps Ch4': self._format_list_for_excel(record.audio_artifact_continuous_timestamps_ch4),
                 'Audio Artifact Periodic Fail': record.audio_artifact_periodic_fail,
                 'Audio Artifact Periodic Fail Ch1': record.audio_artifact_periodic_fail_ch1,
                 'Audio Artifact Periodic Fail Ch2': record.audio_artifact_periodic_fail_ch2,
@@ -521,12 +540,12 @@ class ReportGenerator:
 
         return pd.DataFrame(data) if data else pd.DataFrame()
 
-    def generate_summary_sheet(self, participant_id: int, maneuver: str,
+    def generate_summary_sheet(self, study_id: int, maneuver: str,
                              knee: str) -> pd.DataFrame:
         """Generate summary statistics sheet from database queries.
 
         Args:
-            participant_id: Participant ID
+            study_id: Study enrollment ID (studies.id)
             maneuver: Maneuver code (walk, sts, fe)
             knee: Knee side (left, right)
 
@@ -539,19 +558,22 @@ class ReportGenerator:
             AudioProcessingRecord,
             BiomechanicsImportRecord,
             MovementCycleRecord,
+            StudyRecord,
             SynchronizationRecord,
         )
 
         audio_count = self.session.query(AudioProcessingRecord).filter(
-            AudioProcessingRecord.participant_id == participant_id,
+            AudioProcessingRecord.study_id == study_id,
             AudioProcessingRecord.maneuver == maneuver,
             AudioProcessingRecord.knee == knee,
+            AudioProcessingRecord.is_active == True,  # noqa: E712
         ).count()
 
         biomech_count = self.session.query(BiomechanicsImportRecord).filter(
-            BiomechanicsImportRecord.participant_id == participant_id,
+            BiomechanicsImportRecord.study_id == study_id,
             BiomechanicsImportRecord.maneuver == maneuver,
             BiomechanicsImportRecord.knee == knee,
+            BiomechanicsImportRecord.is_active == True,  # noqa: E712
         ).count()
 
         sync_count = self.session.query(
@@ -560,10 +582,11 @@ class ReportGenerator:
             AudioProcessingRecord,
             SynchronizationRecord.audio_processing_id == AudioProcessingRecord.id,
         ).filter(
-            SynchronizationRecord.participant_id == participant_id,
+            SynchronizationRecord.study_id == study_id,
             AudioProcessingRecord.maneuver == maneuver,
             AudioProcessingRecord.knee == knee,
             SynchronizationRecord.sync_file_name.isnot(None),
+            SynchronizationRecord.is_active == True,  # noqa: E712
         ).scalar()
 
         if sync_count is None:
@@ -573,17 +596,17 @@ class ReportGenerator:
             AudioProcessingRecord,
             MovementCycleRecord.audio_processing_id == AudioProcessingRecord.id,
         ).filter(
-            MovementCycleRecord.participant_id == participant_id,
+            MovementCycleRecord.study_id == study_id,
             AudioProcessingRecord.maneuver == maneuver,
             AudioProcessingRecord.knee == knee,
+            MovementCycleRecord.is_active == True,  # noqa: E712
         ).count()
 
         # Get participant number for display
-        from src.db.models import ParticipantRecord
-        participant_record = self.session.query(ParticipantRecord).filter(
-            ParticipantRecord.id == participant_id
+        study_record = self.session.query(StudyRecord).filter(
+            StudyRecord.id == study_id
         ).first()
-        participant_number = participant_record.study_id if participant_record else participant_id
+        participant_number = study_record.study_participant_id if study_record else study_id
 
         summary_data = {
             'Metric': [
@@ -616,13 +639,14 @@ class ReportGenerator:
 
         Args:
             output_path: Path to save Excel file
-            participant_id: Participant ID
+            participant_id: Study enrollment ID (studies.id) — legacy param name
             maneuver: Maneuver code
             knee: Knee side
 
         Returns:
             Path to generated Excel file
         """
+        study_id = participant_id  # Callers pass studies.id under legacy name
         output_path = Path(output_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -630,11 +654,11 @@ class ReportGenerator:
 
         # Generate all sheets
         sheets = {
-            'Summary': self.generate_summary_sheet(participant_id, maneuver, knee),
-            'Audio': self.generate_audio_sheet(participant_id, maneuver, knee),
-            'Biomechanics': self.generate_biomechanics_sheet(participant_id, maneuver, knee),
-            'Synchronization': self.generate_synchronization_sheet(participant_id, maneuver, knee),
-            'Cycles': self.generate_movement_cycles_sheet(participant_id, maneuver, knee),
+            'Summary': self.generate_summary_sheet(study_id, maneuver, knee),
+            'Audio': self.generate_audio_sheet(study_id, maneuver, knee),
+            'Biomechanics': self.generate_biomechanics_sheet(study_id, maneuver, knee),
+            'Synchronization': self.generate_synchronization_sheet(study_id, maneuver, knee),
+            'Cycles': self.generate_movement_cycles_sheet(study_id, maneuver, knee),
         }
 
         # Write to Excel

@@ -203,7 +203,7 @@ class TestPeriodicArtifactExcelReport:
 
         generator = ReportGenerator(db_session)
         sync_sheet = generator.generate_synchronization_sheet(
-            participant_id=sync_record.participant_id,
+            study_id=sync_record.study_id,
             maneuver="walk",
             knee="left",
         )
@@ -260,7 +260,7 @@ class TestPeriodicArtifactExcelReport:
 
         generator = ReportGenerator(db_session)
         cycles_sheet = generator.generate_movement_cycles_sheet(
-            participant_id=audio_record.participant_id,
+            study_id=audio_record.study_id,
             maneuver="walk",
             knee="left",
         )

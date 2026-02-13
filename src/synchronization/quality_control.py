@@ -947,6 +947,7 @@ def perform_sync_qc(
                                 audio_qc_mic_4_pass = False
 
             # Create updated result with audio_qc_pass and per-mic results set
+            # Preserve all existing fields (intermittent, periodic, sync QC)
             updated_results.append(
                 _CycleResult(
                     cycle=result.cycle,
@@ -958,6 +959,15 @@ def perform_sync_qc(
                     audio_qc_mic_2_pass=audio_qc_mic_2_pass,
                     audio_qc_mic_3_pass=audio_qc_mic_3_pass,
                     audio_qc_mic_4_pass=audio_qc_mic_4_pass,
+                    periodic_noise_detected=result.periodic_noise_detected,
+                    periodic_noise_ch1=result.periodic_noise_ch1,
+                    periodic_noise_ch2=result.periodic_noise_ch2,
+                    periodic_noise_ch3=result.periodic_noise_ch3,
+                    periodic_noise_ch4=result.periodic_noise_ch4,
+                    sync_quality_score=result.sync_quality_score,
+                    sync_qc_pass=result.sync_qc_pass,
+                    intermittent_intervals=result.intermittent_intervals,
+                    periodic_intervals=result.periodic_intervals,
                 )
             )
 

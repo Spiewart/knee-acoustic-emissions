@@ -14,7 +14,7 @@ from typing import Dict, List, Optional, Tuple
 import pandas as pd
 from sqlalchemy import select
 
-from src.db.models import ParticipantRecord, StudyRecord
+from src.db.models import StudyRecord
 from src.metadata import AudioProcessing, BiomechanicsImport, Synchronization
 from src.orchestration.cli_db_helpers import close_db_session, create_db_session
 
@@ -105,35 +105,41 @@ def _parse_study_and_participant(
         return "AOA", 1
 
 
-def _get_participant_db_id(
+def _get_study_db_id(
     study_name: str,
     participant_number: int,
     session,
 ) -> int:
-    """Resolve database participant ID from study name and participant study_id."""
+    """Resolve database study enrollment ID from study name and participant number.
+
+    Returns the ``studies.id`` that all downstream tables use as FK.
+    Creates a permanent ParticipantRecord + StudyRecord on first encounter.
+    """
+    from src.db.models import ParticipantRecord
+
     study = session.execute(
-        select(StudyRecord).where(StudyRecord.name == study_name)
-    ).scalar_one_or_none()
-    if study is None:
-        study = StudyRecord(name=study_name)
-        session.add(study)
-        session.flush()
-
-    participant = session.execute(
-        select(ParticipantRecord).where(
-            ParticipantRecord.study_participant_id == study.id,
-            ParticipantRecord.study_id == participant_number,
+        select(StudyRecord).where(
+            StudyRecord.study_name == study_name,
+            StudyRecord.study_participant_id == participant_number,
         )
     ).scalar_one_or_none()
-    if participant is None:
-        participant = ParticipantRecord(
-            study_participant_id=study.id,
-            study_id=participant_number,
-        )
-        session.add(participant)
-        session.flush()
+    if study is not None:
+        return study.id
 
-    return participant.id
+    # First encounter — create permanent participant + study enrollment
+    participant = ParticipantRecord()
+    session.add(participant)
+    session.flush()
+
+    study = StudyRecord(
+        participant_id=participant.id,
+        study_name=study_name,
+        study_participant_id=participant_number,
+    )
+    session.add(study)
+    session.flush()
+
+    return study.id
 
 
 @dataclass
@@ -230,7 +236,7 @@ class ManeuverProcessingLog:
             study_name, participant_number = _parse_study_and_participant(
                 self.study_id, self.study
             )
-            participant_id = _get_participant_db_id(
+            study_db_id = _get_study_db_id(
                 study_name, participant_number, session
             )
             report_gen = ReportGenerator(session)
@@ -239,7 +245,7 @@ class ManeuverProcessingLog:
             output_path = output_path or self._default_output_path()
             return report_gen.save_to_excel(
                 output_path,
-                participant_id=participant_id,
+                participant_id=study_db_id,
                 maneuver=maneuver,
                 knee=knee,
             )
@@ -316,7 +322,7 @@ class KneeProcessingLog:
             study_name, participant_number = _parse_study_and_participant(
                 self.study_id, self.study
             )
-            participant_id = _get_participant_db_id(
+            study_db_id = _get_study_db_id(
                 study_name, participant_number, session
             )
             knee = _normalize_knee(self.knee_side)
@@ -333,7 +339,7 @@ class KneeProcessingLog:
             for maneuver in maneuvers:
                 db_maneuver = _normalize_maneuver(maneuver)
                 summary = report_gen.generate_summary_sheet(
-                    participant_id, db_maneuver, knee
+                    study_db_id, db_maneuver, knee
                 )
                 if not summary.empty:
                     summary_rows.append({
@@ -545,21 +551,6 @@ def create_audio_record_from_data(
         qc_signal_dropout_segments_ch3=qc_data.get("qc_signal_dropout_segments_ch3", []),
         qc_signal_dropout_ch4=qc_data.get("qc_signal_dropout_ch4", False),
         qc_signal_dropout_segments_ch4=qc_data.get("qc_signal_dropout_segments_ch4", []),
-        qc_artifact=qc_data.get("qc_artifact", False),
-        qc_artifact_type=qc_data.get("qc_artifact_type"),
-        qc_artifact_segments=qc_data.get("qc_artifact_segments", []),
-        qc_artifact_ch1=qc_data.get("qc_artifact_ch1", False),
-        qc_artifact_type_ch1=qc_data.get("qc_artifact_type_ch1"),
-        qc_artifact_segments_ch1=qc_data.get("qc_artifact_segments_ch1", []),
-        qc_artifact_ch2=qc_data.get("qc_artifact_ch2", False),
-        qc_artifact_type_ch2=qc_data.get("qc_artifact_type_ch2"),
-        qc_artifact_segments_ch2=qc_data.get("qc_artifact_segments_ch2", []),
-        qc_artifact_ch3=qc_data.get("qc_artifact_ch3", False),
-        qc_artifact_type_ch3=qc_data.get("qc_artifact_type_ch3"),
-        qc_artifact_segments_ch3=qc_data.get("qc_artifact_segments_ch3", []),
-        qc_artifact_ch4=qc_data.get("qc_artifact_ch4", False),
-        qc_artifact_type_ch4=qc_data.get("qc_artifact_type_ch4"),
-        qc_artifact_segments_ch4=qc_data.get("qc_artifact_segments_ch4", []),
         qc_continuous_artifact=qc_data.get("qc_continuous_artifact", False),
         qc_continuous_artifact_segments=qc_data.get("qc_continuous_artifact_segments", []),
         qc_continuous_artifact_ch1=qc_data.get("qc_continuous_artifact_ch1", False),

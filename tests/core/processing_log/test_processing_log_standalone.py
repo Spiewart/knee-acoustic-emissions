@@ -17,7 +17,7 @@ def test_report_generator_basic(db_session, repository, audio_processing_factory
     report = ReportGenerator(db_session)
     output_path = report.save_to_excel(
         tmp_path / "standalone_report.xlsx",
-        participant_id=audio_record.participant_id,
+        participant_id=audio_record.study_id,
         maneuver="walk",
         knee="left",
     )

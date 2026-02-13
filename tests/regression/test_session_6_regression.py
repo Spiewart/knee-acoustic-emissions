@@ -256,7 +256,8 @@ class TestDatabasePersistenceWithSampleData:
 
         assert record is not None
         assert record.id is not None
-        assert record.study_id == 1011
+        assert record.study_id is not None
+        assert record.study.study_participant_id == 1011
         assert record.audio_file_name == "test.bin"
 
     def test_foreign_key_cascade_relationships(self, repository):

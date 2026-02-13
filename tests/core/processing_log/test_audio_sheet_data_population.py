@@ -39,7 +39,7 @@ class TestAudioSheetDataPopulation:
         report = ReportGenerator(db_session)
         output_path = report.save_to_excel(
             tmp_path / "test_audio.xlsx",
-            participant_id=audio_record.participant_id,
+            participant_id=audio_record.study_id,
             maneuver="walk",
             knee="left",
         )
@@ -83,7 +83,7 @@ class TestAudioSheetDataPopulation:
         report = ReportGenerator(db_session)
         output_path = report.save_to_excel(
             tmp_path / "test_date.xlsx",
-            participant_id=audio_record.participant_id,
+            participant_id=audio_record.study_id,
             maneuver="sts",
             knee="right",
         )
@@ -124,7 +124,7 @@ class TestAudioSheetDataPopulation:
         report = ReportGenerator(db_session)
         output_path = report.save_to_excel(
             tmp_path / "test_artifact.xlsx",
-            participant_id=audio_record.participant_id,
+            participant_id=audio_record.study_id,
             maneuver="fe",
             knee="left",
         )
@@ -169,7 +169,7 @@ class TestAudioSheetDataPopulation:
         report = ReportGenerator(db_session)
         output_path = report.save_to_excel(
             tmp_path / "test_dropout.xlsx",
-            participant_id=audio_record.participant_id,
+            participant_id=audio_record.study_id,
             maneuver="walk",
             knee="right",
         )
@@ -216,7 +216,7 @@ class TestAudioSheetDataPopulation:
         report = ReportGenerator(db_session)
         output_path = report.save_to_excel(
             tmp_path / "test_per_channel.xlsx",
-            participant_id=audio_record.participant_id,
+            participant_id=audio_record.study_id,
             maneuver="walk",
             knee="left",
         )
@@ -263,7 +263,7 @@ class TestAudioSheetDataPopulation:
         report = ReportGenerator(db_session)
         output_path = report.save_to_excel(
             tmp_path / "test_length.xlsx",
-            participant_id=audio_record.participant_id,
+            participant_id=audio_record.study_id,
             maneuver="walk",
             knee="left",
         )

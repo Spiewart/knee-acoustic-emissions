@@ -55,7 +55,7 @@ def test_cycles_sheet_has_expected_columns(
     report = ReportGenerator(db_session)
     output_path = report.save_to_excel(
         tmp_path / "sheet_integrity.xlsx",
-        participant_id=audio_record.participant_id,
+        participant_id=audio_record.study_id,
         maneuver="walk",
         knee="left",
     )
@@ -134,7 +134,7 @@ class TestProcessingLogSheetIntegrity:
         report = ReportGenerator(db_session)
         output_path = report.save_to_excel(
             tmp_path / "test_log.xlsx",
-            participant_id=audio_record.participant_id,
+            participant_id=audio_record.study_id,
             maneuver="walk",
             knee="left",
         )
@@ -192,7 +192,7 @@ class TestProcessingLogSheetIntegrity:
         report = ReportGenerator(db_session)
         output_path = report.save_to_excel(
             tmp_path / "test_log.xlsx",
-            participant_id=audio_record.participant_id,
+            participant_id=audio_record.study_id,
             maneuver="walk",
             knee="left",
         )
@@ -252,7 +252,7 @@ class TestProcessingLogSheetIntegrity:
         report = ReportGenerator(db_session)
         output_path = report.save_to_excel(
             tmp_path / "test_log.xlsx",
-            participant_id=audio_record.participant_id,
+            participant_id=audio_record.study_id,
             maneuver="walk",
             knee="left",
         )
@@ -556,7 +556,7 @@ class TestMethodAgreementSpanCalculation:
         report = ReportGenerator(db_session)
         output_path = report.save_to_excel(
             tmp_path / "test_log.xlsx",
-            participant_id=audio_record.participant_id,
+            participant_id=audio_record.study_id,
             maneuver="walk",
             knee="left",
         )

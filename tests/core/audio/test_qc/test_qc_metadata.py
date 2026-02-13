@@ -28,7 +28,7 @@ def test_qc_fields_present_in_audio_sheet(
     report = ReportGenerator(db_session)
     output_path = report.save_to_excel(
         tmp_path / "qc_audio.xlsx",
-        participant_id=audio_record.participant_id,
+        participant_id=audio_record.study_id,
         maneuver="walk",
         knee="left",
     )
@@ -495,19 +495,14 @@ class TestDetailedQCFieldsExport:
             qc_signal_dropout_segments_ch4=[],
             # Artifact QC
             qc_continuous_artifact=True,
-            qc_continuous_artifact_type=["Intermittent"],
             qc_continuous_artifact_segments=[(2.0, 3.0)],
             qc_continuous_artifact_ch1=True,
-            qc_continuous_artifact_type_ch1=["Continuous"],
             qc_continuous_artifact_segments_ch1=[(2.0, 3.0)],
             qc_continuous_artifact_ch2=False,
-            qc_continuous_artifact_type_ch2=None,
             qc_continuous_artifact_segments_ch2=[],
             qc_continuous_artifact_ch3=False,
-            qc_continuous_artifact_type_ch3=None,
             qc_continuous_artifact_segments_ch3=[],
             qc_continuous_artifact_ch4=True,
-            qc_continuous_artifact_type_ch4=["Intermittent"],
             qc_continuous_artifact_segments_ch4=[(5.0, 6.0)],
         )
 
@@ -537,19 +532,14 @@ class TestDetailedQCFieldsExport:
 
         # Artifact QC
         assert "QC Continuous Artifact" in result
-        assert "QC Continuous Artifact Type" in result
         assert "QC Continuous Artifact Segments" in result
         assert "QC Continuous Artifact Ch1" in result
-        assert "QC Continuous Artifact Type Ch1" in result
         assert "QC Continuous Artifact Segments Ch1" in result
         assert "QC Continuous Artifact Ch2" in result
-        assert "QC Continuous Artifact Type Ch2" in result
         assert "QC Continuous Artifact Segments Ch2" in result
         assert "QC Continuous Artifact Ch3" in result
-        assert "QC Continuous Artifact Type Ch3" in result
         assert "QC Continuous Artifact Segments Ch3" in result
         assert "QC Continuous Artifact Ch4" in result
-        assert "QC Continuous Artifact Type Ch4" in result
         assert "QC Continuous Artifact Segments Ch4" in result
 
     def test_qc_field_values_in_to_dict(self):
@@ -573,11 +563,8 @@ class TestDetailedQCFieldsExport:
 
         # Artifact QC
         assert result["QC Continuous Artifact"] is True
-        assert result["QC Continuous Artifact Type"] == ["Intermittent"]
         assert result["QC Continuous Artifact Ch1"] is True
-        assert result["QC Continuous Artifact Type Ch1"] == ["Continuous"]
         assert result["QC Continuous Artifact Ch2"] is False
-        assert result["QC Continuous Artifact Type Ch2"] is None
 
     def test_qc_fields_persist_through_excel_roundtrip(self, tmp_path):
         """Test that QC fields survive Excel save/load cycle."""
@@ -595,7 +582,6 @@ class TestDetailedQCFieldsExport:
         assert "QC Fail Segments" in df_loaded.columns
         assert "QC Signal Dropout" in df_loaded.columns
         assert "QC Continuous Artifact" in df_loaded.columns
-        assert "QC Continuous Artifact Type" in df_loaded.columns
 
         # Verify boolean values
         assert df_loaded["QC Signal Dropout"].iloc[0] is True or df_loaded["QC Signal Dropout"].iloc[0] == 1

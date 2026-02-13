@@ -285,7 +285,7 @@ class TestCyclesExcelSheetQCColumns:
 
         generator = ReportGenerator(db_session)
         sheet = generator.generate_movement_cycles_sheet(
-            participant_id=audio_record.participant_id,
+            study_id=audio_record.study_id,
             maneuver="walk",
             knee="left",
         )
@@ -307,6 +307,28 @@ class TestCyclesExcelSheetQCColumns:
             "Audio Artifact Timestamps Ch2",
             "Audio Artifact Timestamps Ch3",
             "Audio Artifact Timestamps Ch4",
+            # Dropout (audio-stage, trimmed to cycle)
+            "Audio Artifact Dropout Fail",
+            "Audio Artifact Dropout Fail Ch1",
+            "Audio Artifact Dropout Fail Ch2",
+            "Audio Artifact Dropout Fail Ch3",
+            "Audio Artifact Dropout Fail Ch4",
+            "Audio Artifact Dropout Timestamps",
+            "Audio Artifact Dropout Timestamps Ch1",
+            "Audio Artifact Dropout Timestamps Ch2",
+            "Audio Artifact Dropout Timestamps Ch3",
+            "Audio Artifact Dropout Timestamps Ch4",
+            # Continuous (audio-stage, trimmed to cycle)
+            "Audio Artifact Continuous Fail",
+            "Audio Artifact Continuous Fail Ch1",
+            "Audio Artifact Continuous Fail Ch2",
+            "Audio Artifact Continuous Fail Ch3",
+            "Audio Artifact Continuous Fail Ch4",
+            "Audio Artifact Continuous Timestamps",
+            "Audio Artifact Continuous Timestamps Ch1",
+            "Audio Artifact Continuous Timestamps Ch2",
+            "Audio Artifact Continuous Timestamps Ch3",
+            "Audio Artifact Continuous Timestamps Ch4",
             # Periodic
             "Audio Artifact Periodic Fail",
             "Audio Artifact Periodic Fail Ch1",
@@ -339,7 +361,7 @@ class TestCyclesExcelSheetQCColumns:
 
         generator = ReportGenerator(db_session)
         sheet = generator.generate_movement_cycles_sheet(
-            participant_id=audio_record.participant_id,
+            study_id=audio_record.study_id,
             maneuver="walk",
             knee="left",
         )
@@ -370,7 +392,7 @@ class TestCyclesExcelSheetQCColumns:
 
         generator = ReportGenerator(db_session)
         sheet = generator.generate_movement_cycles_sheet(
-            participant_id=audio_record.participant_id,
+            study_id=audio_record.study_id,
             maneuver="walk",
             knee="left",
         )
@@ -405,7 +427,7 @@ class TestCyclesExcelSheetQCColumns:
 
         generator = ReportGenerator(db_session)
         sheet = generator.generate_movement_cycles_sheet(
-            participant_id=audio_record.participant_id,
+            study_id=audio_record.study_id,
             maneuver="walk",
             knee="left",
         )
@@ -436,7 +458,7 @@ class TestCyclesExcelSheetQCColumns:
 
         generator = ReportGenerator(db_session)
         sheet = generator.generate_movement_cycles_sheet(
-            participant_id=audio_record.participant_id,
+            study_id=audio_record.study_id,
             maneuver="walk",
             knee="left",
         )
@@ -444,7 +466,11 @@ class TestCyclesExcelSheetQCColumns:
         row = sheet.iloc[0]
         assert bool(row["Audio QC Fail"]) is False
         assert bool(row["Audio Artifact Intermittent Fail"]) is False
+        assert bool(row["Audio Artifact Dropout Fail"]) is False
+        assert bool(row["Audio Artifact Continuous Fail"]) is False
         assert bool(row["Audio Artifact Periodic Fail"]) is False
         for ch in range(1, 5):
             assert bool(row[f"Audio Artifact Intermittent Fail Ch{ch}"]) is False
+            assert bool(row[f"Audio Artifact Dropout Fail Ch{ch}"]) is False
+            assert bool(row[f"Audio Artifact Continuous Fail Ch{ch}"]) is False
             assert bool(row[f"Audio Artifact Periodic Fail Ch{ch}"]) is False

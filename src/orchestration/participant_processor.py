@@ -207,9 +207,6 @@ class ManeuverProcessor:
                 "qc_fail_segments": overall_fail_segments,
                 "qc_signal_dropout": bool(dropout_intervals),
                 "qc_signal_dropout_segments": list(dropout_intervals) if dropout_intervals else [],
-                "qc_artifact": bool(artifact_intervals),
-                "qc_artifact_segments": list(artifact_intervals) if artifact_intervals else [],
-                "qc_artifact_type": overall_artifact_types if artifact_intervals else [],
                 "qc_continuous_artifact": bool(continuous_intervals),
                 "qc_continuous_artifact_segments": list(continuous_intervals) if continuous_intervals else [],
             }
@@ -235,9 +232,6 @@ class ManeuverProcessor:
 
                 # Per-channel intermittent artifact
                 if ch_name in artifact_per_mic and artifact_per_mic[ch_name]:
-                    qc_data[f"qc_artifact_ch{ch_num}"] = True
-                    qc_data[f"qc_artifact_segments_ch{ch_num}"] = list(artifact_per_mic[ch_name])
-                    qc_data[f"qc_artifact_type_ch{ch_num}"] = artifact_types_per_mic.get(ch_name, [])
                     ch_fail_sources.extend(artifact_per_mic[ch_name])
 
                 # Merge all per-channel fail sources into qc_fail_segments_chX
@@ -608,38 +602,89 @@ class ManeuverProcessor:
                     repo = Repository(session)
                     sync_records_by_name: dict[str, object] = {}
 
-                    # Save audio record
+                    # Track all persisted record IDs for deactivation
+                    seen_audio_ids: set[int] = set()
+                    seen_biomech_ids: set[int] = set()
+                    seen_sync_ids: set[int] = set()
+                    seen_cycle_ids: set[int] = set()
+
+                    audio_db_record = None
+                    biomech_db_record = None
+
+                    # Save audio record (available when running from bin/sync)
                     if self.log.audio_record:
                         audio_db_record = repo.save_audio_processing(self.log.audio_record)
+                        seen_audio_ids.add(audio_db_record.id)
 
-                        # Save biomechanics record linked to audio
-                        if self.log.biomechanics_record:
-                            biomech_db_record = repo.save_biomechanics_import(
-                                self.log.biomechanics_record,
-                                audio_processing_id=audio_db_record.id
+                    # Save biomechanics record linked to audio
+                    if self.log.biomechanics_record and audio_db_record:
+                        biomech_db_record = repo.save_biomechanics_import(
+                            self.log.biomechanics_record,
+                            audio_processing_id=audio_db_record.id
+                        )
+                        seen_biomech_ids.add(biomech_db_record.id)
+
+                        # Link audio record to biomechanics record
+                        audio_db_record.biomechanics_import_id = biomech_db_record.id
+                        session.flush()
+
+                    # Save synchronization records linked to both
+                    if audio_db_record and biomech_db_record:
+                        for sync_record in self.log.synchronization_records:
+                            db_sync = repo.save_synchronization(
+                                sync_record,
+                                audio_processing_id=audio_db_record.id,
+                                biomechanics_import_id=biomech_db_record.id
                             )
+                            seen_sync_ids.add(db_sync.id)
+                            if sync_record.sync_file_name:
+                                sync_records_by_name[sync_record.sync_file_name] = db_sync
+                                sync_records_by_name[Path(sync_record.sync_file_name).stem] = db_sync
 
-                            # Link audio record to biomechanics record
-                            audio_db_record.biomechanics_import_id = biomech_db_record.id
-                            session.flush()
+                    # When resuming from cycles-only, look up existing parent
+                    # records from DB so we can persist cycles and run deactivation
+                    if audio_db_record is None:
+                        audio_db_record, biomech_db_record = self._lookup_existing_parent_records(
+                            repo, sync_records_by_name
+                        )
+                        if audio_db_record:
+                            seen_audio_ids.add(audio_db_record.id)
+                        if biomech_db_record:
+                            seen_biomech_ids.add(biomech_db_record.id)
+                        # Mark sync records as "seen" if their synced file was processed
+                        processed_stems = {sd.output_path.stem for sd in self.synced_data if sd.output_path}
+                        for name, sr in sync_records_by_name.items():
+                            if hasattr(sr, 'id') and (
+                                name in processed_stems
+                                or Path(name).stem in processed_stems
+                            ):
+                                seen_sync_ids.add(sr.id)
 
-                            # Save synchronization records linked to both
-                            for sync_record in self.log.synchronization_records:
-                                db_sync = repo.save_synchronization(
-                                    sync_record,
-                                    audio_processing_id=audio_db_record.id,
-                                    biomechanics_import_id=biomech_db_record.id
-                                )
-                                if sync_record.sync_file_name:
-                                    sync_records_by_name[sync_record.sync_file_name] = db_sync
-                                    sync_records_by_name[Path(sync_record.sync_file_name).stem] = db_sync
+                    # Save movement cycle records
+                    if audio_db_record:
+                        seen_cycle_ids = self._persist_cycle_records(
+                            repo=repo,
+                            audio_db_record=audio_db_record,
+                            biomech_db_record=biomech_db_record,
+                            sync_records_by_name=sync_records_by_name,
+                        )
 
-                            # Save movement cycle records
-                            self._persist_cycle_records(
-                                repo=repo,
-                                audio_db_record=audio_db_record,
-                                biomech_db_record=biomech_db_record,
-                                sync_records_by_name=sync_records_by_name,
+                    # Deactivate records not seen in this processing run
+                    if audio_db_record:
+                        study_db_id = audio_db_record.study_id
+                        deactivated = repo.deactivate_unseen_records(
+                            study_id=study_db_id,
+                            knee=self.knee_side.lower(),
+                            maneuver=_maneuver_to_db_code(self.maneuver_key),
+                            seen_audio_ids=seen_audio_ids,
+                            seen_biomech_ids=seen_biomech_ids,
+                            seen_sync_ids=seen_sync_ids,
+                            seen_cycle_ids=seen_cycle_ids,
+                        )
+                        total_deactivated = sum(deactivated.values())
+                        if total_deactivated > 0:
+                            logging.info(
+                                f"Deactivated {total_deactivated} stale record(s): {deactivated}"
                             )
 
                     session.commit()
@@ -691,8 +736,12 @@ class ManeuverProcessor:
         audio_db_record,
         biomech_db_record,
         sync_records_by_name: dict[str, object],
-    ) -> None:
-        """Persist per-cycle records to the database."""
+    ) -> set[int]:
+        """Persist per-cycle records to the database.
+
+        Returns:
+            Set of MovementCycleRecord.id values for all persisted cycles.
+        """
         from datetime import datetime, timedelta
 
         from src.metadata import MovementCycle
@@ -722,6 +771,7 @@ class ManeuverProcessor:
             return datetime.now()
 
         base_dt = _combine_recording_datetime()
+        seen_cycle_ids: set[int] = set()
 
         for cycle_data in self.cycle_data:
             if not cycle_data.output_dir or not cycle_data.output_dir.exists():
@@ -803,25 +853,29 @@ class ManeuverProcessor:
 
                 audio_qc_failures: list[str] = []
 
-                # Check signal dropout overlap with this cycle
+                # Check signal dropout overlap with this cycle — keep trimmed intervals
+                dropout_per_ch: dict[int, list[tuple]] = {}
                 has_dropout = False
                 for ch_num in range(1, 5):
                     flat = getattr(audio_db_record, f"qc_signal_dropout_segments_ch{ch_num}", None)
                     trimmed = trim_intervals_to_cycle(
                         self._unflatten_intervals(flat), start_time_s, end_time_s
                     )
+                    dropout_per_ch[ch_num] = trimmed
                     if trimmed:
                         has_dropout = True
                 if has_dropout:
                     audio_qc_failures.append("dropout")
 
-                # Check continuous artifact overlap with this cycle
+                # Check continuous artifact overlap with this cycle — keep trimmed intervals
+                continuous_per_ch: dict[int, list[tuple]] = {}
                 has_continuous = False
                 for ch_num in range(1, 5):
                     flat = getattr(audio_db_record, f"qc_continuous_artifact_segments_ch{ch_num}", None)
                     trimmed = trim_intervals_to_cycle(
                         self._unflatten_intervals(flat), start_time_s, end_time_s
                     )
+                    continuous_per_ch[ch_num] = trimmed
                     if trimmed:
                         has_continuous = True
                 if has_continuous:
@@ -867,6 +921,32 @@ class ManeuverProcessor:
                     # Aggregate audio QC
                     audio_qc_fail=audio_qc_fail,
                     audio_qc_failures=audio_qc_failures if audio_qc_failures else None,
+                    # Dropout artifacts (audio-stage, trimmed to cycle)
+                    audio_artifact_dropout_fail=has_dropout,
+                    audio_artifact_dropout_fail_ch1=bool(dropout_per_ch.get(1)),
+                    audio_artifact_dropout_fail_ch2=bool(dropout_per_ch.get(2)),
+                    audio_artifact_dropout_fail_ch3=bool(dropout_per_ch.get(3)),
+                    audio_artifact_dropout_fail_ch4=bool(dropout_per_ch.get(4)),
+                    audio_artifact_dropout_timestamps=self._flatten_intervals(
+                        [iv for ch in dropout_per_ch.values() for iv in ch]
+                    ) or None,
+                    audio_artifact_dropout_timestamps_ch1=self._flatten_intervals(dropout_per_ch.get(1, [])) or None,
+                    audio_artifact_dropout_timestamps_ch2=self._flatten_intervals(dropout_per_ch.get(2, [])) or None,
+                    audio_artifact_dropout_timestamps_ch3=self._flatten_intervals(dropout_per_ch.get(3, [])) or None,
+                    audio_artifact_dropout_timestamps_ch4=self._flatten_intervals(dropout_per_ch.get(4, [])) or None,
+                    # Continuous artifacts (audio-stage, trimmed to cycle)
+                    audio_artifact_continuous_fail=has_continuous,
+                    audio_artifact_continuous_fail_ch1=bool(continuous_per_ch.get(1)),
+                    audio_artifact_continuous_fail_ch2=bool(continuous_per_ch.get(2)),
+                    audio_artifact_continuous_fail_ch3=bool(continuous_per_ch.get(3)),
+                    audio_artifact_continuous_fail_ch4=bool(continuous_per_ch.get(4)),
+                    audio_artifact_continuous_timestamps=self._flatten_intervals(
+                        [iv for ch in continuous_per_ch.values() for iv in ch]
+                    ) or None,
+                    audio_artifact_continuous_timestamps_ch1=self._flatten_intervals(continuous_per_ch.get(1, [])) or None,
+                    audio_artifact_continuous_timestamps_ch2=self._flatten_intervals(continuous_per_ch.get(2, [])) or None,
+                    audio_artifact_continuous_timestamps_ch3=self._flatten_intervals(continuous_per_ch.get(3, [])) or None,
+                    audio_artifact_continuous_timestamps_ch4=self._flatten_intervals(continuous_per_ch.get(4, [])) or None,
                     # Intermittent artifacts (cycle-stage)
                     audio_artifact_intermittent_fail=has_intermittent,
                     audio_artifact_intermittent_fail_ch1=bool(qc.intermittent_intervals_ch1),
@@ -897,13 +977,107 @@ class ManeuverProcessor:
                     audio_artifact_periodic_timestamps_ch4=self._flatten_intervals(qc.periodic_intervals_ch4) or None,
                 )
 
-                repo.save_movement_cycle(
+                cycle_record = repo.save_movement_cycle(
                     cycle,
                     audio_processing_id=audio_db_record.id,
                     biomechanics_import_id=biomech_db_record.id if biomech_db_record else None,
                     synchronization_id=synchronization_id,
                     cycles_file_path=str(pkl_path),
                 )
+                seen_cycle_ids.add(cycle_record.id)
+
+        return seen_cycle_ids
+
+    def _lookup_existing_parent_records(
+        self,
+        repo,
+        sync_records_by_name: dict[str, object],
+    ) -> tuple:
+        """Look up existing audio/biomech/sync records from DB.
+
+        Used when resuming from cycles-only entrypoint — audio and biomechanics
+        records were not created in this run but exist from a previous run.
+
+        Returns:
+            (audio_db_record, biomech_db_record) tuple. Either may be None.
+        """
+        from sqlalchemy import and_, select
+
+        from src.db.models import (
+            AudioProcessingRecord,
+            BiomechanicsImportRecord,
+            StudyRecord,
+            SynchronizationRecord,
+        )
+
+        db_maneuver = _maneuver_to_db_code(self.maneuver_key)
+        knee = self.knee_side.lower()
+
+        # Look up the study record for this participant
+        study = repo.session.execute(
+            select(StudyRecord).where(
+                and_(
+                    StudyRecord.study_name == "AOA",
+                    StudyRecord.study_participant_id == int(self.study_id),
+                )
+            )
+        ).scalar_one_or_none()
+        if study is None:
+            logging.warning(f"No study record found for participant {self.study_id}")
+            return None, None
+
+        # Look up existing audio record
+        audio_db_record = repo.session.execute(
+            select(AudioProcessingRecord).where(
+                and_(
+                    AudioProcessingRecord.study_id == study.id,
+                    AudioProcessingRecord.knee == knee,
+                    AudioProcessingRecord.maneuver == db_maneuver,
+                    AudioProcessingRecord.is_active == True,  # noqa: E712
+                )
+            )
+        ).scalar_one_or_none()
+
+        if audio_db_record is None:
+            logging.warning(
+                f"No active audio record found for {knee} {db_maneuver} (participant {self.study_id})"
+            )
+            return None, None
+
+        # Look up existing biomechanics record
+        biomech_db_record = repo.session.execute(
+            select(BiomechanicsImportRecord).where(
+                and_(
+                    BiomechanicsImportRecord.study_id == study.id,
+                    BiomechanicsImportRecord.knee == knee,
+                    BiomechanicsImportRecord.maneuver == db_maneuver,
+                    BiomechanicsImportRecord.is_active == True,  # noqa: E712
+                )
+            )
+        ).scalar_one_or_none()
+
+        # Populate sync_records_by_name from existing sync records
+        sync_records = repo.session.execute(
+            select(SynchronizationRecord).where(
+                and_(
+                    SynchronizationRecord.study_id == study.id,
+                    SynchronizationRecord.knee == knee,
+                    SynchronizationRecord.maneuver == db_maneuver,
+                    SynchronizationRecord.is_active == True,  # noqa: E712
+                )
+            )
+        ).scalars().all()
+        for sr in sync_records:
+            if sr.sync_file_name:
+                sync_records_by_name[sr.sync_file_name] = sr
+                sync_records_by_name[Path(sr.sync_file_name).stem] = sr
+
+        logging.info(
+            f"Looked up existing parent records: audio={audio_db_record.id}, "
+            f"biomech={biomech_db_record.id if biomech_db_record else None}, "
+            f"syncs={len(sync_records)}"
+        )
+        return audio_db_record, biomech_db_record
 
     def _load_existing_audio_state(self) -> bool:
         """Load existing audio state when resuming from a later stage.

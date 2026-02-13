@@ -110,7 +110,7 @@ def test_report_generator_queries_database(
 
     # Test audio sheet
     audio_sheet = generator.generate_audio_sheet(
-        participant_id=audio_record.participant_id,
+        study_id=audio_record.study_id,
         maneuver="sts",
         knee="right",
     )
@@ -119,7 +119,7 @@ def test_report_generator_queries_database(
 
     # Test synchronization sheet
     sync_sheet = generator.generate_synchronization_sheet(
-        participant_id=sync_record.participant_id,
+        study_id=sync_record.study_id,
         maneuver="sts",
         knee="right",
     )
@@ -127,7 +127,7 @@ def test_report_generator_queries_database(
 
     # Test cycles sheet
     cycles_sheet = generator.generate_movement_cycles_sheet(
-        participant_id=audio_record.participant_id,
+        study_id=audio_record.study_id,
         maneuver="sts",
         knee="right",
     )

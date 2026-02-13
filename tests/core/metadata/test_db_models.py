@@ -47,15 +47,21 @@ def test_models_with_postgres():
     Base.metadata.create_all(engine)
 
     with Session(engine) as session:
-        study = StudyRecord(name="AOA")
+        participant = ParticipantRecord()
+        session.add(participant)
+        session.flush()
+        assert participant.id is not None
+
+        study = StudyRecord(
+            participant_id=participant.id,
+            study_name="AOA",
+            study_participant_id=1011,
+        )
         session.add(study)
         session.commit()
         assert study.id is not None
-
-        participant = ParticipantRecord(study_participant_id=study.id, study_id=1011)
-        session.add(participant)
-        session.commit()
-        assert participant.id is not None
+        assert study.study_name == "AOA"
+        assert study.study_participant_id == 1011
 
     Base.metadata.drop_all(engine)
     engine.dispose()

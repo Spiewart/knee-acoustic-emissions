@@ -55,19 +55,14 @@ class TestAudioQCFieldsDatabasePersistence:
             qc_signal_dropout_segments_ch4=[],
             # Artifact QC
             qc_continuous_artifact=True,
-            qc_continuous_artifact_type=["Continuous"],
             qc_continuous_artifact_segments=[(12.0, 14.0)],
             qc_continuous_artifact_ch1=False,
-            qc_continuous_artifact_type_ch1=None,
             qc_continuous_artifact_segments_ch1=[],
             qc_continuous_artifact_ch2=True,
-            qc_continuous_artifact_type_ch2=["Intermittent"],
             qc_continuous_artifact_segments_ch2=[(12.0, 14.0)],
             qc_continuous_artifact_ch3=False,
-            qc_continuous_artifact_type_ch3=None,
             qc_continuous_artifact_segments_ch3=[],
             qc_continuous_artifact_ch4=False,
-            qc_continuous_artifact_type_ch4=None,
             qc_continuous_artifact_segments_ch4=[],
         )
 
@@ -95,19 +90,14 @@ class TestAudioQCFieldsDatabasePersistence:
     def test_create_audio_processing_record_includes_artifact_qc(self):
         """Test that AudioProcessingRecord model has all artifact QC fields."""
         assert hasattr(AudioProcessingRecord, "qc_continuous_artifact")
-        assert hasattr(AudioProcessingRecord, "qc_artifact_type")
         assert hasattr(AudioProcessingRecord, "qc_continuous_artifact_segments")
         assert hasattr(AudioProcessingRecord, "qc_continuous_artifact_ch1")
-        assert hasattr(AudioProcessingRecord, "qc_artifact_type_ch1")
         assert hasattr(AudioProcessingRecord, "qc_continuous_artifact_segments_ch1")
         assert hasattr(AudioProcessingRecord, "qc_continuous_artifact_ch2")
-        assert hasattr(AudioProcessingRecord, "qc_artifact_type_ch2")
         assert hasattr(AudioProcessingRecord, "qc_continuous_artifact_segments_ch2")
         assert hasattr(AudioProcessingRecord, "qc_continuous_artifact_ch3")
-        assert hasattr(AudioProcessingRecord, "qc_artifact_type_ch3")
         assert hasattr(AudioProcessingRecord, "qc_continuous_artifact_segments_ch3")
         assert hasattr(AudioProcessingRecord, "qc_continuous_artifact_ch4")
-        assert hasattr(AudioProcessingRecord, "qc_artifact_type_ch4")
         assert hasattr(AudioProcessingRecord, "qc_continuous_artifact_segments_ch4")
 
     def test_audio_processing_metadata_has_all_qc_fields(self):
@@ -129,5 +119,4 @@ class TestAudioQCFieldsDatabasePersistence:
 
         # Artifact
         assert hasattr(audio, "qc_continuous_artifact")
-        assert hasattr(audio, "qc_continuous_artifact_type")
         assert hasattr(audio, "qc_continuous_artifact_segments")
