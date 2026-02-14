@@ -1178,7 +1178,10 @@ class ManeuverProcessor:
         study_config = get_study_config(self.study_name)
         participant_dir = self.maneuver_dir.parents[1]
         legend_pattern = study_config.get_legend_file_pattern()
-        legend_files = list(participant_dir.glob(f"{legend_pattern}.xls*"))
+        legend_files = [
+            f for f in participant_dir.glob(f"{legend_pattern}.xls*")
+            if not f.name.startswith("~$")  # Exclude Excel temp/lock files
+        ]
         if not legend_files:
             raise FileNotFoundError(
                 f"No acoustic file legend found in {participant_dir}"
@@ -1503,7 +1506,9 @@ class KneeProcessor:
 
                 self.maneuver_processors[maneuver_key] = processor
 
-            return self._save_knee_log()
+            # Knee log saving is non-critical — don't abort the participant
+            self._save_knee_log()
+            return True
         except Exception as e:
             logging.error(f"Knee processing failed: {e}")
             return False
@@ -1524,7 +1529,10 @@ class KneeProcessor:
             if not stage_func():
                 return False
 
-        return proc.save_logs()
+        # Log saving is non-critical — don't abort remaining maneuvers
+        # if the DB is unavailable or the report generator fails.
+        proc.save_logs()
+        return True
 
     def _find_maneuver_dir(self, maneuver_key: str) -> Optional[Path]:
         """Find the directory for a maneuver using alias matching.

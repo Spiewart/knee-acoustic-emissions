@@ -3,6 +3,7 @@ import pytest
 
 from src.audio.parsers import (
     LegendMismatch,
+    _acoustic_notes_is_filled,
     extract_file_name_and_notes,
     extract_knee_metadata_table,
     extract_microphone_positions,
@@ -555,6 +556,118 @@ class TestMicSetupFallback:
         )
 
         assert metadata.date_of_recording == datetime(2024, 2, 1)
+
+    def test_mic_positions_from_mic_setup_when_acoustic_notes_unfilled(self, tmp_path):
+        """When Acoustic Notes has template defaults (no file name), mic
+        positions should come from Mic Setup, even if the templates differ."""
+        excel_path = tmp_path / "legend_unfilled_an.xlsx"
+
+        # Acoustic Notes: blank file names, template mic positions that
+        # DIFFER from Mic Setup (mic 3 & 4 swapped laterality)
+        acoustic_data = [
+            ["L Knee", None, None, None, None, None],
+            ["Maneuvers", "File Name", "Microphone", "Patellar Position", "Laterality", "Notes"],
+            ["Walk (slow,medium, fast)", None, 1, "Infrapatellar", "Lateral", None],
+            [None, None, 2, "Infrapatellar", "Medial", None],
+            [None, None, 3, "Suprapatellar", "Lateral", None],   # template default
+            [None, None, 4, "Suprapatellar", "Medial", None],    # template default
+            ["Flexion - Extension", None, 1, "Infrapatellar", "Lateral", None],
+            [None, None, 2, "Infrapatellar", "Medial", None],
+            [None, None, 3, "Suprapatellar", "Lateral", None],
+            [None, None, 4, "Suprapatellar", "Medial", None],
+            ["Sit - to - Stand", None, 1, "Infrapatellar", "Lateral", None],
+            [None, None, 2, "Infrapatellar", "Medial", None],
+            [None, None, 3, "Suprapatellar", "Lateral", None],
+            [None, None, 4, "Suprapatellar", "Medial", None],
+            [None, None, None, None, None, None],
+            ["R Knee", None, None, None, None, None],
+            ["Maneuvers", "File Name", "Microphone", "Patellar Position", "Laterality", "Notes"],
+            ["Walk (slow,medium, fast)", None, 1, "Infrapatellar", "Lateral", None],
+            [None, None, 2, "Infrapatellar", "Medial", None],
+            [None, None, 3, "Suprapatellar", "Lateral", None],
+            [None, None, 4, "Suprapatellar", "Medial", None],
+            ["Flexion - Extension", None, 1, "Infrapatellar", "Lateral", None],
+            [None, None, 2, "Infrapatellar", "Medial", None],
+            [None, None, 3, "Suprapatellar", "Lateral", None],
+            [None, None, 4, "Suprapatellar", "Medial", None],
+            ["Sit - to - Stand", None, 1, "Infrapatellar", "Lateral", None],
+            [None, None, 2, "Infrapatellar", "Medial", None],
+            [None, None, 3, "Suprapatellar", "Lateral", None],
+            [None, None, 4, "Suprapatellar", "Medial", None],
+        ]
+
+        # Mic Setup: mic 3 = Medial, mic 4 = Lateral (opposite of AN template)
+        mic_setup_data = [
+            ["Study ID: 1013", None, "Date of Recording: 02/01/2024",
+             None, None, None, None, None],
+            ["Left Knee HP_W11.2-5", None, None,
+             "Right Knee: HP_W11.2-1", None, None, None, None],
+            ["Microphones", "Patellar Position", "Medial / Lateral",
+             "Microphones", "Patellar Position", "Medial / Lateral", None, None],
+            [1, "Infrapatellar", "Lateral", 1, "Infrapatellar", "Lateral", None, None],
+            [2, "Infrapatellar", "Medial", 2, "Infrapatellar", "Medial", None, None],
+            [3, "Suprapatellar", "Medial", 3, "Suprapatellar", "Medial", None, None],
+            [4, "Suprapatellar", "Lateral", 4, "Suprapatellar", "Lateral", None, None],
+            ["Left knee", None, None, None, None, None, None, None],
+            ["File Name", "File Size (mb)", "Audio Board Serial Number",
+             "Timestamp", "Maneuver", "Notes", None, None],
+            ["HP_W11.2-5-20240201_112407", 123.7, "HP_W11.2-5", "11:24:07",
+             "Walk (slow,medium, fast) 80 seconds each speed", None, None, None],
+            ["HP_W11.2-5-20240201_113516", 33.6, "HP_W11.2-5", "11:35:16",
+             "Flexion - Extension", None, None, None],
+            ["HP_W11.2-5-20240201_114038", 32.3, "HP_W11.2-5", "11:40:38",
+             "Sit - to - Stand", None, None, None],
+            [None] * 8,
+            [None] * 8,
+            ["Right Knee", None, None, None, None, None, None, None],
+            ["File Name", "File Size (mb)", "Audio Board Serial Number",
+             "Timestamp", "Maneuver", "Notes", None, None],
+            ["HP_W11.2-1-20240201_112411", 122.2, "HP_W11.2-1", "11:24:11",
+             "Walk (slow,medium, fast) 80 seconds each speed", None, None, None],
+            ["HP_W11.2-1-20240201_113517", 32.2, "HP_W11.2-1", "11:35:17",
+             "Flexion - Extension", None, None, None],
+            ["HP_W11.2-1-20240201_114035", 34, "HP_W11.2-1", "11:40:35",
+             "Sit - to - Stand", None, None, None],
+            *[[None] * 8 for _ in range(7)],
+            [None, None, None, None, None, None, "Red Device", "HP_W11.2-5"],
+            [None, None, None, None, None, None, "White Device", "HP_W11.2-1"],
+        ]
+
+        with pd.ExcelWriter(excel_path, engine="openpyxl") as writer:
+            pd.DataFrame(acoustic_data).to_excel(
+                writer, sheet_name="Acoustic Notes", index=False, header=False,
+            )
+            pd.DataFrame(mic_setup_data).to_excel(
+                writer, sheet_name="Mic Setup", index=False, header=False,
+            )
+
+        metadata, mismatches = get_acoustics_metadata(
+            str(excel_path), "walk", "left",
+        )
+
+        # No mismatches — AN is unfilled so template defaults are ignored
+        assert mismatches == []
+
+        # Mic positions should come from Mic Setup, NOT the AN template
+        assert metadata.microphones[3].laterality == "Medial"   # Mic Setup value
+        assert metadata.microphones[4].laterality == "Lateral"  # Mic Setup value
+
+
+class TestAcousticNotesIsFilled:
+    """Unit tests for the _acoustic_notes_is_filled() helper."""
+
+    def test_empty_string_is_unfilled(self):
+        assert _acoustic_notes_is_filled("") is False
+
+    def test_whitespace_only_is_unfilled(self):
+        assert _acoustic_notes_is_filled("   ") is False
+
+    def test_real_filename_is_filled(self):
+        assert _acoustic_notes_is_filled("HP_W11.2-5-20240201_112407") is True
+
+    def test_none_like_is_unfilled(self):
+        # In practice file_name is always str, but edge-case defense
+        assert _acoustic_notes_is_filled("") is False
 
 
 # ── Cross-sheet mismatch tests ──────────────────────────────────────

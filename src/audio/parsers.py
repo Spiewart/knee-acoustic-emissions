@@ -1,6 +1,7 @@
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Literal, Optional
 
 import pandas as pd
@@ -198,6 +199,17 @@ def extract_file_name_and_notes(
     return file_name, notes
 
 
+def _acoustic_notes_is_filled(file_name: str) -> bool:
+    """Check whether the Acoustic Notes sheet has been filled in by a human.
+
+    The template ships with default microphone laterality values but blank
+    file names.  If the file-name cell is empty the row was never touched,
+    so any microphone positions are just template defaults and should not
+    be trusted for cross-validation.
+    """
+    return bool(file_name and file_name.strip())
+
+
 def _cross_validate_sheets(
     acoustic_notes_file_name: str,
     acoustic_notes_mics: dict[int, MicrophonePosition],
@@ -208,6 +220,9 @@ def _cross_validate_sheets(
     """Compare overlapping fields between Acoustic Notes and Mic Setup.
 
     Only compares when both sheets have non-empty values for a field.
+    If the Acoustic Notes sheet appears unfilled (no file name), microphone
+    position comparisons are skipped entirely because the positions are
+    just template defaults.
 
     Returns:
         List of LegendMismatch instances for each detected disagreement.
@@ -225,7 +240,12 @@ def _cross_validate_sheets(
                 mic_setup_value=mic_setup.file_name,
             ))
 
-    # Compare microphone positions
+    # Compare microphone positions only when the Acoustic Notes sheet
+    # has actually been filled in (non-empty file name).  Without a file
+    # name the mic positions are template defaults and meaningless.
+    if not _acoustic_notes_is_filled(acoustic_notes_file_name):
+        return mismatches
+
     for mic_num in [1, 2, 3, 4]:
         an_mic = acoustic_notes_mics.get(mic_num)
         ms_mic = mic_setup.microphones.get(mic_num)
@@ -282,8 +302,13 @@ def get_acoustics_metadata(
     study_config = get_study_config(study_name)
 
     # --- Source 1: Acoustic Notes (existing logic) ---
+    # Determine engine from file extension to avoid pandas auto-detection
+    # failures (e.g. when file extension is ambiguous or corrupted).
+    _ext = Path(metadata_file_path).suffix.lower()
+    _engine = "openpyxl" if _ext == ".xlsx" else "xlrd" if _ext == ".xls" else None
     metadata_df: pd.DataFrame = pd.read_excel(
-        metadata_file_path, sheet_name=acoustics_sheet_name, header=None
+        metadata_file_path, sheet_name=acoustics_sheet_name, header=None,
+        engine=_engine,
     )
 
     table_start_row: int = find_knee_table_start(metadata_df, knee)
@@ -325,6 +350,10 @@ def get_acoustics_metadata(
             )
 
     # --- Fallback: fill missing Acoustic Notes fields from fallback ---
+    # When the Acoustic Notes sheet is unfilled (no file name), all its
+    # fields are template defaults — prefer Mic Setup data for everything.
+    acoustic_notes_filled = _acoustic_notes_is_filled(file_name)
+
     if mic_setup is not None:
         if not file_name and mic_setup.file_name:
             logger.info(
@@ -333,8 +362,18 @@ def get_acoustics_metadata(
             )
             file_name = mic_setup.file_name
 
-        if not microphones and mic_setup.microphones:
-            logger.info("Fallback: using microphone positions from fallback sheet.")
+        if mic_setup.microphones and (
+            not microphones or not acoustic_notes_filled
+        ):
+            if not acoustic_notes_filled:
+                logger.info(
+                    "Acoustic Notes sheet is unfilled (no file name); "
+                    "using microphone positions from Mic Setup sheet."
+                )
+            else:
+                logger.info(
+                    "Fallback: using microphone positions from fallback sheet."
+                )
             microphones = mic_setup.microphones
 
     # --- Build extra fields from fallback ---
