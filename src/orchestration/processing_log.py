@@ -93,16 +93,20 @@ def _parse_study_and_participant(
         except ValueError:
             return study_name, 1
 
-    if study_id_str.startswith("AOA"):
-        return "AOA", int(study_id_str[3:]) if len(study_id_str) > 3 else 1
-    if study_id_str.startswith("preOA"):
-        return "preOA", int(study_id_str[5:]) if len(study_id_str) > 5 else 1
-    if study_id_str.startswith("SMoCK"):
-        return "SMoCK", int(study_id_str[5:]) if len(study_id_str) > 5 else 1
+    # Try each registered study's prefix
+    from src.studies.registry import list_studies, get_study_config
+    for name in list_studies():
+        config = get_study_config(name)
+        prefix = name  # study_name is the prefix (e.g. "AOA", "preOA")
+        if study_id_str.startswith(prefix):
+            numeric = study_id_str[len(prefix):]
+            return name, int(numeric) if numeric else 1
+
+    # Fallback: try parsing as bare number
     try:
-        return "AOA", int(study_id_str)
+        return study_name or "AOA", int(study_id_str)
     except ValueError:
-        return "AOA", 1
+        return study_name or "AOA", 1
 
 
 def _get_study_db_id(
@@ -218,10 +222,18 @@ class ManeuverProcessingLog:
         output_path: Optional[Path] = None,
         session=None,
         db_url: Optional[str] = None,
+        legend_mismatches: Optional[List] = None,
     ) -> Path:
         """Generate Excel report from database queries.
 
         Requires a PostgreSQL connection (AE_DATABASE_URL).
+
+        Args:
+            output_path: Optional output path override.
+            session: Optional existing SQLAlchemy session.
+            db_url: Optional database URL override.
+            legend_mismatches: Optional list of LegendMismatch instances
+                for cross-sheet validation reporting.
         """
         from src.reports.report_generator import ReportGenerator
 
@@ -248,6 +260,7 @@ class ManeuverProcessingLog:
                 participant_id=study_db_id,
                 maneuver=maneuver,
                 knee=knee,
+                legend_mismatches=legend_mismatches,
             )
         finally:
             if created_session:
@@ -371,7 +384,8 @@ class KneeProcessingLog:
 
 
 def _parse_study_from_file_name(file_name: str) -> Optional[str]:
-    for prefix in ("AOA", "preOA", "SMoCK"):
+    from src.studies.registry import list_studies
+    for prefix in list_studies():
         if file_name.startswith(prefix):
             return prefix
     return None

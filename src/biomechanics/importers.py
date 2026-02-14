@@ -138,95 +138,32 @@ def normalize_recording_dataframe(
     return recording_df
 
 
-def _get_event_sheet_name(
-    study_id: str,
-    maneuver: Literal["walk", "sit_to_stand", "flexion_extension"],
-    speed: Literal["slow", "medium", "fast"] | None = None,
-    pass_number: int | None = None,
-) -> str:
-    """Get the event sheet name based on maneuver type.
-
-    Sheet naming convention:
-    - Walk: AOAXXXX_Walk0001 (pass metadata with sync events, not speed-specific)
-    - Sit-to-stand: AOAXXXX_StoS_Events
-    - Flexion-extension: AOAXXXX_FE_Events
-
-    Args:
-        study_id: Study identifier (e.g., "AOA1011")
-        maneuver: Type of maneuver
-        speed: Speed level (unused for walk, ignored)
-        pass_number: Pass number (unused, kept for compatibility)
-
-    Returns:
-        Event sheet name
-
-    Raises:
-        ValueError: If walk maneuver cannot resolve sheet name
-    """
-    if maneuver == "walk":
-        # Walk0001 is the shared pass-metadata/sync sheet for all speeds
-        return f"{study_id}_Walk0001"
-    elif maneuver == "sit_to_stand":
-        return f"{study_id}_StoS_Events"
-    elif maneuver == "flexion_extension":
-        return f"{study_id}_FE_Events"
-    else:
-        raise ValueError(f"Unknown maneuver: {maneuver}")
-
-
 def _construct_biomechanics_sheet_names(
     study_id: str,
     maneuver: Literal["walk", "sit_to_stand", "flexion_extension"],
     speed: Literal["slow", "medium", "fast"] | None,
-    pass_number: int | None = None,
+    study_name: str = "AOA",
 ) -> dict[str, str]:
-    """Construct Excel sheet names based on study ID, maneuver, speed.
+    """Construct Excel sheet names via study config dispatch.
 
-    Sheet naming convention:
-    - Walk: AOAXXXX_Speed_Walking (Speed is Slow, Medium, or Fast)
-    - Sit-to-stand: AOAXXXX_SitToStand
-    - Flexion-extension: AOAXXXX_FlexExt
-    - Events sheet: Depends on maneuver (see _get_event_sheet_name)
+    Delegates to ``StudyConfig.construct_biomechanics_sheet_names()`` for
+    the given study so that sheet naming conventions are study-specific.
 
     Args:
-        study_id: Study identifier (e.g., "AOA1011")
+        study_id: Full study-prefixed ID (e.g., "AOA1011")
         maneuver: Type of maneuver
         speed: Speed level (required for walk, ignored for others)
-        pass_number: Pass number (kept for compatibility, unused)
+        study_name: Study identifier for config dispatch
 
     Returns:
-        Dictionary with "data" and "events" sheet names
-
-    Raises:
-        ValueError: If speed is None for walk maneuver
+        Dictionary with "data_sheet" and "event_sheet" keys
     """
-    if maneuver == "walk":
-        if speed is None:
-            raise ValueError("speed is required for walk maneuver")
+    from src.studies import get_study_config
 
-        speed_map = {
-            "slow": "Slow",
-            "medium": "Medium",
-            "fast": "Fast",
-        }
-        speed_capitalized = speed_map[speed]
-        data_sheet = f"{study_id}_{speed_capitalized}_Walking"
-    elif maneuver == "sit_to_stand":
-        data_sheet = f"{study_id}_SitToStand"
-    elif maneuver == "flexion_extension":
-        data_sheet = f"{study_id}_FlexExt"
-    else:
-        raise ValueError(f"Unknown maneuver: {maneuver}")
-
-    # Get the appropriate events sheet name based on maneuver
-    events_sheet = _get_event_sheet_name(
-        study_id, maneuver, speed, pass_number
+    study_config = get_study_config(study_name)
+    return study_config.construct_biomechanics_sheet_names(
+        study_id, maneuver, speed=speed,
     )
-
-    return {
-        "data": data_sheet,
-        "events": events_sheet,
-    }
 
 
 def _extract_stomp_time(
@@ -364,12 +301,22 @@ def import_walk_biomechanics(
     if not bio_file.exists():
         raise FileNotFoundError(f"Biomechanics file not found: {bio_file}")
 
-    # Extract study ID from file name (first 7 characters)
-    study_id = bio_file.stem[:7]
+    # Extract study prefix from file name using study config
+    from src.studies import get_study_config
 
-    # Read the speed-specific sheet to extract pass_number from UID columns
-    speed_capitalized = speed.capitalize()
-    speed_sheet_name = f"{study_id}_{speed_capitalized}_Walking"
+    resolved_study_name = study_name or "AOA"
+    study_config = get_study_config(resolved_study_name)
+    raw_id = bio_file.stem.split("_")[0]
+    _, numeric_id = study_config.parse_participant_id(raw_id)
+    study_id = study_config.format_study_prefix(numeric_id)
+
+    # Construct sheet names (data + events) for this speed
+    sheet_names = _construct_biomechanics_sheet_names(
+        study_id, "walk", speed, study_name=resolved_study_name,
+    )
+
+    # Read the speed-specific data sheet to extract pass_number from UID columns
+    speed_sheet_name = sheet_names["data_sheet"]
     try:
         speed_df = pd.read_excel(bio_file, sheet_name=speed_sheet_name)
         unique_ids_raw = extract_unique_ids_from_columns(speed_df)
@@ -385,13 +332,8 @@ def import_walk_biomechanics(
         raise ValueError(
             f"Failed to extract pass_number for {speed} walking: {e}"
         )
-
-    # Construct sheet names
-    sheet_names = _construct_biomechanics_sheet_names(
-        study_id, "walk", speed, pass_number
-    )
-    data_sheet_name = sheet_names["data"]
-    event_sheet_name = sheet_names["events"]
+    data_sheet_name = sheet_names["data_sheet"]
+    event_sheet_name = sheet_names["event_sheet"]
 
     # Read data and event sheets
     bio_df = pd.read_excel(bio_file, sheet_name=data_sheet_name)
@@ -443,15 +385,21 @@ def import_fe_sts_biomechanics(
     if not bio_file.exists():
         raise FileNotFoundError(f"Biomechanics file not found: {bio_file}")
 
-    # Extract study ID from file name
-    study_id = bio_file.stem[:7]
+    # Extract study prefix from file name using study config
+    from src.studies import get_study_config
+
+    resolved_study_name = study_name or "AOA"
+    study_config = get_study_config(resolved_study_name)
+    raw_id = bio_file.stem.split("_")[0]
+    _, numeric_id = study_config.parse_participant_id(raw_id)
+    study_id = study_config.format_study_prefix(numeric_id)
 
     # Construct sheet names
     sheet_names = _construct_biomechanics_sheet_names(
-        study_id, maneuver, speed=None, pass_number=None
+        study_id, maneuver, speed=None, study_name=resolved_study_name,
     )
-    data_sheet_name = sheet_names["data"]
-    event_sheet_name = sheet_names["events"]
+    data_sheet_name = sheet_names["data_sheet"]
+    event_sheet_name = sheet_names["event_sheet"]
 
     # Read data and event sheets
     bio_df = pd.read_excel(bio_file, sheet_name=data_sheet_name)

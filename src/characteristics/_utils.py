@@ -10,15 +10,21 @@ import pandas as pd
 def normalize_study_id(value: Any) -> int:
     """Normalize a Study ID to an integer.
 
-    Accepts values like 1001 or "AOA1001" (case-insensitive) and strips the
-    optional "AOA" prefix. Raises ValueError for invalid formats.
+    Accepts values like 1001 or "AOA1001" (case-insensitive) and strips any
+    known study prefix. Raises ValueError for invalid formats.
     """
     if pd.isna(value):
         raise ValueError("Study ID is missing")
 
     text = str(value).strip().upper()
-    if text.startswith("AOA"):
-        text = text[3:]
+
+    # Strip any known study prefix (AOA, PREOA, SMOCK, etc.)
+    from src.studies import list_studies
+
+    for prefix in sorted(list_studies(), key=len, reverse=True):
+        if text.startswith(prefix.upper()):
+            text = text[len(prefix):]
+            break
 
     if not re.fullmatch(r"\d{4}", text):
         raise ValueError(f"Invalid Study ID format: {value}")

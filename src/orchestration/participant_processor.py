@@ -102,6 +102,7 @@ class ManeuverProcessor:
         study_id: str,
         biomechanics_file: Path,
         biomechanics_type: Optional[str] = None,
+        study_name: str = "AOA",
     ):
         self.maneuver_dir = maneuver_dir
         self.maneuver_key = maneuver_key
@@ -109,6 +110,7 @@ class ManeuverProcessor:
         self.study_id = study_id
         self.biomechanics_file = biomechanics_file
         self.biomechanics_type = biomechanics_type
+        self.study_name = study_name
 
         # Processing state
         self.audio: Optional[AudioData] = None
@@ -692,7 +694,8 @@ class ManeuverProcessor:
                     close_db_session(session)
 
             # Generate Excel report from database
-            self.log.save_to_excel()
+            legend_mismatches = getattr(self, "_legend_mismatches", None)
+            self.log.save_to_excel(legend_mismatches=legend_mismatches)
             return True
         except Exception as e:
             logging.error(f"Failed to save logs: {e}", exc_info=True)
@@ -899,7 +902,7 @@ class ManeuverProcessor:
                 audio_qc_fail = len(audio_qc_failures) > 0
 
                 cycle = MovementCycle(
-                    study=self.log.audio_record.study if self.log and self.log.audio_record else "AOA",
+                    study=self.log.audio_record.study if self.log and self.log.audio_record else self.study_name,
                     study_id=int(self.study_id),
                     audio_processing_id=audio_db_record.id,
                     biomechanics_import_id=biomech_db_record.id if biomech_db_record else None,
@@ -1017,7 +1020,7 @@ class ManeuverProcessor:
         study = repo.session.execute(
             select(StudyRecord).where(
                 and_(
-                    StudyRecord.study_name == "AOA",
+                    StudyRecord.study_name == self.study_name,
                     StudyRecord.study_participant_id == int(self.study_id),
                 )
             )
@@ -1170,8 +1173,12 @@ class ManeuverProcessor:
 
     def _load_mic_positions_from_legend(self) -> dict:
         """Load microphone positions from the acoustics file legend."""
+        from src.studies import get_study_config
+
+        study_config = get_study_config(self.study_name)
         participant_dir = self.maneuver_dir.parents[1]
-        legend_files = list(participant_dir.glob("*acoustic_file_legend*.xls*"))
+        legend_pattern = study_config.get_legend_file_pattern()
+        legend_files = list(participant_dir.glob(f"{legend_pattern}.xls*"))
         if not legend_files:
             raise FileNotFoundError(
                 f"No acoustic file legend found in {participant_dir}"
@@ -1179,11 +1186,13 @@ class ManeuverProcessor:
         legend_path = legend_files[0]
 
         from src.audio.parsers import get_acoustics_metadata
-        meta = get_acoustics_metadata(
+        meta, legend_mismatches = get_acoustics_metadata(
             metadata_file_path=str(legend_path),
             scripted_maneuver=self.maneuver_key,
             knee=self.knee_side.lower(),
+            study_name=self.study_name,
         )
+        self._legend_mismatches = legend_mismatches
 
         def _to_code(pos) -> str:
             patellar = "I" if pos.patellar_position == "Infrapatellar" else "S"
@@ -1447,12 +1456,16 @@ class KneeProcessor:
         study_id: str,
         biomechanics_file: Path,
         biomechanics_type: Optional[str] = None,
+        study_name: str = "AOA",
     ):
+        from src.studies import get_study_config
+
         self.knee_dir = knee_dir
         self.knee_side = knee_side
         self.study_id = study_id
         self.biomechanics_file = biomechanics_file
         self.biomechanics_type = biomechanics_type
+        self.study_config = get_study_config(study_name)
 
         self.maneuver_processors: dict[str, ManeuverProcessor] = {}
         self.knee_log: Optional[KneeProcessingLog] = None
@@ -1482,6 +1495,7 @@ class KneeProcessor:
                     study_id=self.study_id,
                     biomechanics_file=self.biomechanics_file,
                     biomechanics_type=self.biomechanics_type,
+                    study_name=self.study_config.study_name,
                 )
 
                 if not self._run_processor(processor, entrypoint):
@@ -1599,6 +1613,7 @@ class ParticipantProcessor:
                     study_id=self.study_id,
                     biomechanics_file=self.biomechanics_file,
                     biomechanics_type=self.biomechanics_type,
+                    study_name=self.study_config.study_name,
                 )
 
                 if not processor.process(entrypoint, maneuver):
@@ -1630,7 +1645,7 @@ class ParticipantProcessor:
         # Validate knee directories
         knees_to_check = [knee] if knee else ["Left", "Right"]
         for knee_side in knees_to_check:
-            knee_dir = self.participant_dir / f"{knee_side} Knee"
+            knee_dir = self.participant_dir / self.study_config.get_knee_directory_name(knee_side.lower())
             if not knee_dir.exists():
                 raise FileNotFoundError(
                     f"Required knee directory not found: {knee_dir}"
@@ -1647,9 +1662,10 @@ class ParticipantProcessor:
 
     def _find_biomechanics_file(self) -> Path:
         """Find the biomechanics Excel file using study-specific naming pattern."""
-        motion_capture_dir = self.participant_dir / "Motion Capture"
+        mc_dir_name = self.study_config.get_motion_capture_directory_name()
+        motion_capture_dir = self.participant_dir / mc_dir_name
         if not motion_capture_dir.exists():
-            raise FileNotFoundError(f"Motion Capture directory not found in {self.participant_dir}")
+            raise FileNotFoundError(f"{mc_dir_name} directory not found in {self.participant_dir}")
 
         biomech_pattern = self.study_config.get_biomechanics_file_pattern(self.study_id)
         found = self.study_config.find_excel_file(motion_capture_dir, biomech_pattern)
@@ -1680,6 +1696,7 @@ class ParticipantProcessor:
                 knee_side=cast(Literal["Left", "Right"], knee_side),
                 study_id=self.study_id,
                 biomechanics_file=self.biomechanics_file,
+                study_name=self.study_config.study_name,
             )
             maneuver_dir = processor._find_maneuver_dir(maneuver_key)
 

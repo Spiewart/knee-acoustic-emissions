@@ -963,33 +963,37 @@ def qc_audio_directory(
     min_gap_s: float = 2.0,
     use_frequency_segmentation: bool = False,
     frequency_tolerance_frac: float = 0.06,
+    study_name: str = "AOA",
 ) -> list[dict[str, object]]:
     """Run QC across a participant directory.
 
     Iterates Left/Right knee folders, detects maneuver folders, loads the
     processed audio pickle, and runs the appropriate QC.
     """
+    from src.studies import get_study_config
 
-    maneuvers = {
-        "walk": ("Walking", ()),
-        "sit_to_stand": ("Sit-Stand", ("sit", "stand")),
-        "flexion_extension": ("Flexion-Extension", ()),
-    }
+    study_config = get_study_config(study_name)
+
+    maneuver_keys: list[Literal["walk", "sit_to_stand", "flexion_extension"]] = [
+        "walk", "sit_to_stand", "flexion_extension",
+    ]
 
     channels = audio_channels or DEFAULT_CHANNELS
-    selected = set(maneuvers.keys()) if maneuver == "all" else {maneuver}
+    selected = set(maneuver_keys) if maneuver == "all" else {maneuver}
 
     results: list[dict[str, object]] = []
 
-    for knee in ("Left Knee", "Right Knee"):
-        knee_dir = participant_dir / knee
+    for knee_side in ("left", "right"):
+        knee_dir = participant_dir / study_config.get_knee_directory_name(knee_side)
         if not knee_dir.exists():
             continue
 
-        for key, (folder_name, contains_terms) in maneuvers.items():
+        for key in maneuver_keys:
             if key not in selected:
                 continue
 
+            folder_name = study_config.get_maneuver_directory_name(key)
+            contains_terms = study_config.get_maneuver_search_terms(key)
             maneuver_dir = knee_dir / folder_name
             if not maneuver_dir.exists() and contains_terms:
                 # Allow variants like "Sit-to-Stand" by matching all required terms.
@@ -1019,7 +1023,7 @@ def qc_audio_directory(
                     )
                     results.append(
                         {
-                            "knee": knee,
+                            "knee": knee_side,
                             "maneuver": key,
                             "path": str(pkl_path),
                             "passes": pass_results,
@@ -1059,7 +1063,7 @@ def qc_audio_directory(
                 min_gap_s=min_gap_s,
             )
 
-            qc_result.update({"knee": knee, "maneuver": key})
+            qc_result.update({"knee": knee_side, "maneuver": key})
             results.append(qc_result)
 
     return results

@@ -58,9 +58,14 @@ def get_event_metadata(
     Strips leading and trailing whitespace from event names to handle
     erroneous keystrokes in the data.
     """
+    from src.studies import get_study_config
+
+    study_config = get_study_config(study_name or "AOA")
+    event_col = study_config.get_biomechanics_event_column()
+
     event_name_stripped = event_name.strip()
     event_metadata = bio_meta.loc[
-        bio_meta["Event Info"].str.strip() == event_name_stripped
+        bio_meta[event_col].str.strip() == event_name_stripped
     ]
     if event_metadata.empty:
         raise ValueError(f"No events found for: {event_name_stripped}")
@@ -76,12 +81,15 @@ def get_stomp_time(
 ) -> timedelta:
     """Extract the timestamp of the foot stomp event from biomechanics metadata.
     foot: 'left' or 'right'"""
+    from src.studies import get_study_config
 
-    event_name = "Sync Left" if foot.lower() == "left" else "Sync Right"
+    study_config = get_study_config(study_name or "AOA")
+    event_name = study_config.get_stomp_event_name(foot.lower())
 
-    event_meta_data = get_event_metadata(bio_meta, event_name)
+    event_meta_data = get_event_metadata(bio_meta, event_name, study_name=study_name)
 
-    stomp_times = event_meta_data["Time (sec)"].dropna().tolist()
+    time_col = study_config.get_biomechanics_time_column()
+    stomp_times = event_meta_data[time_col].dropna().tolist()
     if not stomp_times:
         raise ValueError(f"No {foot} foot stomp events found in biomechanics metadata.")
 
@@ -1054,35 +1062,13 @@ def _validate_synchronized_dataframe(df: "pd.DataFrame") -> None:
         )
 
 
-def _get_walking_event_name(
-    speed: Literal["slow", "normal", "fast"],
-    pass_number: int,
-    event_type: Literal["Start", "End"],
-) -> str:
-    """Construct walking event name from speed and pass number.
-
-    Args:
-        speed: Walking speed ("slow", "normal", "fast").
-        pass_number: Pass number (1, 2, etc.).
-        event_type: Event type ("Start" or "End").
-
-    Returns:
-        Event name like "SS Pass 1 Start" or "NS Pass 2 End".
-    """
-    speed_map = {
-        "slow": "SS",
-        "normal": "NS",
-        "fast": "FS",
-    }
-    speed_code = speed_map[speed]
-    return f"{speed_code} Pass {pass_number} {event_type}"
-
 
 def get_bio_start_time(
     event_metadata: "pd.DataFrame",
     maneuver: Literal["walk", "sit_to_stand", "flexion_extension"],
     speed: Optional[Literal["slow", "normal", "fast"]] = None,
     pass_number: Optional[int] = None,
+    study_name: Optional[str] = None,
 ) -> timedelta:
     """Get the start time of the biomechanics data for the specified maneuver.
 
@@ -1097,6 +1083,7 @@ def get_bio_start_time(
         speed: Speed of the maneuver
             ("slow", "normal", "fast"), required for walk.
         pass_number: Pass number for walking maneuvers, required for walk.
+        study_name: Study identifier for event name dispatch.
 
     Returns:
         Start time of the biomechanics data for the specified maneuver.
@@ -1104,20 +1091,21 @@ def get_bio_start_time(
     Raises:
         ValueError: If required parameters are missing or event not found.
     """
+    from src.studies import get_study_config
+
+    study_config = get_study_config(study_name or "AOA")
+
     if maneuver == "walk":
         if speed is None or pass_number is None:
             raise ValueError(
                 f"speed and pass_number required for walk maneuver, "
                 f"got speed={speed}, pass_number={pass_number}"
             )
-        event_name = _get_walking_event_name(speed, pass_number, "Start")
-    elif maneuver in ["sit_to_stand", "flexion_extension"]:
-        event_name = "Movement Start"
-    else:
-        raise ValueError(f"Unknown maneuver: {maneuver}")
+    event_name = study_config.get_movement_start_event(maneuver, speed, pass_number or 1)
 
-    event_data = get_event_metadata(event_metadata, event_name)
-    start_times = event_data["Time (sec)"].dropna().tolist()
+    event_data = get_event_metadata(event_metadata, event_name, study_name=study_name)
+    time_col = study_config.get_biomechanics_time_column()
+    start_times = event_data[time_col].dropna().tolist()
 
     if not start_times:
         raise ValueError(f"No start time found for event: {event_name}")
@@ -1130,6 +1118,7 @@ def get_bio_end_time(
     maneuver: Literal["walk", "sit_to_stand", "flexion_extension"],
     speed: Optional[Literal["slow", "normal", "fast"]] = None,
     pass_number: Optional[int] = None,
+    study_name: Optional[str] = None,
 ) -> timedelta:
     """Get the end time of the biomechanics data for the specified maneuver.
 
@@ -1144,6 +1133,7 @@ def get_bio_end_time(
         speed: Speed of the maneuver
             ("slow", "normal", "fast"), required for walk.
         pass_number: Pass number for walking maneuvers, required for walk.
+        study_name: Study identifier for event name dispatch.
 
     Returns:
         End time of the biomechanics data for the specified maneuver.
@@ -1151,20 +1141,21 @@ def get_bio_end_time(
     Raises:
         ValueError: If required parameters are missing or event not found.
     """
+    from src.studies import get_study_config
+
+    study_config = get_study_config(study_name or "AOA")
+
     if maneuver == "walk":
         if speed is None or pass_number is None:
             raise ValueError(
                 f"speed and pass_number required for walk maneuver, "
                 f"got speed={speed}, pass_number={pass_number}"
             )
-        event_name = _get_walking_event_name(speed, pass_number, "End")
-    elif maneuver in ["sit_to_stand", "flexion_extension"]:
-        event_name = "Movement End"
-    else:
-        raise ValueError(f"Unknown maneuver: {maneuver}")
+    event_name = study_config.get_movement_end_event(maneuver, speed, pass_number or 1)
 
-    event_data = get_event_metadata(event_metadata, event_name)
-    end_times = event_data["Time (sec)"].dropna().tolist()
+    event_data = get_event_metadata(event_metadata, event_name, study_name=study_name)
+    time_col = study_config.get_biomechanics_time_column()
+    end_times = event_data[time_col].dropna().tolist()
 
     if not end_times:
         raise ValueError(f"No end time found for event: {event_name}")

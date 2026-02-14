@@ -27,8 +27,14 @@ Event sheets:
     FE:     AOA{id}_FE_Events
 """
 
+from __future__ import annotations
+
 from pathlib import Path
-from typing import Literal, Optional
+from typing import TYPE_CHECKING, Literal, Optional
+
+if TYPE_CHECKING:
+    from src.audio.parsers import MicSetupData
+    from src.models import MicrophonePosition
 
 
 class AOAConfig:
@@ -133,3 +139,118 @@ class AOAConfig:
             if files:
                 return files[0]
         return None
+
+    # --- Maneuver directory mapping ---
+
+    def get_maneuver_directory_name(
+        self,
+        maneuver: Literal["walk", "sit_to_stand", "flexion_extension"],
+    ) -> str:
+        _map = {
+            "walk": "Walking",
+            "sit_to_stand": "Sit-Stand",
+            "flexion_extension": "Flexion-Extension",
+        }
+        return _map[maneuver]
+
+    def get_maneuver_from_directory(
+        self,
+        directory_name: str,
+    ) -> Optional[Literal["walk", "sit_to_stand", "flexion_extension"]]:
+        _reverse_map: dict[str, Literal["walk", "sit_to_stand", "flexion_extension"]] = {
+            "Walking": "walk",
+            "Sit-Stand": "sit_to_stand",
+            "Flexion-Extension": "flexion_extension",
+        }
+        return _reverse_map.get(directory_name)
+
+    def get_maneuver_search_terms(
+        self,
+        maneuver: Literal["walk", "sit_to_stand", "flexion_extension"],
+    ) -> tuple[str, ...]:
+        _terms: dict[str, tuple[str, ...]] = {
+            "walk": (),
+            "sit_to_stand": ("sit", "stand"),
+            "flexion_extension": (),
+        }
+        return _terms[maneuver]
+
+    # --- Motion capture ---
+
+    def get_motion_capture_directory_name(self) -> str:
+        return "Motion Capture"
+
+    # --- Biomechanics event names ---
+
+    def get_stomp_event_name(
+        self, foot: Literal["left", "right"],
+    ) -> str:
+        return f"Sync {foot.capitalize()}"
+
+    def get_movement_start_event(
+        self,
+        maneuver: Literal["walk", "sit_to_stand", "flexion_extension"],
+        speed: Optional[str] = None,
+        pass_number: int = 1,
+    ) -> str:
+        if maneuver == "walk":
+            return self._walking_event_name(speed, pass_number, "Start")
+        return "Movement Start"
+
+    def get_movement_end_event(
+        self,
+        maneuver: Literal["walk", "sit_to_stand", "flexion_extension"],
+        speed: Optional[str] = None,
+        pass_number: int = 1,
+    ) -> str:
+        if maneuver == "walk":
+            return self._walking_event_name(speed, pass_number, "End")
+        return "Movement End"
+
+    def _walking_event_name(
+        self,
+        speed: Optional[str],
+        pass_number: int,
+        event_type: Literal["Start", "End"],
+    ) -> str:
+        speed_map = {"slow": "SS", "normal": "NS", "fast": "FS"}
+        if speed not in speed_map:
+            raise ValueError(
+                f"Invalid speed '{speed}' for walk. Expected: {list(speed_map.keys())}"
+            )
+        return f"{speed_map[speed]} Pass {pass_number} {event_type}"
+
+    # --- Biomechanics column names ---
+
+    def get_biomechanics_event_column(self) -> str:
+        return "Event Info"
+
+    def get_biomechanics_time_column(self) -> str:
+        return "Time (sec)"
+
+    def get_knee_angle_column(self) -> str:
+        return "Knee Angle Z"
+
+    # --- Legend fallback ---
+
+    def parse_legend_fallback(
+        self,
+        metadata_file_path: str,
+        scripted_maneuver: Literal["walk", "sit_to_stand", "flexion_extension"],
+        knee: Literal["left", "right"],
+    ) -> Optional[MicSetupData]:
+        from src.studies.aoa.legend import parse_aoa_mic_setup_sheet
+
+        return parse_aoa_mic_setup_sheet(metadata_file_path, scripted_maneuver, knee)
+
+    # --- Default microphones ---
+
+    def get_default_microphones(self) -> dict[int, MicrophonePosition]:
+        from src.models import MicrophonePosition
+
+        return {
+            1: MicrophonePosition(patellar_position="Infrapatellar", laterality="Lateral"),
+            2: MicrophonePosition(patellar_position="Infrapatellar", laterality="Medial"),
+            3: MicrophonePosition(patellar_position="Suprapatellar", laterality="Medial"),
+            4: MicrophonePosition(patellar_position="Suprapatellar", laterality="Lateral"),
+        }

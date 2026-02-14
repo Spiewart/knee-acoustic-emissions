@@ -380,24 +380,8 @@ def _save_or_update_processing_log(
         # Update synchronization records if data provided
         if synced_data is not None:
             # Parse study name and numeric ID from study_id
-            study_id_str = str(study_id).lstrip("#")
-            study_name = "AOA"  # default
-            numeric_id = 1
-            if study_id_str.startswith("AOA"):
-                study_name = "AOA"
-                numeric_id = int(study_id_str[3:]) if len(study_id_str) > 3 else 1
-            elif study_id_str.startswith("preOA"):
-                study_name = "preOA"
-                numeric_id = int(study_id_str[5:]) if len(study_id_str) > 5 else 1
-            elif study_id_str.startswith("SMoCK"):
-                study_name = "SMoCK"
-                numeric_id = int(study_id_str[5:]) if len(study_id_str) > 5 else 1
-            else:
-                # Try to parse as just a number
-                try:
-                    numeric_id = int(study_id_str)
-                except ValueError:
-                    numeric_id = 1
+            from src.orchestration.processing_log import _parse_study_and_participant
+            study_name, numeric_id = _parse_study_and_participant(study_id)
 
             for item in synced_data:
                 # Support both legacy 3-tuple and new 4-tuple with detection_results
@@ -999,6 +983,7 @@ def _trim_and_rename_biomechanics_columns(
 def _load_event_data(
     biomechanics_file: Path,
     maneuver_key: str,
+    study_name: str = "AOA",
 ) -> pd.DataFrame:
     """Load event metadata from biomechanics Excel file.
 
@@ -1006,8 +991,7 @@ def _load_event_data(
         biomechanics_file: Path to the biomechanics Excel file
         maneuver_key: Type of maneuver ("walk", "sit_to_stand",
             "flexion_extension")
-        pass_number: Pass number (unused for walk, for compatibility)
-        speed: Speed (unused for walk, for compatibility)
+        study_name: Study identifier for sheet name dispatch
 
     Returns:
         DataFrame containing event metadata
@@ -1015,19 +999,20 @@ def _load_event_data(
     Raises:
         ValueError: If event sheet cannot be found
     """
-    raw_study_id = biomechanics_file.stem.split("_")[0]
-    study_id = raw_study_id.replace("AOA", "")
-    study_prefix = f"AOA{study_id}"
+    from src.studies import get_study_config
 
-    if maneuver_key == "walk":
-        # For all walk speeds, use Walk0001 which has sync events
-        event_sheet_name = f"{study_prefix}_Walk0001"
-    elif maneuver_key == "sit_to_stand":
-        event_sheet_name = f"{study_prefix}_StoS_Events"
-    elif maneuver_key == "flexion_extension":
-        event_sheet_name = f"{study_prefix}_FE_Events"
-    else:
-        raise ValueError(f"Unknown maneuver type: {maneuver_key}")
+    study_config = get_study_config(study_name)
+    raw_study_id = biomechanics_file.stem.split("_")[0]
+    _, numeric_id = study_config.parse_participant_id(raw_study_id)
+    study_prefix = study_config.format_study_prefix(numeric_id)
+
+    # For walk, event sheet is speed-independent (e.g. AOA1011_Walk0001),
+    # so pass any valid speed to satisfy the API.
+    speed = "slow" if maneuver_key == "walk" else None
+    sheet_names = study_config.construct_biomechanics_sheet_names(
+        study_prefix, maneuver_key, speed=speed,
+    )
+    event_sheet_name = sheet_names["event_sheet"]
 
     try:
         event_meta_data = pd.read_excel(
@@ -1402,7 +1387,7 @@ def _load_acoustics_file_names(participant_dir: Path) -> dict[tuple[str, str], s
     for knee in ("left", "right"):
         for maneuver_key in ("walk", "sit_to_stand", "flexion_extension"):
             try:
-                meta = get_acoustics_metadata(
+                meta, _mismatches = get_acoustics_metadata(
                     metadata_file_path=str(legend_path),
                     scripted_maneuver=maneuver_key,
                     knee=knee,
@@ -1429,7 +1414,7 @@ def _load_mic_positions_from_legend(
         )
 
     from src.audio.parsers import get_acoustics_metadata  # Local import to avoid cycle
-    meta = get_acoustics_metadata(
+    meta, _mismatches = get_acoustics_metadata(
         metadata_file_path=str(legend_path),
         scripted_maneuver=maneuver_key,
         knee=knee,

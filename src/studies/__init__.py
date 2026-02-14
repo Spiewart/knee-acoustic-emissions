@@ -13,6 +13,6 @@ Usage:
     biomech_pattern = config.get_biomechanics_file_pattern("1011")  # "AOA1011_Biomechanics_Full_Set"
 """
 
-from src.studies.registry import get_study_config, register_study
+from src.studies.registry import get_study_config, list_studies, register_study
 
-__all__ = ["get_study_config", "register_study"]
+__all__ = ["get_study_config", "list_studies", "register_study"]

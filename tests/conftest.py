@@ -221,11 +221,75 @@ def _create_acoustic_legend(participant_dir: Path) -> Path:
         [None, None, 4, "Suprapatellar", "Lateral", None],
     ]
 
+    # --- Mic Setup sheet (28 rows × 8 cols, fixed layout) ---
+    # Must match Acoustic Notes data so cross-validation produces no mismatches.
+    mic_setup_data = [
+        # Row 0: header
+        ["Study ID: 9999", None, "Date of Recording: 01/26/2024",
+         None, None, None, None, None],
+        # Row 1: knee board IDs
+        ["Left Knee HP_W11.2-5", None, None,
+         "Right Knee: HP_W12.2-5", None, None, None, None],
+        # Row 2: mic position headers
+        ["Microphones", "Patellar Position", "Medial / Lateral",
+         "Microphones", "Patellar Position", "Medial / Lateral", None, None],
+        # Rows 3-6: mic positions (left cols 0-2, right cols 3-5)
+        [1, "Infrapatellar", "Lateral", 1, "Infrapatellar", "Lateral", None, None],
+        [2, "Infrapatellar", "Medial", 2, "Infrapatellar", "Medial", None, None],
+        [3, "Suprapatellar", "Medial", 3, "Suprapatellar", "Medial", None, None],
+        [4, "Suprapatellar", "Lateral", 4, "Suprapatellar", "Lateral", None, None],
+        # Row 7: left knee landmark
+        ["Left knee", None, None, None, None, None, None, None],
+        # Row 8: left knee file header
+        ["File Name", "File Size (mb)", "Audio Board Serial Number",
+         "Timestamp", "Maneuver", "Notes", None, None],
+        # Rows 9-11: left knee data (Walk, FE, STS)
+        ["HP_W11.2-5-20240126_135702", 100.5, "HP_W11.2-5", "13:57:02",
+         "Walk (slow,medium, fast) 80 seconds each speed", None, None, None],
+        ["HP_W11.2-1-20240126_135704", 30.2, "HP_W11.2-5", "13:57:04",
+         "Flexion - Extension", None, None, None],
+        ["HP_W11.2-3-20240126_135706", 28.1, "HP_W11.2-5", "13:57:06",
+         "Sit - to - Stand", None, None, None],
+        # Rows 12-13: empty
+        [None] * 8,
+        [None] * 8,
+        # Row 14: right knee landmark
+        ["Right Knee", None, None, None, None, None, None, None],
+        # Row 15: right knee file header
+        ["File Name", "File Size (mb)", "Audio Board Serial Number",
+         "Timestamp", "Maneuver", "Notes", None, None],
+        # Rows 16-18: right knee data
+        ["HP_W12.2-5-20240126_135802", 98.3, "HP_W12.2-5", "13:58:02",
+         "Walk (slow,medium, fast) 80 seconds each speed", None, None, None],
+        ["HP_W12.2-1-20240126_135804", 29.8, "HP_W12.2-5", "13:58:04",
+         "Flexion - Extension", None, None, None],
+        ["HP_W12.2-3-20240126_135806", 27.5, "HP_W12.2-5", "13:58:06",
+         "Sit - to - Stand", None, None, None],
+        # Rows 19-25: empty
+        [None] * 8,
+        [None] * 8,
+        [None] * 8,
+        [None] * 8,
+        [None] * 8,
+        [None] * 8,
+        [None] * 8,
+        # Rows 26-27: device color mapping
+        [None, None, None, None, None, None, "Red Device", "HP_W11.2-5"],
+        [None, None, None, None, None, None, "White Device", "HP_W12.2-5"],
+    ]
+
     df = pd.DataFrame(data)
+    mic_setup_df = pd.DataFrame(mic_setup_data)
     with pd.ExcelWriter(excel_path, engine="openpyxl") as writer:
         df.to_excel(
             writer,
             sheet_name="Acoustic Notes",
+            index=False,
+            header=False,
+        )
+        mic_setup_df.to_excel(
+            writer,
+            sheet_name="Mic Setup",
             index=False,
             header=False,
         )

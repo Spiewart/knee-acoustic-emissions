@@ -633,8 +633,39 @@ class ReportGenerator:
 
         return pd.DataFrame(summary_data)
 
+    @staticmethod
+    def generate_legend_validation_sheet(
+        legend_mismatches: List,
+    ) -> pd.DataFrame:
+        """Generate Legend Validation sheet from cross-sheet mismatches.
+
+        Only produces output when mismatches exist between Acoustic Notes
+        and Mic Setup sheets.
+
+        Args:
+            legend_mismatches: List of LegendMismatch instances.
+
+        Returns:
+            DataFrame with mismatch details, or empty DataFrame.
+        """
+        if not legend_mismatches:
+            return pd.DataFrame()
+
+        data = []
+        for mm in legend_mismatches:
+            data.append({
+                'Knee': mm.knee,
+                'Maneuver': mm.maneuver,
+                'Field': mm.field,
+                'Acoustic Notes Value': mm.acoustic_notes_value,
+                'Mic Setup Value': mm.mic_setup_value,
+            })
+
+        return pd.DataFrame(data)
+
     def save_to_excel(self, output_path: Path, participant_id: int,
-                     maneuver: str, knee: str) -> Path:
+                     maneuver: str, knee: str,
+                     legend_mismatches: Optional[List] = None) -> Path:
         """Generate all sheets and save to Excel file.
 
         Args:
@@ -642,6 +673,8 @@ class ReportGenerator:
             participant_id: Study enrollment ID (studies.id) — legacy param name
             maneuver: Maneuver code
             knee: Knee side
+            legend_mismatches: Optional list of LegendMismatch instances for
+                cross-sheet validation reporting.
 
         Returns:
             Path to generated Excel file
@@ -660,6 +693,12 @@ class ReportGenerator:
             'Synchronization': self.generate_synchronization_sheet(study_id, maneuver, knee),
             'Cycles': self.generate_movement_cycles_sheet(study_id, maneuver, knee),
         }
+
+        # Add Legend Validation sheet if mismatches exist
+        if legend_mismatches:
+            sheets['Legend Validation'] = self.generate_legend_validation_sheet(
+                legend_mismatches
+            )
 
         # Write to Excel
         with pd.ExcelWriter(output_path, engine='openpyxl') as writer:

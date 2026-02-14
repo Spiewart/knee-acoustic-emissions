@@ -162,24 +162,21 @@ def _parse_acoustics_filename(file_name: str) -> tuple[str, int, datetime]:
     return serial, firmware_version, recording_date
 
 
-def _default_microphones() -> dict[int, MicrophonePosition]:
-    return {
-        1: MicrophonePosition(patellar_position="Infrapatellar", laterality="Lateral"),
-        2: MicrophonePosition(patellar_position="Infrapatellar", laterality="Medial"),
-        3: MicrophonePosition(patellar_position="Suprapatellar", laterality="Medial"),
-        4: MicrophonePosition(patellar_position="Suprapatellar", laterality="Lateral"),
-    }
-
-
 def _load_microphone_metadata(
     participant_dir: Optional[Path],
     maneuver: str,
     knee: str,
+    study_name: str = "AOA",
 ) -> tuple[dict[int, MicrophonePosition], Optional[dict[int, str]]]:
+    from src.studies import get_study_config
+
+    study_config = get_study_config(study_name)
+    legend_pattern = study_config.get_legend_file_pattern()
+
     legend_candidates: list[Path] = []
     if participant_dir:
-        legend_candidates.extend(sorted(participant_dir.glob("*acoustic_file_legend*.xlsx")))
-        legend_candidates.extend(sorted(participant_dir.glob("*acoustic_file_legend*.xlsm")))
+        legend_candidates.extend(sorted(participant_dir.glob(f"{legend_pattern}.xlsx")))
+        legend_candidates.extend(sorted(participant_dir.glob(f"{legend_pattern}.xlsm")))
 
     if legend_candidates:
         legend_path = legend_candidates[0]
@@ -187,29 +184,34 @@ def _load_microphone_metadata(
             # Local import to avoid circular dependency
             from src.audio.parsers import get_acoustics_metadata
 
-            meta = get_acoustics_metadata(
+            meta, _mismatches = get_acoustics_metadata(
                 metadata_file_path=str(legend_path),
                 scripted_maneuver=maneuver,
                 knee=knee,
+                study_name=study_name,
             )
             return meta.microphones, meta.microphone_notes
         except Exception as exc:  # pragma: no cover - best-effort fallback
             logger.debug("Failed to read acoustic legend %s: %s", legend_path, exc)
 
-    return _default_microphones(), None
+    return study_config.get_default_microphones(), None
 
 
 def _find_biomech_file_name(
     participant_dir: Optional[Path],
     study_id: int,
+    study_name: str = "AOA",
 ) -> str:
-    default_name = f"AOA{study_id}_Biomechanics_Full_Set.xlsx"
+    from src.studies import get_study_config
+
+    study_config = get_study_config(study_name)
+    pattern = study_config.get_biomechanics_file_pattern(study_id)
+    default_name = f"{pattern}.xlsx"
     if participant_dir:
-        biomechanics_dir = participant_dir / "Biomechanics"
-        for ext in (".xlsx", ".xlsm"):
-            candidate = biomechanics_dir / f"AOA{study_id}_Biomechanics_Full_Set{ext}"
-            if candidate.exists():
-                return candidate.name
+        motion_capture_dir = participant_dir / study_config.get_motion_capture_directory_name()
+        found = study_config.find_excel_file(motion_capture_dir, pattern)
+        if found:
+            return found.name
     return default_name
 
 
@@ -217,6 +219,7 @@ def _build_cycle_metadata_context(
     synced_pkl_path: Path,
     maneuver: str,
     speed: Optional[str],
+    study_name: str = "AOA",
 ) -> dict[str, Any]:
     participant_dir = _find_participant_dir(synced_pkl_path)
     study_id = _extract_study_id_from_path(synced_pkl_path)
@@ -225,8 +228,12 @@ def _build_cycle_metadata_context(
     bin_file = _find_acoustics_bin(maneuver_dir)
     audio_file_name = bin_file.name if bin_file else f"{synced_pkl_path.stem}.bin"
     serial, firmware_version, recording_date = _parse_acoustics_filename(audio_file_name)
-    microphones, microphone_notes = _load_microphone_metadata(participant_dir, maneuver, knee)
-    biomech_file_name = _find_biomech_file_name(participant_dir, study_id)
+    microphones, microphone_notes = _load_microphone_metadata(
+        participant_dir, maneuver, knee, study_name=study_name,
+    )
+    biomech_file_name = _find_biomech_file_name(
+        participant_dir, study_id, study_name=study_name,
+    )
     pass_number = _parse_pass_number(synced_pkl_path.stem) if maneuver == "walk" else None
     effective_speed = speed or ("medium" if maneuver == "walk" else None)
     if maneuver == "walk" and pass_number is None:
@@ -304,7 +311,7 @@ def _build_cycle_metadata_context(
             logger.debug("Failed to load sync times from processing log: %s", exc)
 
     return {
-        "study": "AOA",
+        "study": study_name,
         "study_id": study_id,
         "knee": knee,
         "maneuver": maneuver,

@@ -4,6 +4,8 @@ Handles reading, parsing, and quality control of audio board data.
 """
 
 from src.audio.parsers import (
+                               LegendMismatch,
+                               MicSetupData,
                                extract_file_name_and_notes,
                                extract_knee_metadata_table,
                                extract_microphone_positions,
@@ -25,6 +27,8 @@ __all__ = [
     "read_audio_board_file",
     # parsers
     "get_acoustics_metadata",
+    "LegendMismatch",
+    "MicSetupData",
     "find_knee_table_start",
     "extract_knee_metadata_table",
     "normalize_maneuver_column",

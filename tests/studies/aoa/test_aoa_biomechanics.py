@@ -5,7 +5,6 @@ from src.biomechanics.importers import (
     _construct_biomechanics_sheet_names,
     _extract_maneuver_from_uid,
     _extract_walking_pass_info,
-    _get_event_sheet_name,
     clean_uid,
     create_composite_column_names,
     extract_recording_data,
@@ -17,6 +16,7 @@ from src.biomechanics.importers import (
     normalize_recording_dataframe,
 )
 from src.models import BiomechanicsRecording
+from src.studies.aoa.config import AOAConfig
 
 
 def test_import_biomechanics(fake_participant_directory) -> None:
@@ -226,49 +226,29 @@ def test_get_walking_start_time_not_found(fake_participant_directory) -> None:
         )
 
 
-def test_get_event_sheet_name_walk() -> None:
-    """Test event sheet name generation for walk maneuver."""
-    sheet_name = _get_event_sheet_name(
-        study_id="AOA1011",
-        maneuver="walk",
-        pass_number=1,
-    )
-    assert sheet_name == "AOA1011_Walk0001"
+def test_aoa_event_sheet_name_walk() -> None:
+    """Test event sheet name generation for walk maneuver via AOAConfig."""
+    config = AOAConfig()
+    # Walk event sheet is speed-independent — always Walk0001
+    sheet_names = config.construct_biomechanics_sheet_names("AOA1011", "walk", speed="slow")
+    assert sheet_names["event_sheet"] == "AOA1011_Walk0001"
 
-    sheet_name = _get_event_sheet_name(
-        study_id="AOA1011",
-        maneuver="walk",
-        pass_number=5,
-    )
-    assert sheet_name == "AOA1011_Walk0001"
+    sheet_names = config.construct_biomechanics_sheet_names("AOA1011", "walk", speed="fast")
+    assert sheet_names["event_sheet"] == "AOA1011_Walk0001"
 
 
-def test_get_event_sheet_name_sit_to_stand() -> None:
+def test_aoa_event_sheet_name_sit_to_stand() -> None:
     """Test event sheet name generation for sit-to-stand maneuver."""
-    sheet_name = _get_event_sheet_name(
-        study_id="AOA1011",
-        maneuver="sit_to_stand",
-    )
-    assert sheet_name == "AOA1011_StoS_Events"
+    config = AOAConfig()
+    sheet_names = config.construct_biomechanics_sheet_names("AOA1011", "sit_to_stand")
+    assert sheet_names["event_sheet"] == "AOA1011_StoS_Events"
 
 
-def test_get_event_sheet_name_flexion_extension() -> None:
+def test_aoa_event_sheet_name_flexion_extension() -> None:
     """Test event sheet name generation for flexion-extension maneuver."""
-    sheet_name = _get_event_sheet_name(
-        study_id="AOA1011",
-        maneuver="flexion_extension",
-    )
-    assert sheet_name == "AOA1011_FE_Events"
-
-
-def test_get_event_sheet_name_walk_missing_pass_number() -> None:
-    """Walk maneuver defaults to Walk0001 regardless of pass_number."""
-    sheet_name = _get_event_sheet_name(
-        study_id="AOA1011",
-        maneuver="walk",
-        pass_number=None,
-    )
-    assert sheet_name == "AOA1011_Walk0001"
+    config = AOAConfig()
+    sheet_names = config.construct_biomechanics_sheet_names("AOA1011", "flexion_extension")
+    assert sheet_names["event_sheet"] == "AOA1011_FE_Events"
 
 
 def test_construct_biomechanics_sheet_names_walk() -> None:
@@ -277,28 +257,25 @@ def test_construct_biomechanics_sheet_names_walk() -> None:
         study_id="AOA1011",
         maneuver="walk",
         speed="slow",
-        pass_number=1,
     )
-    assert sheet_names["data"] == "AOA1011_Slow_Walking"
-    assert sheet_names["events"] == "AOA1011_Walk0001"
+    assert sheet_names["data_sheet"] == "AOA1011_Slow_Walking"
+    assert sheet_names["event_sheet"] == "AOA1011_Walk0001"
 
     sheet_names = _construct_biomechanics_sheet_names(
         study_id="AOA1011",
         maneuver="walk",
         speed="medium",
-        pass_number=2,
     )
-    assert sheet_names["data"] == "AOA1011_Medium_Walking"
-    assert sheet_names["events"] == "AOA1011_Walk0001"
+    assert sheet_names["data_sheet"] == "AOA1011_Medium_Walking"
+    assert sheet_names["event_sheet"] == "AOA1011_Walk0001"
 
     sheet_names = _construct_biomechanics_sheet_names(
         study_id="AOA1011",
         maneuver="walk",
         speed="fast",
-        pass_number=1,
     )
-    assert sheet_names["data"] == "AOA1011_Fast_Walking"
-    assert sheet_names["events"] == "AOA1011_Walk0001"
+    assert sheet_names["data_sheet"] == "AOA1011_Fast_Walking"
+    assert sheet_names["event_sheet"] == "AOA1011_Walk0001"
 
 
 def test_construct_biomechanics_sheet_names_sit_to_stand() -> None:
@@ -308,8 +285,8 @@ def test_construct_biomechanics_sheet_names_sit_to_stand() -> None:
         maneuver="sit_to_stand",
         speed=None,
     )
-    assert sheet_names["data"] == "AOA1011_SitToStand"
-    assert sheet_names["events"] == "AOA1011_StoS_Events"
+    assert sheet_names["data_sheet"] == "AOA1011_SitToStand"
+    assert sheet_names["event_sheet"] == "AOA1011_StoS_Events"
 
 
 def test_construct_biomechanics_sheet_names_flexion_extension() -> None:
@@ -319,13 +296,13 @@ def test_construct_biomechanics_sheet_names_flexion_extension() -> None:
         maneuver="flexion_extension",
         speed=None,
     )
-    assert sheet_names["data"] == "AOA1011_FlexExt"
-    assert sheet_names["events"] == "AOA1011_FE_Events"
+    assert sheet_names["data_sheet"] == "AOA1011_FlexExt"
+    assert sheet_names["event_sheet"] == "AOA1011_FE_Events"
 
 
 def test_construct_biomechanics_sheet_names_walk_missing_speed() -> None:
     """Test that walk maneuver requires speed."""
-    with pytest.raises(ValueError, match="speed is required"):
+    with pytest.raises(ValueError, match="Invalid speed"):
         _construct_biomechanics_sheet_names(
             study_id="AOA1011",
             maneuver="walk",

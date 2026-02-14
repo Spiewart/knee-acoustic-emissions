@@ -1,8 +1,37 @@
+import logging
+from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any, Literal, Optional
 
 import pandas as pd
 
 from src.models import AcousticsFileMetadata, MicrophonePosition
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class MicSetupData:
+    """Parsed data from the Mic Setup sheet for a single knee + maneuver."""
+
+    file_name: str
+    serial_number: str
+    file_size_mb: Optional[float]
+    timestamp: Optional[str]
+    date_of_recording: Optional[datetime]
+    microphones: dict[int, MicrophonePosition]
+    notes: Optional[str]
+
+
+@dataclass
+class LegendMismatch:
+    """A mismatch between Acoustic Notes and Mic Setup sheets."""
+
+    knee: str
+    maneuver: str
+    field: str
+    acoustic_notes_value: Any
+    mic_setup_value: Any
 
 
 def find_knee_table_start(
@@ -169,75 +198,166 @@ def extract_file_name_and_notes(
     return file_name, notes
 
 
+def _cross_validate_sheets(
+    acoustic_notes_file_name: str,
+    acoustic_notes_mics: dict[int, MicrophonePosition],
+    mic_setup: MicSetupData,
+    knee: str,
+    maneuver: str,
+) -> list[LegendMismatch]:
+    """Compare overlapping fields between Acoustic Notes and Mic Setup.
+
+    Only compares when both sheets have non-empty values for a field.
+
+    Returns:
+        List of LegendMismatch instances for each detected disagreement.
+    """
+    mismatches: list[LegendMismatch] = []
+
+    # Compare file names (both non-empty)
+    if acoustic_notes_file_name and mic_setup.file_name:
+        if acoustic_notes_file_name != mic_setup.file_name:
+            mismatches.append(LegendMismatch(
+                knee=knee,
+                maneuver=maneuver,
+                field="file_name",
+                acoustic_notes_value=acoustic_notes_file_name,
+                mic_setup_value=mic_setup.file_name,
+            ))
+
+    # Compare microphone positions
+    for mic_num in [1, 2, 3, 4]:
+        an_mic = acoustic_notes_mics.get(mic_num)
+        ms_mic = mic_setup.microphones.get(mic_num)
+        if an_mic and ms_mic:
+            if an_mic.patellar_position != ms_mic.patellar_position:
+                mismatches.append(LegendMismatch(
+                    knee=knee,
+                    maneuver=maneuver,
+                    field=f"mic_{mic_num}_patellar_position",
+                    acoustic_notes_value=an_mic.patellar_position,
+                    mic_setup_value=ms_mic.patellar_position,
+                ))
+            if an_mic.laterality != ms_mic.laterality:
+                mismatches.append(LegendMismatch(
+                    knee=knee,
+                    maneuver=maneuver,
+                    field=f"mic_{mic_num}_laterality",
+                    acoustic_notes_value=an_mic.laterality,
+                    mic_setup_value=ms_mic.laterality,
+                ))
+
+    return mismatches
+
+
 def get_acoustics_metadata(
     metadata_file_path: str,
     scripted_maneuver: Literal["walk", "sit_to_stand", "flexion_extension"],
     knee: Literal["left", "right"],
     acoustics_sheet_name: str = "Acoustic Notes",
-) -> AcousticsFileMetadata:
-    """Gets acoustics metadata for a given acoustics file legend.
+    study_name: str = "AOA",
+) -> tuple[AcousticsFileMetadata, list[LegendMismatch]]:
+    """Gets acoustics metadata from legend file using dual-source fallback.
 
-    Extracts the relevant metadata based on the scripted maneuver and knee
-    laterality and returns a Pydantic Model instance that validates the
-    metadata.
-
-    File legend is two Excel tables on top of one another, separated by a
-    blank row, where the first row in each table is either "R Knee" or
-    "L Knee", and the second row is divided into columns:
-        "Maneuvers": Literal["Walk (slow,medium, fast)",
-                              "Flexion - Extension", "Sit - to - Stand"]
-        "File Name": str
-        "Microphone": Literal[1, 2, 3, 4]
-        "Patellar Position": Literal["Infrapatellar", "Suprapatellar"]
-        "Laterality": Literal["Medial", "Lateral"]
-        "Notes": str
+    Primary source is the Acoustic Notes sheet. When fields are missing
+    (NaN/empty), values are filled from the study-specific fallback sheet
+    (e.g. Mic Setup for AOA). When both sheets have values for the same
+    field, cross-validation detects mismatches.
 
     Args:
         metadata_file_path: Path to the Excel file containing the acoustics
                            file legend.
         scripted_maneuver: The scripted maneuver to filter by.
         knee: The knee laterality to filter by.
+        acoustics_sheet_name: Name of the Acoustic Notes sheet.
+        study_name: Study identifier for dispatch to study-specific parsing.
 
     Returns:
-        AcousticsFileMetadata: A Pydantic model instance containing the
-                          validated acoustics metadata.
+        Tuple of (AcousticsFileMetadata, list[LegendMismatch]).
+        The mismatch list is empty when sheets agree or only one source
+        has data.
     """
+    from src.studies import get_study_config
+
+    study_config = get_study_config(study_name)
+
+    # --- Source 1: Acoustic Notes (existing logic) ---
     metadata_df: pd.DataFrame = pd.read_excel(
         metadata_file_path, sheet_name=acoustics_sheet_name, header=None
     )
 
-    # Find the starting row for the desired knee's data
     table_start_row: int = find_knee_table_start(metadata_df, knee)
-
-    # Extract and prepare the knee metadata table
     knee_metadata_df: pd.DataFrame = extract_knee_metadata_table(
         metadata_df, table_start_row
     )
-
-    # Normalize the Maneuvers column
     knee_metadata_df: pd.DataFrame = normalize_maneuver_column(knee_metadata_df)
-
-    # Filter to the specified maneuver
     maneuver_metadata_df: pd.DataFrame = filter_by_maneuver(
         knee_metadata_df, scripted_maneuver
     )
-
-    # Extract file name and notes
     file_name, notes = extract_file_name_and_notes(maneuver_metadata_df)
-
-    # Extract microphone positions and notes
     microphones, microphone_notes = extract_microphone_positions(
         maneuver_metadata_df
     )
 
+    # --- Source 2: Study-specific fallback (e.g. Mic Setup for AOA) ---
+    mic_setup: Optional[MicSetupData] = None
+    mismatches: list[LegendMismatch] = []
+
+    try:
+        mic_setup = study_config.parse_legend_fallback(
+            metadata_file_path, scripted_maneuver, knee,
+        )
+    except Exception as exc:
+        logger.warning(
+            f"Could not parse fallback legend from {metadata_file_path}: {exc}"
+        )
+
+    # --- Cross-validation ---
+    if mic_setup is not None:
+        mismatches = _cross_validate_sheets(
+            file_name, microphones, mic_setup, knee, scripted_maneuver,
+        )
+        for mm in mismatches:
+            logger.warning(
+                f"Legend mismatch ({mm.knee} {mm.maneuver}): "
+                f"{mm.field} — Acoustic Notes='{mm.acoustic_notes_value}', "
+                f"Mic Setup='{mm.mic_setup_value}'"
+            )
+
+    # --- Fallback: fill missing Acoustic Notes fields from fallback ---
+    if mic_setup is not None:
+        if not file_name and mic_setup.file_name:
+            logger.info(
+                f"Fallback: using file_name from fallback sheet: "
+                f"'{mic_setup.file_name}'"
+            )
+            file_name = mic_setup.file_name
+
+        if not microphones and mic_setup.microphones:
+            logger.info("Fallback: using microphone positions from fallback sheet.")
+            microphones = mic_setup.microphones
+
+    # --- Build extra fields from fallback ---
+    serial_number = "unknown"
+    date_of_recording = None
+    if mic_setup is not None:
+        serial_number = mic_setup.serial_number
+        date_of_recording = mic_setup.date_of_recording
+
     acoustics_metadata = AcousticsFileMetadata(
         scripted_maneuver=scripted_maneuver,
         knee=knee,
-        study="AOA",
+        study=study_name,
         study_id=0,
         file_name=file_name,
         microphones=microphones,
-        audio_notes=("; ".join([microphone_note for microphone_note in microphone_notes.values()]) if microphone_notes else notes),
+        audio_serial_number=serial_number,
+        date_of_recording=date_of_recording if date_of_recording else datetime.min,
+        audio_notes=(
+            "; ".join(microphone_notes.values())
+            if microphone_notes
+            else notes
+        ),
     )
 
-    return acoustics_metadata
+    return acoustics_metadata, mismatches
