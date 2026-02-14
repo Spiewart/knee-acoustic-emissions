@@ -3,15 +3,11 @@ import pytest
 
 from src.biomechanics.importers import (
     _construct_biomechanics_sheet_names,
-    _extract_maneuver_from_uid,
-    _extract_walking_pass_info,
     clean_uid,
     create_composite_column_names,
     extract_recording_data,
     extract_unique_ids_from_columns,
     get_biomechanics_metadata,
-    get_non_walk_start_time,
-    get_walking_start_time,
     import_biomechanics_recordings,
     normalize_recording_dataframe,
 )
@@ -178,54 +174,6 @@ def test_get_biomechanics_metadata() -> None:
     assert metadata.pass_number == 1
 
 
-def test_get_walking_start_time(fake_participant_directory) -> None:
-    """Test retrieving walking start time from event data."""
-    events_df = pd.read_excel(
-        fake_participant_directory["biomechanics"]["excel_path"],
-        sheet_name=fake_participant_directory["biomechanics"]["events_sheets"][
-            "walk_pass"
-        ],
-    )
-
-    # Get the start time for Slow Speed Pass 1
-    start_time = get_walking_start_time(
-        event_data_df=events_df,
-        pass_number=1,
-        pass_speed="slow",
-    )
-
-    # Should be 14.0 seconds (from fixture)
-    assert start_time == pd.to_timedelta(14.0, "s")
-
-    # Get the start time for Normal Speed Pass 2
-    start_time = get_walking_start_time(
-        event_data_df=events_df,
-        pass_number=2,
-        pass_speed="normal",
-    )
-
-    # Should be 22.0 seconds (from fixture)
-    assert start_time == pd.to_timedelta(22.0, "s")
-
-
-def test_get_walking_start_time_not_found(fake_participant_directory) -> None:
-    """Test that requesting non-existent start time raises ValueError."""
-    events_df = pd.read_excel(
-        fake_participant_directory["biomechanics"]["excel_path"],
-        sheet_name=fake_participant_directory["biomechanics"]["events_sheets"][
-            "walk_pass"
-        ],
-    )
-
-    # Try to get a start time that doesn't exist
-    with pytest.raises(ValueError, match="No start time found"):
-        get_walking_start_time(
-            event_data_df=events_df,
-            pass_number=99,
-            pass_speed="slow",
-        )
-
-
 def test_aoa_event_sheet_name_walk() -> None:
     """Test event sheet name generation for walk maneuver via AOAConfig."""
     config = AOAConfig()
@@ -308,97 +256,6 @@ def test_construct_biomechanics_sheet_names_walk_missing_speed() -> None:
             maneuver="walk",
             speed=None,
         )
-
-
-def test_extract_walking_pass_info_slow() -> None:
-    """Test extracting pass number and speed from UID."""
-    pass_number, speed = _extract_walking_pass_info("Study123_Walk0001_SSP1_Filt")
-    assert pass_number == 1
-    assert speed == "slow"
-
-
-def test_extract_walking_pass_info_normal() -> None:
-    """Test extracting normal speed pass info."""
-    pass_number, speed = _extract_walking_pass_info("Study123_Walk0001_NSP2_Filt")
-    assert pass_number == 2
-    assert speed == "normal"
-
-
-def test_extract_walking_pass_info_fast() -> None:
-    """Test extracting fast speed pass info."""
-    pass_number, speed = _extract_walking_pass_info("Study123_Walk0001_FSP3_Filt")
-    assert pass_number == 3
-    assert speed == "fast"
-
-
-def test_extract_walking_pass_info_invalid_speed() -> None:
-    """Test that invalid speed code raises ValueError."""
-    with pytest.raises(ValueError, match="Unknown speed code"):
-        _extract_walking_pass_info("Study123_Walk0001_XSP1_Filt")
-
-
-def test_extract_maneuver_from_uid_walk() -> None:
-    """Test extracting walk maneuver from UID."""
-    maneuver = _extract_maneuver_from_uid("Study123_Walk0001_NSP1_Filt")
-    assert maneuver == "walk"
-
-
-def test_extract_maneuver_from_uid_sit_to_stand() -> None:
-    """Test extracting sit-to-stand maneuver from UID."""
-    maneuver = _extract_maneuver_from_uid("Study123_SitToStand0001_Filt")
-    assert maneuver == "sit_to_stand"
-
-
-def test_extract_maneuver_from_uid_flexion_extension() -> None:
-    """Test extracting flexion-extension maneuver from UID."""
-    maneuver = _extract_maneuver_from_uid("Study123_FlexExt0001_Filt")
-    assert maneuver == "flexion_extension"
-
-
-def test_extract_maneuver_from_uid_invalid() -> None:
-    """Test that invalid maneuver raises ValueError."""
-    with pytest.raises(ValueError, match="Unknown maneuver"):
-        _extract_maneuver_from_uid("Study123_Invalid0001_Filt")
-
-
-def test_get_non_walk_start_time_sit_to_stand(
-    fake_participant_directory,
-) -> None:
-    """Test retrieving sit-to-stand start time from event data."""
-    events_df = pd.read_excel(
-        fake_participant_directory["biomechanics"]["excel_path"],
-        sheet_name=fake_participant_directory["biomechanics"]["events_sheets"][
-            "sit_to_stand"
-        ],
-    )
-
-    start_time = get_non_walk_start_time(
-        event_data_df=events_df,
-        maneuver="sit_to_stand",
-    )
-
-    # Should be 6.0 seconds (from fixture)
-    assert start_time == pd.to_timedelta(6.0, "s")
-
-
-def test_get_non_walk_start_time_flexion_extension(
-    fake_participant_directory,
-) -> None:
-    """Test retrieving flexion-extension start time from event data."""
-    events_df = pd.read_excel(
-        fake_participant_directory["biomechanics"]["excel_path"],
-        sheet_name=fake_participant_directory["biomechanics"]["events_sheets"][
-            "flexion_extension"
-        ],
-    )
-
-    start_time = get_non_walk_start_time(
-        event_data_df=events_df,
-        maneuver="flexion_extension",
-    )
-
-    # Should be 4.0 seconds (from fixture)
-    assert start_time == pd.to_timedelta(4.0, "s")
 
 
 def test_import_biomechanics_sit_to_stand(fake_participant_directory) -> None:

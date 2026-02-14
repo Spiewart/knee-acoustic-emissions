@@ -20,49 +20,75 @@ from src.orchestration.participant import get_audio_file_name
 
 def _load_walk_events_from_biomechanics(
     biomech_file: Path,
+    study_name: str = "AOA",
 ) -> Optional[dict[str, list[tuple[str, float]]]]:
     """Load walking events from biomechanics Excel file.
-    Reads the "Walk0001" sheet from the biomechanics Excel file and extracts
-    events associated with each walking speed (Slow, Normal/Medium, Fast).
 
-    The sheet must contain columns "Event Info" and "Time (sec)" for parsing.
+    Reads the walk event sheet from the biomechanics Excel file and extracts
+    events associated with each walking speed. Sheet name, column names, and
+    speed keywords are all resolved through the study config.
 
     Args:
         biomech_file: Path to the biomechanics Excel file.
+        study_name: Study identifier for config dispatch.
 
     Returns:
-        Dictionary mapping speed code ("SS"=Slow, "NS"=Normal, "FS"=Fast)
-        to list of (event_info, time_sec) tuples, or None if sheet not found
-        or required columns missing.
+        Dictionary mapping speed code to list of (event_info, time_sec)
+        tuples, or None if sheet not found or required columns missing.
     """
+    from src.studies import get_study_config
+
+    study_config = get_study_config(study_name)
+    base_name = study_config.get_walk_event_sheet_base_name()
+    event_col = study_config.get_biomechanics_event_column()
+    time_col = study_config.get_biomechanics_time_column()
+    speed_keywords = study_config.get_speed_event_keywords()
+    speed_codes = set(study_config.get_speed_code_map().values())
+
+    # Try study-prefixed sheet name first, then bare base name
+    raw_id = biomech_file.stem.split("_")[0]
     try:
-        df = pd.read_excel(biomech_file, sheet_name="Walk0001")
-    except (FileNotFoundError, ValueError):
+        _, numeric_id = study_config.parse_participant_id(raw_id)
+        study_id = study_config.format_study_prefix(numeric_id)
+        prefixed_name = f"{study_id}_{base_name}"
+    except (ValueError, IndexError):
+        prefixed_name = None
+
+    df = None
+    for sheet_name in filter(None, [prefixed_name, base_name]):
+        try:
+            df = pd.read_excel(biomech_file, sheet_name=sheet_name)
+            break
+        except (FileNotFoundError, ValueError):
+            continue
+
+    if df is None:
         return None
 
-    if not {"Event Info", "Time (sec)"}.issubset(df.columns):
+    if not {event_col, time_col}.issubset(df.columns):
         return None
 
+    # Build speed code set from config
+    all_speed_codes = set(speed_keywords.values())
     events_by_speed: dict[str, list[tuple[str, float]]] = {
-        "SS": [],
-        "NS": [],
-        "FS": [],
+        code: [] for code in all_speed_codes
     }
 
     current_speed: str | None = None
     for _, row in df.iterrows():
-        event_info = str(row["Event Info"]).strip()
-        time_sec = float(row["Time (sec)"])
+        event_info = str(row[event_col]).strip()
+        time_sec = float(row[time_col])
 
-        if "Slow Speed" in event_info:
-            current_speed = "SS"
-        elif "Normal Speed" in event_info or "Medium Speed" in event_info:
-            current_speed = "NS"
-        elif "Fast Speed" in event_info:
-            current_speed = "FS"
+        # Check for speed section header keywords
+        for keyword, code in speed_keywords.items():
+            if keyword in event_info:
+                current_speed = code
+                break
 
         if current_speed:
-            events_by_speed[current_speed].append((event_info, time_sec))
+            events_by_speed[current_speed].append(
+                (event_info, time_sec),
+            )
 
     return events_by_speed
 
@@ -87,9 +113,7 @@ def _parse_pass_intervals_from_events(
         - "end_s" (float): End time in seconds (or None if unpaired)
     """
     passes_by_speed: dict[str, list[dict[str, float | int]]] = {
-        "SS": [],
-        "NS": [],
-        "FS": [],
+        speed: [] for speed in events_by_speed
     }
 
     for speed, events in events_by_speed.items():
@@ -350,6 +374,7 @@ def qc_audio_walk(
     biomech_file: Path | None = None,
     use_frequency_segmentation: bool = False,
     frequency_tolerance_frac: float = 0.06,
+    study_name: str = "AOA",
 ) -> list[dict[str, float | bool | int | str]]:
     """QC check for walking maneuvers with variable gait speeds.
 
@@ -422,7 +447,9 @@ def qc_audio_walk(
     # Determine how to segment passes
     if biomech_file and biomech_file.exists():
         # Biomechanics file takes priority
-        events_by_speed = _load_walk_events_from_biomechanics(biomech_file)
+        events_by_speed = _load_walk_events_from_biomechanics(
+            biomech_file, study_name=study_name,
+        )
         if events_by_speed:
             passes_by_speed = _parse_pass_intervals_from_events(events_by_speed)
             intervals = []
@@ -900,6 +927,7 @@ def _run_qc_on_file(
     min_gap_s: float,
     use_frequency_segmentation: bool = False,
     frequency_tolerance_frac: float = 0.06,
+    study_name: str = "AOA",
 ) -> dict[str, object]:
     df = pd.read_pickle(pkl_path)
 
@@ -914,6 +942,7 @@ def _run_qc_on_file(
             bandpower_min_ratio=bandpower_min_ratio,
             use_frequency_segmentation=use_frequency_segmentation,
             frequency_tolerance_frac=frequency_tolerance_frac,
+            study_name=study_name,
         )
         return {
             "path": str(pkl_path),
@@ -1061,6 +1090,7 @@ def qc_audio_directory(
                 frequency_tolerance_frac=frequency_tolerance_frac,
                 min_pass_peaks=min_pass_peaks,
                 min_gap_s=min_gap_s,
+                study_name=study_name,
             )
 
             qc_result.update({"knee": knee_side, "maneuver": key})

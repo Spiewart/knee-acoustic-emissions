@@ -596,15 +596,25 @@ Where:
 3. Ensure TIME column is properly relative (not absolute timestamps)
 4. Check for proper handling of multiple passes/speeds in walking data
 
-### Extending to Non-Walk Maneuvers
+### Study-Specific Configuration
 
-Currently, only "walk" maneuvers are fully supported. To extend:
+All study-specific logic is encapsulated behind the `StudyConfig` protocol
+(`src/studies/base.py`). Pipeline modules (`biomechanics/importers.py`,
+`audio/quality_control.py`, `synchronization/sync.py`, `audio/parsers.py`)
+**must never** hardcode study-specific values — always delegate through
+`get_study_config(study_name)`.
 
-1. Update `import_biomechanics_recordings()` to process sit_to_stand and flexion_extension
-2. Implement alternative start-time detection (currently uses walking event data)
-3. Handle cases where speed/pass_number are None for these maneuvers
-4. Add tests for new maneuver types
-5. Update `get_walking_start_time()` or create equivalent for other maneuvers
+**Full reference**: [docs/STUDY_CONFIGURATION.md](docs/STUDY_CONFIGURATION.md)
+
+Key rules:
+
+- Speed codes, sheet names, event names, column names, and directory names
+  all come from `StudyConfig` methods
+- Pipeline functions accepting study-specific behavior must have a
+  `study_name: str = "AOA"` parameter
+- New studies go in `src/studies/{name}/` with a registered config class
+- The `StudyConfig` protocol is organized by processing stage:
+  Identity, Audio Metadata, Biomechanics Import, Synchronization
 
 ---
 

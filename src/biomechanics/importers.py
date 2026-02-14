@@ -169,6 +169,7 @@ def _construct_biomechanics_sheet_names(
 def _extract_stomp_time(
     event_df: pd.DataFrame,
     event_name: str,
+    study_name: str = "AOA",
 ) -> float:
     """Extract stomp time for a specific sync event.
 
@@ -176,22 +177,32 @@ def _extract_stomp_time(
     erroneous keystrokes in the data.
 
     Args:
-        event_df: DataFrame with "Event Info" and "Time (sec)" columns
-        event_name: Name of the sync event (e.g., "Sync Left", "Sync Right")
+        event_df: DataFrame with event and time columns.
+        event_name: Name of the sync event (e.g., "Sync Left").
+        study_name: Study identifier for config dispatch.
 
     Returns:
-        Time in seconds for the sync event
+        Time in seconds for the sync event.
 
     Raises:
-        ValueError: If event not found in DataFrame
+        ValueError: If event not found in DataFrame.
     """
-    # Strip whitespace from event_name and Event Info column for comparison
-    event_name_stripped = event_name.strip()
-    event_row = event_df[event_df["Event Info"].str.strip() == event_name_stripped]
-    if event_row.empty:
-        raise ValueError(f"Event '{event_name_stripped}' not found in event data")
+    from src.studies import get_study_config
 
-    return float(event_row["Time (sec)"].iloc[0])
+    study_config = get_study_config(study_name)
+    event_col = study_config.get_biomechanics_event_column()
+    time_col = study_config.get_biomechanics_time_column()
+
+    event_name_stripped = event_name.strip()
+    event_row = event_df[
+        event_df[event_col].str.strip() == event_name_stripped
+    ]
+    if event_row.empty:
+        raise ValueError(
+            f"Event '{event_name_stripped}' not found in event data"
+        )
+
+    return float(event_row[time_col].iloc[0])
 
 
 def _process_biomechanics_recordings(
@@ -209,38 +220,47 @@ def _process_biomechanics_recordings(
     Handles both walk and non-walk maneuvers.
 
     Args:
-        bio_df: DataFrame containing biomechanics data
-        event_data_df: DataFrame containing event metadata
-        maneuver: Type of maneuver
-        biomechanics_type: Optional biomechanics system/type (e.g., "IMU", "Gonio", "Motion Analysis")
-        study_name: Optional study name token extracted from the file
+        bio_df: DataFrame containing biomechanics data.
+        event_data_df: DataFrame containing event metadata.
+        maneuver: Type of maneuver.
+        biomechanics_file: Path to the source Excel file.
+        biomechanics_type: Optional biomechanics system/type.
+        study_name: Study identifier for config dispatch.
 
     Returns:
-        List of BiomechanicsRecording objects
+        List of BiomechanicsRecording objects.
     """
-    # Get the unique identifiers in the column names
+    from src.studies import get_study_config
+    from src.synchronization.sync import get_bio_start_time
+
+    resolved_study_name = study_name or "AOA"
+    study_config = get_study_config(resolved_study_name)
+
     unique_ids = extract_unique_ids_from_columns(bio_df)
 
-    # Separate the DataFrame into individual recordings
     recordings = []
     for uid in unique_ids:
         uid_clean = clean_uid(uid)
-        metadata = get_biomechanics_metadata(uid_clean)
+        metadata = get_biomechanics_metadata(
+            uid_clean, study_name=resolved_study_name,
+        )
 
         # Get the start time based on maneuver type
         if maneuver == "walk":
-            # For walk maneuvers, speed and pass_number are guaranteed
-            # non-None
             assert metadata.pass_number is not None, (
                 "pass_number must not be None for walk maneuver"
             )
             assert metadata.speed is not None, (
                 "speed must not be None for walk maneuver"
             )
-            start_time = get_walking_start_time(
-                event_data_df=event_data_df,
-                pass_number=metadata.pass_number,
-                pass_speed=metadata.speed,
+            start_time = pd.Timedelta(
+                get_bio_start_time(
+                    event_metadata=event_data_df,
+                    maneuver="walk",
+                    speed=metadata.speed,
+                    pass_number=metadata.pass_number,
+                    study_name=resolved_study_name,
+                ),
             )
         else:
             # Non-walk maneuvers already have TIME relative to their own
@@ -249,14 +269,26 @@ def _process_biomechanics_recordings(
 
         # Extract and normalize recording data
         recording_df = extract_recording_data(bio_df, uid_clean)
-        recording_df = normalize_recording_dataframe(recording_df, start_time)
+        recording_df = normalize_recording_dataframe(
+            recording_df, start_time,
+        )
 
         # Extract sync times for walk maneuvers
         biomech_sync_left_time = biomech_sync_right_time = None
         if maneuver == "walk":
-            biomech_sync_left_time = _extract_stomp_time(event_data_df, "Sync Left")
+            sync_left_event = study_config.get_stomp_event_name(
+                "left",
+            )
+            sync_right_event = study_config.get_stomp_event_name(
+                "right",
+            )
+            biomech_sync_left_time = _extract_stomp_time(
+                event_data_df, sync_left_event,
+                study_name=resolved_study_name,
+            )
             biomech_sync_right_time = _extract_stomp_time(
-                event_data_df, "Sync Right"
+                event_data_df, sync_right_event,
+                study_name=resolved_study_name,
             )
 
         base_kwargs = metadata.model_dump()
@@ -265,9 +297,11 @@ def _process_biomechanics_recordings(
                 "biomech_file_name": biomechanics_file.name,
                 "biomech_sync_left_time": biomech_sync_left_time,
                 "biomech_sync_right_time": biomech_sync_right_time,
-                "pass_data": event_data_df if maneuver == "walk" else None,
+                "pass_data": (
+                    event_data_df if maneuver == "walk" else None
+                ),
                 "data": recording_df,
-            }
+            },
         )
 
         recordings.append(BiomechanicsRecording(**base_kwargs))
@@ -325,9 +359,11 @@ def import_walk_biomechanics(
                 f"No valid recording columns found in sheet "
                 f"'{speed_sheet_name}' for {speed} walk maneuver"
             )
-        pass_number, _ = _extract_walking_pass_info(
-            clean_uid(unique_ids_raw[0])
+        uid_meta = get_biomechanics_metadata(
+            clean_uid(unique_ids_raw[0]),
+            study_name=resolved_study_name,
         )
+        pass_number = uid_meta.pass_number
     except ValueError as e:
         raise ValueError(
             f"Failed to extract pass_number for {speed} walking: {e}"
@@ -480,182 +516,23 @@ def import_biomechanics_recordings(
         )
 
 
-def _extract_maneuver_from_uid(
+
+def get_biomechanics_metadata(
     uid: str,
-) -> Literal["walk", "sit_to_stand", "flexion_extension"]:
-    """Extract and normalize maneuver type from unique identifier.
-
-    Converts from UID format (CamelCase) to Pydantic format (snake_case).
-    E.g., "Walk" -> "walk", "SitToStand" -> "sit_to_stand"
-
-    Args:
-        uid: The unique identifier string
-
-    Returns:
-        Normalized maneuver name
-
-    Raises:
-        ValueError: If maneuver is not recognized
-    """
-    maneuver_raw = ''.join(filter(str.isalpha, uid.split("_")[1])).lower()
-
-    # Map raw extracted maneuver to valid Pydantic Literal values
-    maneuver_map: dict[
-        str,
-        Literal["walk", "sit_to_stand", "flexion_extension"],
-    ] = {
-        "walk": "walk",
-        "sittostand": "sit_to_stand",
-        "sitstand": "sit_to_stand",  # Common abbreviation
-        "flexext": "flexion_extension",
-    }
-
-    maneuver = maneuver_map.get(maneuver_raw)
-    if maneuver is None:
-        raise ValueError(f"Unknown maneuver '{maneuver_raw}' in UID")
-
-    return maneuver
-
-
-def _extract_walking_pass_info(
-    uid: str,
-) -> tuple[int, Literal["slow", "normal", "fast"]]:
-    """Extract pass number and speed from walking maneuver UID.
-
-    Args:
-        uid: The unique identifier string (e.g., "Study123_Walk0001_NSP1_Filt")
-
-    Returns:
-        Tuple of (pass_number, speed)
-
-    Raises:
-        ValueError: If pass info cannot be parsed or speed not recognized
-    """
-    speed_map: dict[str, Literal["slow", "normal", "fast"]] = {
-        "SS": "slow",
-        "NS": "normal",
-        "FS": "fast",
-    }
-
-    pass_info = uid.split("_")[-2]
-    pass_number = int(''.join(filter(str.isdigit, pass_info)))
-
-    pass_speed_code = ''.join(filter(str.isalpha, pass_info))
-    pass_speed_code = pass_speed_code.replace("P", "").upper()
-
-    speed = speed_map.get(pass_speed_code)
-    if speed is None:
-        raise ValueError(
-            (
-                f"Unknown speed code '{pass_speed_code}' in pass info "
-                f"'{pass_info}'"
-            )
-        )
-
-    return pass_number, speed
-
-
-def get_biomechanics_metadata(uid: str) -> BiomechanicsFileMetadata:
+    study_name: str = "AOA",
+) -> BiomechanicsFileMetadata:
     """Extract maneuver, pass number, speed, and study info from a UID.
 
-    UID Format: Study{StudyID}_{Maneuver}{StudyNum}_{SpeedPass}_{Filt}
-    Example: Study123_Walk0001_NSP1_Filt
+    Delegates to the study-specific config for all UID parsing logic.
+
+    Args:
+        uid: Cleaned UID (no V3D path prefix or .c3d extension).
+        study_name: Study identifier for config dispatch.
+
+    Returns:
+        BiomechanicsFileMetadata with all parsed fields.
     """
+    from src.studies import get_study_config
 
-    maneuver = _extract_maneuver_from_uid(uid)
+    return get_study_config(study_name).parse_biomechanics_uid(uid)
 
-    study_token = uid.split("_")[0]
-    study_alpha = "".join(filter(str.isalpha, study_token)) or None
-    study_digits = "".join(filter(str.isdigit, study_token))
-    study_id = int(study_digits) if study_digits else None
-
-    if maneuver != "walk":
-        return BiomechanicsFileMetadata(
-            scripted_maneuver=maneuver,
-            speed=None,
-            pass_number=None,
-            biomech_file_name=uid,
-            study=study_alpha,
-            study_id=study_id,
-        )
-
-    pass_number, speed = _extract_walking_pass_info(uid)
-
-    return BiomechanicsFileMetadata(
-        scripted_maneuver="walk",
-        speed=speed,
-        pass_number=pass_number,
-        biomech_file_name=uid,
-        study=study_alpha,
-        study_id=study_id,
-    )
-
-
-def get_non_walk_start_time(
-    event_data_df: pd.DataFrame,
-    maneuver: Literal["sit_to_stand", "flexion_extension"],
-) -> pd.Timedelta:
-    """Get the start time for a non-walking maneuver from the event data
-    DataFrame."""
-
-    maneuver_map: dict[
-        Literal["sit_to_stand", "flexion_extension"],
-        str
-    ] = {
-        "sit_to_stand": "Movement Start",
-        "flexion_extension": "Movement Start",
-    }
-
-    start_event_name = maneuver_map[maneuver]
-
-    start_time_entries = event_data_df.loc[
-        event_data_df["Event Info"].str.strip() == start_event_name,
-        "Time (sec)",
-    ].dropna().tolist()
-    if not start_time_entries:
-        raise ValueError(f"No start time found for {start_event_name}")
-    start_time = pd.to_timedelta(start_time_entries[0], "s")
-    return start_time
-
-
-def get_walking_start_time(
-    event_data_df: pd.DataFrame,
-    pass_number: int,
-    pass_speed: Literal["slow", "normal", "fast"],
-) -> pd.Timedelta:
-    """Get the start time for a walking pass from the event data DataFrame."""
-
-    # Convert the pass_speed back to the prefix used in
-    # the "Event Info" column
-    pass_speed_prefix = {
-        "slow": "SS",
-        "normal": "NS",
-        "fast": "FS",
-    }
-    pass_speed_prefix = pass_speed_prefix[pass_speed]
-    # Get all the "Time (sec)" entries from the event data for this speed
-    # by matching the speed to the starting chars of the "Event Info" column
-    sub_event_data_df = event_data_df.loc[
-        event_data_df["Event Info"].str.startswith(
-            pass_speed_prefix,
-            na=False,
-        )
-    ].copy()
-    # Remove the speed prefix and the space following it from
-    # the "Event Info" column
-    prefix_len = len(pass_speed_prefix) + 1
-    sub_event_data_df["Event Info"] = (
-        sub_event_data_df["Event Info"].str[prefix_len:].str.strip()
-    )
-    # Get the start time by searching the "Event Info" column
-    # for the start event name
-    start_event_name = f"Pass {pass_number} Start"
-
-    start_time_entries = sub_event_data_df.loc[
-        sub_event_data_df["Event Info"].str.strip() == start_event_name,
-        "Time (sec)",
-    ].dropna().tolist()
-    if not start_time_entries:
-        raise ValueError(f"No start time found for {start_event_name}")
-    start_time = pd.to_timedelta(start_time_entries[0], "s")
-    return start_time

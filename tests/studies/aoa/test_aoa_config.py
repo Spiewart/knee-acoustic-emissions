@@ -1,7 +1,8 @@
 """Tests for AOA study configuration.
 
 Verifies that AOAConfig correctly implements all study-specific conventions:
-directory names, file patterns, sheet names, and participant ID parsing.
+directory names, file patterns, sheet names, participant ID parsing,
+UID parsing, and speed code mappings.
 """
 
 from pathlib import Path
@@ -144,3 +145,97 @@ class TestAOAFindExcelFile:
         (tmp_path / "AOA1011_Biomechanics_Full_Set.xlsx").touch()
         found = config.find_excel_file(tmp_path, "AOA1011_Biomechanics_Full_Set")
         assert found is not None
+
+
+class TestAOAWalkEventSheetBaseName:
+    """Verify walk event sheet base name."""
+
+    def test_base_name(self, config):
+        assert config.get_walk_event_sheet_base_name() == "Walk0001"
+
+
+class TestAOASpeedCodeMap:
+    """Verify speed code mapping."""
+
+    def test_all_speeds_present(self, config):
+        speed_map = config.get_speed_code_map()
+        assert speed_map == {
+            "slow": "SS",
+            "normal": "NS",
+            "fast": "FS",
+        }
+
+
+class TestAOASpeedEventKeywords:
+    """Verify speed event section header keywords."""
+
+    def test_all_keywords_present(self, config):
+        keywords = config.get_speed_event_keywords()
+        assert keywords == {
+            "Slow Speed": "SS",
+            "Normal Speed": "NS",
+            "Medium Speed": "NS",
+            "Fast Speed": "FS",
+        }
+
+    def test_medium_maps_to_normal(self, config):
+        keywords = config.get_speed_event_keywords()
+        assert keywords["Medium Speed"] == keywords["Normal Speed"]
+
+
+class TestAOAParseBiomechanicsUid:
+    """Verify UID parsing into BiomechanicsFileMetadata."""
+
+    def test_walk_uid(self, config):
+        meta = config.parse_biomechanics_uid(
+            "AOA1011_Walk0001_NSP1_Filt",
+        )
+        assert meta.scripted_maneuver == "walk"
+        assert meta.speed == "normal"
+        assert meta.pass_number == 1
+        assert meta.study == "AOA"
+        assert meta.study_id == 1011
+
+    def test_walk_slow_pass2(self, config):
+        meta = config.parse_biomechanics_uid(
+            "AOA1011_Walk0001_SSP2_Filt",
+        )
+        assert meta.scripted_maneuver == "walk"
+        assert meta.speed == "slow"
+        assert meta.pass_number == 2
+
+    def test_walk_fast_pass3(self, config):
+        meta = config.parse_biomechanics_uid(
+            "AOA1011_Walk0001_FSP3_Filt",
+        )
+        assert meta.scripted_maneuver == "walk"
+        assert meta.speed == "fast"
+        assert meta.pass_number == 3
+
+    def test_sit_to_stand_uid(self, config):
+        meta = config.parse_biomechanics_uid(
+            "AOA1011_SitToStand0001_Filt",
+        )
+        assert meta.scripted_maneuver == "sit_to_stand"
+        assert meta.speed is None
+        assert meta.pass_number is None
+
+    def test_flexion_extension_uid(self, config):
+        meta = config.parse_biomechanics_uid(
+            "AOA1011_FlexExt0001_Filt",
+        )
+        assert meta.scripted_maneuver == "flexion_extension"
+        assert meta.speed is None
+        assert meta.pass_number is None
+
+    def test_invalid_maneuver_raises(self, config):
+        with pytest.raises(ValueError, match="Unknown maneuver"):
+            config.parse_biomechanics_uid(
+                "AOA1011_Jumping0001_Filt",
+            )
+
+    def test_invalid_speed_code_raises(self, config):
+        with pytest.raises(ValueError, match="Unknown speed code"):
+            config.parse_biomechanics_uid(
+                "AOA1011_Walk0001_XSP1_Filt",
+            )
