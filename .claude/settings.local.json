@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python:*)",
+      "Bash($HOME/.virtualenvs/kae_processing/bin/python:*)",
+      "Bash(/Users/spiewart/.virtualenvs/kae_processing/bin/python -m pytest:*)",
+      "Bash(git status:*)",
+      "Bash(sort:*)",
+      "Bash(/Users/spiewart/.virtualenvs/kae_processing/bin/ruff format:*)",
+      "Bash(/Users/spiewart/.virtualenvs/kae_processing/bin/mypy:*)",
+      "Bash(/Users/spiewart/.virtualenvs/kae_processing/bin/pre-commit install:*)",
+      "Bash(/Users/spiewart/.virtualenvs/kae_processing/bin/pre-commit run:*)",
+      "Bash(/Users/spiewart/.virtualenvs/kae_processing/bin/python:*)",
+      "Bash(find:*)",
+      "Bash(xargs:*)",
+      "Bash(git log:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git checkout:*)",
+      "Bash(git merge:*)",
+      "Bash(git push:*)",
+      "Bash(git branch:*)",
+      "Bash(chmod:*)"
+    ]
+  }
+}

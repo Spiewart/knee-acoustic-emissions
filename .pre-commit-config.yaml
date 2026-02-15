@@ -12,6 +12,17 @@ repos:
       - id: check-added-large-files
         args: ["--maxkb=500"]
 
+  # ── TODO.md patches auto-update ──────────────────────────────────
+  - repo: local
+    hooks:
+      - id: update-todo-patches
+        name: update TODO.md patches
+        entry: python scripts/update_todo_patches.py
+        language: python
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
+
   # ── Ruff linter + formatter (replaces flake8, isort, black) ───────
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.15.1

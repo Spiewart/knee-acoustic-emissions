@@ -656,6 +656,29 @@ Key rules:
 
 ---
 
+## TODO.md — Patch & Feature Tracking
+
+The project maintains a [`TODO.md`](TODO.md) in the root with two sections:
+
+### Patches (auto-generated)
+- Regenerated on every commit by the pre-commit hook `scripts/update_todo_patches.py`
+- Scans `src/` for `# TODO` comments and `NotImplementedError` stubs
+- Groups items by top-level module with clickable file/line links
+- **Do not edit this section manually** — changes will be overwritten
+
+### Features (manually curated)
+- Tracks planned modules, sub-modules, and capabilities not yet built
+- Updated by the developer or AI assistant during conversations
+- When a feature request is discussed but tabled for later, add it here
+- Includes study configs (preOA, SMoCK), ML pipeline items, and DB-backed analysis
+
+### For AI Assistants
+- When the user tables a feature or idea for later, add it to the Features section
+- When resolving a TODO in source code, the Patches section auto-updates on next commit
+- Reference `TODO.md` items when planning work to avoid duplicating known issues
+
+---
+
 ## Change Documentation & Changelog
 
 ### Overview
