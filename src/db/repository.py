@@ -6,11 +6,10 @@ abstracting away SQLAlchemy session management and query construction.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from typing import List, Optional
+from datetime import UTC, datetime
 
 from sqlalchemy import and_, select, update
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session
 
 from src.db.models import (
     AudioProcessingRecord,
@@ -20,16 +19,16 @@ from src.db.models import (
     StudyRecord,
     SynchronizationRecord,
 )
-
-# Type alias: most code works with StudyRecord (the enrollment).
-# ParticipantRecord is the permanent identity anchor.
-_StudyOrParticipant = StudyRecord
 from src.metadata import (
     AudioProcessing,
     BiomechanicsImport,
     MovementCycle,
     Synchronization,
 )
+
+# Type alias: most code works with StudyRecord (the enrollment).
+# ParticipantRecord is the permanent identity anchor.
+_StudyOrParticipant = StudyRecord
 
 
 class Repository:
@@ -79,9 +78,7 @@ class Repository:
     # Participant + Study operations
     # ========================================================================
 
-    def get_or_create_participant(
-        self, study_name: str, participant_number: int
-    ) -> StudyRecord:
+    def get_or_create_participant(self, study_name: str, participant_number: int) -> StudyRecord:
         """Get or create a study enrollment for a participant.
 
         Ensures a permanent ParticipantRecord exists, then gets or creates
@@ -129,8 +126,8 @@ class Repository:
     def save_audio_processing(
         self,
         audio: AudioProcessing,
-        pkl_file_path: Optional[str] = None,
-        biomechanics_import_id: Optional[int] = None,
+        pkl_file_path: str | None = None,
+        biomechanics_import_id: int | None = None,
     ) -> AudioProcessingRecord:
         """Save or update audio processing record.
 
@@ -166,9 +163,7 @@ class Repository:
             record = existing
         else:
             # Create new record
-            record = self._create_audio_processing_record(
-                study.id, audio, pkl_file_path, biomechanics_import_id
-            )
+            record = self._create_audio_processing_record(study.id, audio, pkl_file_path, biomechanics_import_id)
             self.session.add(record)
 
         self.session.flush()
@@ -178,8 +173,8 @@ class Repository:
         self,
         study_id: int,
         audio: AudioProcessing,
-        pkl_file_path: Optional[str],
-        biomechanics_import_id: Optional[int] = None,
+        pkl_file_path: str | None,
+        biomechanics_import_id: int | None = None,
     ) -> AudioProcessingRecord:
         """Create new audio processing record from Pydantic model.
 
@@ -262,7 +257,7 @@ class Repository:
         self,
         record: AudioProcessingRecord,
         audio: AudioProcessing,
-        pkl_file_path: Optional[str],
+        pkl_file_path: str | None,
     ) -> None:
         """Update existing audio processing record.
 
@@ -320,7 +315,7 @@ class Repository:
         record.processing_status = audio.processing_status
         record.error_message = audio.error_message
         record.duration_seconds = audio.duration_seconds
-        record.updated_at = datetime.now(timezone.utc)
+        record.updated_at = datetime.now(UTC)
 
     # ========================================================================
     # Biomechanics import operations
@@ -329,7 +324,7 @@ class Repository:
     def save_biomechanics_import(
         self,
         biomech: BiomechanicsImport,
-        audio_processing_id: Optional[int] = None,
+        audio_processing_id: int | None = None,
     ) -> BiomechanicsImportRecord:
         """Save or update biomechanics import record.
 
@@ -362,7 +357,7 @@ class Repository:
             existing.processing_status = biomech.processing_status
             if audio_processing_id is not None:
                 existing.audio_processing_id = audio_processing_id
-            existing.updated_at = datetime.now(timezone.utc)
+            existing.updated_at = datetime.now(UTC)
             record = existing
         else:
             # Create new record
@@ -399,7 +394,7 @@ class Repository:
         sync: Synchronization,
         audio_processing_id: int,
         biomechanics_import_id: int,
-        sync_file_path: Optional[str] = None,
+        sync_file_path: str | None = None,
     ) -> SynchronizationRecord:
         """Save or update synchronization record.
 
@@ -451,7 +446,7 @@ class Repository:
         sync: Synchronization,
         audio_processing_id: int,
         biomechanics_import_id: int,
-        sync_file_path: Optional[str],
+        sync_file_path: str | None,
     ) -> SynchronizationRecord:
         """Create new synchronization record from Pydantic model.
 
@@ -476,8 +471,8 @@ class Repository:
             speed=sync.speed,
             bio_left_sync_time=sync.bio_left_sync_time,
             bio_right_sync_time=sync.bio_right_sync_time,
-            bio_sync_offset=getattr(sync, 'bio_sync_offset', None),
-            aligned_sync_time=getattr(sync, 'aligned_sync_time', None),
+            bio_sync_offset=getattr(sync, "bio_sync_offset", None),
+            aligned_sync_time=getattr(sync, "aligned_sync_time", None),
             sync_method=sync.sync_method,
             consensus_methods=sync.consensus_methods,
             consensus_time=getattr(sync, "consensus_time", None),
@@ -485,17 +480,17 @@ class Repository:
             onset_time=sync.onset_time,
             freq_time=sync.freq_time,
             method_agreement_span=getattr(sync, "method_agreement_span", None),
-            stomp_detection_methods=getattr(sync, 'stomp_detection_methods', None),
-            selected_stomp_method=getattr(sync, 'selected_stomp_method', None),
-            bio_selected_sync_time=getattr(sync, 'bio_selected_sync_time', None),
-            contra_bio_selected_sync_time=getattr(sync, 'contra_bio_selected_sync_time', None),
-            audio_sync_time_left=getattr(sync, 'audio_sync_time_left', None),
-            audio_sync_time_right=getattr(sync, 'audio_sync_time_right', None),
-            audio_sync_offset=getattr(sync, 'audio_sync_offset', None),
-            audio_selected_sync_time=getattr(sync, 'audio_selected_sync_time', None),
-            contra_audio_selected_sync_time=getattr(sync, 'contra_audio_selected_sync_time', None),
-            audio_visual_sync_time=getattr(sync, 'audio_visual_sync_time', None),
-            audio_visual_sync_time_contralateral=getattr(sync, 'audio_visual_sync_time_contralateral', None),
+            stomp_detection_methods=getattr(sync, "stomp_detection_methods", None),
+            selected_stomp_method=getattr(sync, "selected_stomp_method", None),
+            bio_selected_sync_time=getattr(sync, "bio_selected_sync_time", None),
+            contra_bio_selected_sync_time=getattr(sync, "contra_bio_selected_sync_time", None),
+            audio_sync_time_left=getattr(sync, "audio_sync_time_left", None),
+            audio_sync_time_right=getattr(sync, "audio_sync_time_right", None),
+            audio_sync_offset=getattr(sync, "audio_sync_offset", None),
+            audio_selected_sync_time=getattr(sync, "audio_selected_sync_time", None),
+            contra_audio_selected_sync_time=getattr(sync, "contra_audio_selected_sync_time", None),
+            audio_visual_sync_time=getattr(sync, "audio_visual_sync_time", None),
+            audio_visual_sync_time_contralateral=getattr(sync, "audio_visual_sync_time_contralateral", None),
             sync_file_name=sync.sync_file_name,
             sync_file_path=sync_file_path,
             sync_duration=sync.sync_duration,
@@ -512,10 +507,18 @@ class Repository:
             periodic_artifact_detected_ch3=getattr(sync, "periodic_artifact_detected_ch3", False),
             periodic_artifact_detected_ch4=getattr(sync, "periodic_artifact_detected_ch4", False),
             periodic_artifact_segments=self._flatten_intervals(getattr(sync, "periodic_artifact_segments", None)),
-            periodic_artifact_segments_ch1=self._flatten_intervals(getattr(sync, "periodic_artifact_segments_ch1", None)),
-            periodic_artifact_segments_ch2=self._flatten_intervals(getattr(sync, "periodic_artifact_segments_ch2", None)),
-            periodic_artifact_segments_ch3=self._flatten_intervals(getattr(sync, "periodic_artifact_segments_ch3", None)),
-            periodic_artifact_segments_ch4=self._flatten_intervals(getattr(sync, "periodic_artifact_segments_ch4", None)),
+            periodic_artifact_segments_ch1=self._flatten_intervals(
+                getattr(sync, "periodic_artifact_segments_ch1", None)
+            ),
+            periodic_artifact_segments_ch2=self._flatten_intervals(
+                getattr(sync, "periodic_artifact_segments_ch2", None)
+            ),
+            periodic_artifact_segments_ch3=self._flatten_intervals(
+                getattr(sync, "periodic_artifact_segments_ch3", None)
+            ),
+            periodic_artifact_segments_ch4=self._flatten_intervals(
+                getattr(sync, "periodic_artifact_segments_ch4", None)
+            ),
             processing_date=sync.processing_date,
             processing_status=sync.processing_status,
             error_message=sync.error_message,
@@ -525,7 +528,7 @@ class Repository:
         self,
         record: SynchronizationRecord,
         sync: Synchronization,
-        sync_file_path: Optional[str],
+        sync_file_path: str | None,
     ) -> None:
         """Update existing synchronization record.
 
@@ -541,8 +544,8 @@ class Repository:
         record.speed = sync.speed
         record.bio_left_sync_time = sync.bio_left_sync_time
         record.bio_right_sync_time = sync.bio_right_sync_time
-        record.bio_sync_offset = getattr(sync, 'bio_sync_offset', None)
-        record.aligned_sync_time = getattr(sync, 'aligned_sync_time', None)
+        record.bio_sync_offset = getattr(sync, "bio_sync_offset", None)
+        record.aligned_sync_time = getattr(sync, "aligned_sync_time", None)
         record.sync_method = sync.sync_method
         record.consensus_methods = sync.consensus_methods
         record.consensus_time = getattr(sync, "consensus_time", None)
@@ -550,27 +553,27 @@ class Repository:
         record.onset_time = sync.onset_time
         record.freq_time = sync.freq_time
         record.method_agreement_span = getattr(sync, "method_agreement_span", None)
-        if hasattr(sync, 'stomp_detection_methods'):
+        if hasattr(sync, "stomp_detection_methods"):
             record.stomp_detection_methods = sync.stomp_detection_methods
-        if hasattr(sync, 'selected_stomp_method'):
+        if hasattr(sync, "selected_stomp_method"):
             record.selected_stomp_method = sync.selected_stomp_method
-        if hasattr(sync, 'bio_selected_sync_time'):
+        if hasattr(sync, "bio_selected_sync_time"):
             record.bio_selected_sync_time = sync.bio_selected_sync_time
-        if hasattr(sync, 'contra_bio_selected_sync_time'):
+        if hasattr(sync, "contra_bio_selected_sync_time"):
             record.contra_bio_selected_sync_time = sync.contra_bio_selected_sync_time
-        if hasattr(sync, 'audio_sync_time_left'):
+        if hasattr(sync, "audio_sync_time_left"):
             record.audio_sync_time_left = sync.audio_sync_time_left
-        if hasattr(sync, 'audio_sync_time_right'):
+        if hasattr(sync, "audio_sync_time_right"):
             record.audio_sync_time_right = sync.audio_sync_time_right
-        if hasattr(sync, 'audio_sync_offset'):
+        if hasattr(sync, "audio_sync_offset"):
             record.audio_sync_offset = sync.audio_sync_offset
-        if hasattr(sync, 'audio_selected_sync_time'):
+        if hasattr(sync, "audio_selected_sync_time"):
             record.audio_selected_sync_time = sync.audio_selected_sync_time
-        if hasattr(sync, 'contra_audio_selected_sync_time'):
+        if hasattr(sync, "contra_audio_selected_sync_time"):
             record.contra_audio_selected_sync_time = sync.contra_audio_selected_sync_time
-        if hasattr(sync, 'audio_visual_sync_time'):
+        if hasattr(sync, "audio_visual_sync_time"):
             record.audio_visual_sync_time = sync.audio_visual_sync_time
-        if hasattr(sync, 'audio_visual_sync_time_contralateral'):
+        if hasattr(sync, "audio_visual_sync_time_contralateral"):
             record.audio_visual_sync_time_contralateral = sync.audio_visual_sync_time_contralateral
         record.sync_file_name = sync.sync_file_name
         record.sync_file_path = sync_file_path or record.sync_file_path
@@ -589,15 +592,23 @@ class Repository:
         record.periodic_artifact_detected_ch3 = getattr(sync, "periodic_artifact_detected_ch3", False)
         record.periodic_artifact_detected_ch4 = getattr(sync, "periodic_artifact_detected_ch4", False)
         record.periodic_artifact_segments = self._flatten_intervals(getattr(sync, "periodic_artifact_segments", None))
-        record.periodic_artifact_segments_ch1 = self._flatten_intervals(getattr(sync, "periodic_artifact_segments_ch1", None))
-        record.periodic_artifact_segments_ch2 = self._flatten_intervals(getattr(sync, "periodic_artifact_segments_ch2", None))
-        record.periodic_artifact_segments_ch3 = self._flatten_intervals(getattr(sync, "periodic_artifact_segments_ch3", None))
-        record.periodic_artifact_segments_ch4 = self._flatten_intervals(getattr(sync, "periodic_artifact_segments_ch4", None))
+        record.periodic_artifact_segments_ch1 = self._flatten_intervals(
+            getattr(sync, "periodic_artifact_segments_ch1", None)
+        )
+        record.periodic_artifact_segments_ch2 = self._flatten_intervals(
+            getattr(sync, "periodic_artifact_segments_ch2", None)
+        )
+        record.periodic_artifact_segments_ch3 = self._flatten_intervals(
+            getattr(sync, "periodic_artifact_segments_ch3", None)
+        )
+        record.periodic_artifact_segments_ch4 = self._flatten_intervals(
+            getattr(sync, "periodic_artifact_segments_ch4", None)
+        )
         record.processing_date = sync.processing_date
         record.processing_status = sync.processing_status
         record.error_message = sync.error_message
         record.processing_date = sync.processing_date
-        record.updated_at = datetime.now(timezone.utc)
+        record.updated_at = datetime.now(UTC)
 
     # ========================================================================
     # Movement cycle operations
@@ -607,9 +618,9 @@ class Repository:
         self,
         cycle: MovementCycle,
         audio_processing_id: int,
-        biomechanics_import_id: Optional[int] = None,
-        synchronization_id: Optional[int] = None,
-        cycles_file_path: Optional[str] = None,
+        biomechanics_import_id: int | None = None,
+        synchronization_id: int | None = None,
+        cycles_file_path: str | None = None,
     ) -> MovementCycleRecord:
         """Save or update movement cycle record.
 
@@ -669,9 +680,9 @@ class Repository:
         study_id: int,
         cycle: MovementCycle,
         audio_processing_id: int,
-        biomechanics_import_id: Optional[int],
-        synchronization_id: Optional[int],
-        cycles_file_path: Optional[str],
+        biomechanics_import_id: int | None,
+        synchronization_id: int | None,
+        cycles_file_path: str | None,
     ) -> MovementCycleRecord:
         """Create new movement cycle record from Pydantic model.
 
@@ -755,9 +766,9 @@ class Repository:
         self,
         record: MovementCycleRecord,
         cycle: MovementCycle,
-        biomechanics_import_id: Optional[int],
-        synchronization_id: Optional[int],
-        cycles_file_path: Optional[str],
+        biomechanics_import_id: int | None,
+        synchronization_id: int | None,
+        cycles_file_path: str | None,
     ) -> None:
         """Update existing movement cycle record.
 
@@ -829,7 +840,7 @@ class Repository:
             record.biomechanics_import_id = biomechanics_import_id
         if synchronization_id is not None:
             record.synchronization_id = synchronization_id
-        record.updated_at = datetime.now(timezone.utc)
+        record.updated_at = datetime.now(UTC)
 
     # ========================================================================
     # Soft-delete: deactivate records not seen in latest processing run
@@ -874,19 +885,19 @@ class Repository:
                 update(model)
                 .where(
                     and_(
-                        model.study_id == study_id,
-                        model.knee == knee,
-                        model.maneuver == maneuver,
-                        model.is_active == True,  # noqa: E712 — SQLAlchemy requires ==
+                        model.study_id == study_id,  # type: ignore[attr-defined]
+                        model.knee == knee,  # type: ignore[attr-defined]
+                        model.maneuver == maneuver,  # type: ignore[attr-defined]
+                        model.is_active == True,  # type: ignore[attr-defined]
                     )
                 )
-                .values(is_active=False, updated_at=datetime.now(timezone.utc))
+                .values(is_active=False, updated_at=datetime.now(UTC))
             )
             if seen_ids:
-                stmt = stmt.where(model.id.not_in(seen_ids))
+                stmt = stmt.where(model.id.not_in(seen_ids))  # type: ignore[attr-defined]
 
             result = self.session.execute(stmt)
-            counts[table_name] = result.rowcount
+            counts[table_name] = result.rowcount  # type: ignore[attr-defined]
 
         self.session.flush()
         return counts
@@ -897,12 +908,12 @@ class Repository:
 
     def get_audio_processing_records(
         self,
-        study_name: Optional[str] = None,
-        participant_number: Optional[int] = None,
-        maneuver: Optional[str] = None,
-        knee: Optional[str] = None,
+        study_name: str | None = None,
+        participant_number: int | None = None,
+        maneuver: str | None = None,
+        knee: str | None = None,
         include_inactive: bool = False,
-    ) -> List[AudioProcessingRecord]:
+    ) -> list[AudioProcessingRecord]:
         """Query audio processing records with filters.
 
         Args:
@@ -917,7 +928,7 @@ class Repository:
         """
         query = select(AudioProcessingRecord).join(StudyRecord)
         if not include_inactive:
-            query = query.where(AudioProcessingRecord.is_active == True)  # noqa: E712
+            query = query.where(AudioProcessingRecord.is_active == True)
 
         if study_name:
             query = query.where(StudyRecord.study_name == study_name)
@@ -932,12 +943,12 @@ class Repository:
 
     def get_biomechanics_imports(
         self,
-        study_name: Optional[str] = None,
-        participant_number: Optional[int] = None,
-        maneuver: Optional[str] = None,
-        knee: Optional[str] = None,
+        study_name: str | None = None,
+        participant_number: int | None = None,
+        maneuver: str | None = None,
+        knee: str | None = None,
         include_inactive: bool = False,
-    ) -> List[BiomechanicsImportRecord]:
+    ) -> list[BiomechanicsImportRecord]:
         """Query biomechanics import records with filters.
 
         Args:
@@ -952,7 +963,7 @@ class Repository:
         """
         query = select(BiomechanicsImportRecord).join(StudyRecord)
         if not include_inactive:
-            query = query.where(BiomechanicsImportRecord.is_active == True)  # noqa: E712
+            query = query.where(BiomechanicsImportRecord.is_active == True)
 
         if study_name:
             query = query.where(StudyRecord.study_name == study_name)
@@ -967,12 +978,12 @@ class Repository:
 
     def get_synchronization_records(
         self,
-        study_name: Optional[str] = None,
-        participant_number: Optional[int] = None,
-        maneuver: Optional[str] = None,
-        knee: Optional[str] = None,
+        study_name: str | None = None,
+        participant_number: int | None = None,
+        maneuver: str | None = None,
+        knee: str | None = None,
         include_inactive: bool = False,
-    ) -> List[SynchronizationRecord]:
+    ) -> list[SynchronizationRecord]:
         """Query synchronization records with filters.
 
         Args:
@@ -987,7 +998,7 @@ class Repository:
         """
         query = select(SynchronizationRecord).join(StudyRecord)
         if not include_inactive:
-            query = query.where(SynchronizationRecord.is_active == True)  # noqa: E712
+            query = query.where(SynchronizationRecord.is_active == True)
 
         if study_name:
             query = query.where(StudyRecord.study_name == study_name)
@@ -1002,12 +1013,12 @@ class Repository:
 
     def get_movement_cycle_records(
         self,
-        study_name: Optional[str] = None,
-        participant_number: Optional[int] = None,
-        maneuver: Optional[str] = None,
-        knee: Optional[str] = None,
+        study_name: str | None = None,
+        participant_number: int | None = None,
+        maneuver: str | None = None,
+        knee: str | None = None,
         include_inactive: bool = False,
-    ) -> List[MovementCycleRecord]:
+    ) -> list[MovementCycleRecord]:
         """Query movement cycle records with filters.
 
         Args:
@@ -1022,7 +1033,7 @@ class Repository:
         """
         query = select(MovementCycleRecord).join(StudyRecord)
         if not include_inactive:
-            query = query.where(MovementCycleRecord.is_active == True)  # noqa: E712
+            query = query.where(MovementCycleRecord.is_active == True)
 
         if study_name:
             query = query.where(StudyRecord.study_name == study_name)

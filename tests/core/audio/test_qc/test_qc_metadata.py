@@ -37,6 +37,7 @@ def test_qc_fields_present_in_audio_sheet(
     assert "QC Signal Dropout" in audio_sheet.columns
     assert "QC Continuous Artifact" in audio_sheet.columns
 
+
 class TestQCNotPassedValidator:
     """Test the populate_qc_not_passed_fields validator."""
 
@@ -106,9 +107,7 @@ class TestQCNotPassedValidator:
 
     def test_qc_not_passed_true_when_overall_fail_segments_exist(self):
         """Test that qc_not_passed is True when qc_fail_segments has intervals."""
-        audio = self._create_audio_processing(
-            qc_fail_segments=[(1.0, 2.5), (5.0, 6.0)]
-        )
+        audio = self._create_audio_processing(qc_fail_segments=[(1.0, 2.5), (5.0, 6.0)])
         assert audio.qc_not_passed is True
         # Per-mic should still be False since they're empty
         assert audio.qc_not_passed_mic_1 is False
@@ -118,9 +117,7 @@ class TestQCNotPassedValidator:
 
     def test_qc_not_passed_mic_1_true_when_ch1_fail_segments_exist(self):
         """Test that qc_not_passed_mic_1 is True when qc_fail_segments_ch1 has intervals."""
-        audio = self._create_audio_processing(
-            qc_fail_segments_ch1=[(1.0, 2.5)]
-        )
+        audio = self._create_audio_processing(qc_fail_segments_ch1=[(1.0, 2.5)])
         assert audio.qc_not_passed is False
         assert audio.qc_not_passed_mic_1 is True
         assert audio.qc_not_passed_mic_2 is False
@@ -129,9 +126,7 @@ class TestQCNotPassedValidator:
 
     def test_qc_not_passed_mic_3_true_when_ch3_fail_segments_exist(self):
         """Test that qc_not_passed_mic_3 is True when qc_fail_segments_ch3 has intervals."""
-        audio = self._create_audio_processing(
-            qc_fail_segments_ch3=[(2.0, 3.0), (7.0, 8.5)]
-        )
+        audio = self._create_audio_processing(qc_fail_segments_ch3=[(2.0, 3.0), (7.0, 8.5)])
         assert audio.qc_not_passed is False
         assert audio.qc_not_passed_mic_1 is False
         assert audio.qc_not_passed_mic_2 is False
@@ -303,11 +298,13 @@ class TestQCMetadataExcelIntegration:
 
         # Save to Excel
         with pd.ExcelWriter(temp_excel_path, engine="openpyxl") as writer:
-            df = pd.DataFrame([
-                audio1.to_dict(),
-                audio2.to_dict(),
-                audio3.to_dict(),
-            ])
+            df = pd.DataFrame(
+                [
+                    audio1.to_dict(),
+                    audio2.to_dict(),
+                    audio3.to_dict(),
+                ]
+            )
             df.to_excel(writer, sheet_name="Audio", index=False)
 
         # Load from Excel
@@ -452,6 +449,7 @@ class TestQCStatusIntegrationWithProcessing:
         assert audio.qc_not_passed_mic_2 is False
         assert audio.qc_not_passed_mic_3 is False
         assert audio.qc_not_passed_mic_4 is False
+
 
 class TestDetailedQCFieldsExport:
     """Test that detailed QC fields are exported and persist through Excel cycles."""

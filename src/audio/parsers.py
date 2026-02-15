@@ -1,8 +1,8 @@
-import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
+import logging
 from pathlib import Path
-from typing import Any, Literal, Optional
+from typing import Any, Literal
 
 import pandas as pd
 
@@ -17,11 +17,11 @@ class MicSetupData:
 
     file_name: str
     serial_number: str
-    file_size_mb: Optional[float]
-    timestamp: Optional[str]
-    date_of_recording: Optional[datetime]
+    file_size_mb: float | None
+    timestamp: str | None
+    date_of_recording: datetime | None
     microphones: dict[int, MicrophonePosition]
-    notes: Optional[str]
+    notes: str | None
 
 
 @dataclass
@@ -75,14 +75,10 @@ def extract_knee_metadata_table(
         Cleaned DataFrame with proper column names and data rows
     """
     # Get the sub-DataFrame for the desired knee (13 rows of data)
-    knee_metadata_df: pd.DataFrame = metadata_df.iloc[
-        table_start_row: table_start_row + 13, :
-    ].reset_index(drop=True)
+    knee_metadata_df: pd.DataFrame = metadata_df.iloc[table_start_row : table_start_row + 13, :].reset_index(drop=True)
     # Rename the columns based on the values in the first row
     knee_metadata_df.columns = knee_metadata_df.iloc[0]
-    knee_metadata_df: pd.DataFrame = knee_metadata_df.drop(
-        knee_metadata_df.index[0]
-    ).reset_index(drop=True)
+    knee_metadata_df = knee_metadata_df.drop(knee_metadata_df.index[0]).reset_index(drop=True)
     return knee_metadata_df
 
 
@@ -108,12 +104,20 @@ def normalize_maneuver_column(
     """
     # Strip any "-" characters from the "Maneuvers" column
     df["Maneuvers"] = df["Maneuvers"].str.replace(
-        "-", " ", regex=False,
+        "-",
+        " ",
+        regex=False,
     )
     # Eliminate anything more than a single space
-    df["Maneuvers"] = df["Maneuvers"].str.replace(
-        r"\s+", " ", regex=True,
-    ).str.strip()
+    df["Maneuvers"] = (
+        df["Maneuvers"]
+        .str.replace(
+            r"\s+",
+            " ",
+            regex=True,
+        )
+        .str.strip()
+    )
     # Fill in the Maneuvers column downwards to associate each maneuver
     # with the subsequent three empty rows for microphones 2-4
     df["Maneuvers"] = df["Maneuvers"].ffill()
@@ -138,11 +142,7 @@ def filter_by_maneuver(
         Empty if no rows match.
     """
     maneuver_search_str: str = scripted_maneuver.replace("_", " ")
-    return df.loc[
-        df["Maneuvers"].str.contains(
-            maneuver_search_str, case=False, na=False
-        )
-    ]
+    return df.loc[df["Maneuvers"].str.contains(maneuver_search_str, case=False, na=False)]
 
 
 def extract_microphone_positions(
@@ -180,7 +180,7 @@ def extract_microphone_positions(
 
 def extract_file_name_and_notes(
     maneuver_df: pd.DataFrame,
-) -> tuple[str, Optional[str]]:
+) -> tuple[str, str | None]:
     """Extract file name and notes from maneuver metadata.
 
     Args:
@@ -230,15 +230,16 @@ def _cross_validate_sheets(
     mismatches: list[LegendMismatch] = []
 
     # Compare file names (both non-empty)
-    if acoustic_notes_file_name and mic_setup.file_name:
-        if acoustic_notes_file_name != mic_setup.file_name:
-            mismatches.append(LegendMismatch(
+    if acoustic_notes_file_name and mic_setup.file_name and acoustic_notes_file_name != mic_setup.file_name:
+        mismatches.append(
+            LegendMismatch(
                 knee=knee,
                 maneuver=maneuver,
                 field="file_name",
                 acoustic_notes_value=acoustic_notes_file_name,
                 mic_setup_value=mic_setup.file_name,
-            ))
+            )
+        )
 
     # Compare microphone positions only when the Acoustic Notes sheet
     # has actually been filled in (non-empty file name).  Without a file
@@ -251,21 +252,25 @@ def _cross_validate_sheets(
         ms_mic = mic_setup.microphones.get(mic_num)
         if an_mic and ms_mic:
             if an_mic.patellar_position != ms_mic.patellar_position:
-                mismatches.append(LegendMismatch(
-                    knee=knee,
-                    maneuver=maneuver,
-                    field=f"mic_{mic_num}_patellar_position",
-                    acoustic_notes_value=an_mic.patellar_position,
-                    mic_setup_value=ms_mic.patellar_position,
-                ))
+                mismatches.append(
+                    LegendMismatch(
+                        knee=knee,
+                        maneuver=maneuver,
+                        field=f"mic_{mic_num}_patellar_position",
+                        acoustic_notes_value=an_mic.patellar_position,
+                        mic_setup_value=ms_mic.patellar_position,
+                    )
+                )
             if an_mic.laterality != ms_mic.laterality:
-                mismatches.append(LegendMismatch(
-                    knee=knee,
-                    maneuver=maneuver,
-                    field=f"mic_{mic_num}_laterality",
-                    acoustic_notes_value=an_mic.laterality,
-                    mic_setup_value=ms_mic.laterality,
-                ))
+                mismatches.append(
+                    LegendMismatch(
+                        knee=knee,
+                        maneuver=maneuver,
+                        field=f"mic_{mic_num}_laterality",
+                        acoustic_notes_value=an_mic.laterality,
+                        mic_setup_value=ms_mic.laterality,
+                    )
+                )
 
     return mismatches
 
@@ -307,40 +312,40 @@ def get_acoustics_metadata(
     _ext = Path(metadata_file_path).suffix.lower()
     _engine = "openpyxl" if _ext == ".xlsx" else "xlrd" if _ext == ".xls" else None
     metadata_df: pd.DataFrame = pd.read_excel(
-        metadata_file_path, sheet_name=acoustics_sheet_name, header=None,
+        metadata_file_path,
+        sheet_name=acoustics_sheet_name,
+        header=None,
         engine=_engine,
     )
 
     table_start_row: int = find_knee_table_start(metadata_df, knee)
-    knee_metadata_df: pd.DataFrame = extract_knee_metadata_table(
-        metadata_df, table_start_row
-    )
-    knee_metadata_df: pd.DataFrame = normalize_maneuver_column(knee_metadata_df)
-    maneuver_metadata_df: pd.DataFrame = filter_by_maneuver(
-        knee_metadata_df, scripted_maneuver
-    )
+    knee_metadata_df: pd.DataFrame = extract_knee_metadata_table(metadata_df, table_start_row)
+    knee_metadata_df = normalize_maneuver_column(knee_metadata_df)
+    maneuver_metadata_df: pd.DataFrame = filter_by_maneuver(knee_metadata_df, scripted_maneuver)
     file_name, notes = extract_file_name_and_notes(maneuver_metadata_df)
-    microphones, microphone_notes = extract_microphone_positions(
-        maneuver_metadata_df
-    )
+    microphones, microphone_notes = extract_microphone_positions(maneuver_metadata_df)
 
     # --- Source 2: Study-specific fallback (e.g. Mic Setup for AOA) ---
-    mic_setup: Optional[MicSetupData] = None
+    mic_setup: MicSetupData | None = None
     mismatches: list[LegendMismatch] = []
 
     try:
         mic_setup = study_config.parse_legend_fallback(
-            metadata_file_path, scripted_maneuver, knee,
+            metadata_file_path,
+            scripted_maneuver,
+            knee,
         )
     except Exception as exc:
-        logger.warning(
-            f"Could not parse fallback legend from {metadata_file_path}: {exc}"
-        )
+        logger.warning(f"Could not parse fallback legend from {metadata_file_path}: {exc}")
 
     # --- Cross-validation ---
     if mic_setup is not None:
         mismatches = _cross_validate_sheets(
-            file_name, microphones, mic_setup, knee, scripted_maneuver,
+            file_name,
+            microphones,
+            mic_setup,
+            knee,
+            scripted_maneuver,
         )
         for mm in mismatches:
             logger.warning(
@@ -356,24 +361,16 @@ def get_acoustics_metadata(
 
     if mic_setup is not None:
         if not file_name and mic_setup.file_name:
-            logger.info(
-                f"Fallback: using file_name from fallback sheet: "
-                f"'{mic_setup.file_name}'"
-            )
+            logger.info(f"Fallback: using file_name from fallback sheet: '{mic_setup.file_name}'")
             file_name = mic_setup.file_name
 
-        if mic_setup.microphones and (
-            not microphones or not acoustic_notes_filled
-        ):
+        if mic_setup.microphones and (not microphones or not acoustic_notes_filled):
             if not acoustic_notes_filled:
                 logger.info(
-                    "Acoustic Notes sheet is unfilled (no file name); "
-                    "using microphone positions from Mic Setup sheet."
+                    "Acoustic Notes sheet is unfilled (no file name); using microphone positions from Mic Setup sheet."
                 )
             else:
-                logger.info(
-                    "Fallback: using microphone positions from fallback sheet."
-                )
+                logger.info("Fallback: using microphone positions from fallback sheet.")
             microphones = mic_setup.microphones
 
     # --- Build extra fields from fallback ---
@@ -388,15 +385,11 @@ def get_acoustics_metadata(
         knee=knee,
         study=study_name,
         study_id=0,
-        file_name=file_name,
+        audio_file_name=file_name,
         microphones=microphones,
         audio_serial_number=serial_number,
         date_of_recording=date_of_recording if date_of_recording else datetime.min,
-        audio_notes=(
-            "; ".join(microphone_notes.values())
-            if microphone_notes
-            else notes
-        ),
+        audio_notes=("; ".join(microphone_notes.values()) if microphone_notes else notes),
     )
 
     return acoustics_metadata, mismatches

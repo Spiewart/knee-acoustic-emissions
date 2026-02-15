@@ -7,16 +7,44 @@ from src.analysis.models import (
 
 
 def test_prepare_features_and_labels_basic_mean():
-    features_df = pd.DataFrame([
-        {"study_id": 101, "knee": "R", "maneuver": "walk", "speed": "slow", "cycle_index": 0, "feat_a": 1.0, "feat_b": 2.0},
-        {"study_id": 101, "knee": "L", "maneuver": "walk", "speed": "slow", "cycle_index": 1, "feat_a": 3.0, "feat_b": 4.0},
-        {"study_id": 102, "knee": "R", "maneuver": "walk", "speed": "fast", "cycle_index": 0, "feat_a": 5.0, "feat_b": 6.0},
-    ])
+    features_df = pd.DataFrame(
+        [
+            {
+                "study_id": 101,
+                "knee": "R",
+                "maneuver": "walk",
+                "speed": "slow",
+                "cycle_index": 0,
+                "feat_a": 1.0,
+                "feat_b": 2.0,
+            },
+            {
+                "study_id": 101,
+                "knee": "L",
+                "maneuver": "walk",
+                "speed": "slow",
+                "cycle_index": 1,
+                "feat_a": 3.0,
+                "feat_b": 4.0,
+            },
+            {
+                "study_id": 102,
+                "knee": "R",
+                "maneuver": "walk",
+                "speed": "fast",
+                "cycle_index": 0,
+                "feat_a": 5.0,
+                "feat_b": 6.0,
+            },
+        ]
+    )
 
-    outcome_df = pd.DataFrame({
-        "Study ID": [101, 102],
-        "Knee Pain": ["Yes", "No"],
-    })
+    outcome_df = pd.DataFrame(
+        {
+            "Study ID": [101, 102],
+            "Knee Pain": ["Yes", "No"],
+        }
+    )
 
     X, y = prepare_features_and_labels(
         features_df=features_df,
@@ -34,19 +62,23 @@ def test_prepare_features_and_labels_basic_mean():
 
 
 def test_prepare_knee_level_features_single_sheet():
-    features_df = pd.DataFrame([
-        {"study_id": 101, "knee": "R", "maneuver": "walk", "speed": "slow", "cycle_index": 0, "feat": 1.0},
-        {"study_id": 101, "knee": "R", "maneuver": "walk", "speed": "slow", "cycle_index": 1, "feat": 3.0},
-        {"study_id": 101, "knee": "L", "maneuver": "walk", "speed": "slow", "cycle_index": 0, "feat": 5.0},
-        {"study_id": 102, "knee": "R", "maneuver": "walk", "speed": "fast", "cycle_index": 0, "feat": 7.0},
-        {"study_id": 102, "knee": "L", "maneuver": "walk", "speed": "fast", "cycle_index": 0, "feat": 9.0},
-    ])
+    features_df = pd.DataFrame(
+        [
+            {"study_id": 101, "knee": "R", "maneuver": "walk", "speed": "slow", "cycle_index": 0, "feat": 1.0},
+            {"study_id": 101, "knee": "R", "maneuver": "walk", "speed": "slow", "cycle_index": 1, "feat": 3.0},
+            {"study_id": 101, "knee": "L", "maneuver": "walk", "speed": "slow", "cycle_index": 0, "feat": 5.0},
+            {"study_id": 102, "knee": "R", "maneuver": "walk", "speed": "fast", "cycle_index": 0, "feat": 7.0},
+            {"study_id": 102, "knee": "L", "maneuver": "walk", "speed": "fast", "cycle_index": 0, "feat": 9.0},
+        ]
+    )
 
-    outcome_df = pd.DataFrame({
-        "Study ID": [101, 101, 102, 102],
-        "Knee": ["Right", "Left", "Right", "Left"],
-        "Varus Thrust": ["Yes", "No", "No", "Yes"],
-    })
+    outcome_df = pd.DataFrame(
+        {
+            "Study ID": [101, 101, 102, 102],
+            "Knee": ["Right", "Left", "Right", "Left"],
+            "Varus Thrust": ["Yes", "No", "No", "Yes"],
+        }
+    )
 
     X, y = prepare_knee_level_features_and_labels(
         features_df=features_df,
@@ -71,14 +103,15 @@ def test_prepare_knee_level_features_single_sheet():
     assert X.loc[(102, "L"), "feat"].iloc[0] == 9.0
 
 
-
 def test_prepare_knee_level_features_per_knee_sheets():
-    features_df = pd.DataFrame([
-        {"study_id": 201, "knee": "R", "maneuver": "walk", "speed": "slow", "cycle_index": 0, "feat": 2.0},
-        {"study_id": 201, "knee": "L", "maneuver": "walk", "speed": "slow", "cycle_index": 0, "feat": 4.0},
-        {"study_id": 202, "knee": "R", "maneuver": "walk", "speed": "fast", "cycle_index": 0, "feat": 6.0},
-        {"study_id": 202, "knee": "L", "maneuver": "walk", "speed": "fast", "cycle_index": 0, "feat": 8.0},
-    ])
+    features_df = pd.DataFrame(
+        [
+            {"study_id": 201, "knee": "R", "maneuver": "walk", "speed": "slow", "cycle_index": 0, "feat": 2.0},
+            {"study_id": 201, "knee": "L", "maneuver": "walk", "speed": "slow", "cycle_index": 0, "feat": 4.0},
+            {"study_id": 202, "knee": "R", "maneuver": "walk", "speed": "fast", "cycle_index": 0, "feat": 6.0},
+            {"study_id": 202, "knee": "L", "maneuver": "walk", "speed": "fast", "cycle_index": 0, "feat": 8.0},
+        ]
+    )
 
     outcome_df_per_knee = {
         "R": pd.DataFrame({"Study ID": [201, 202], "KOOS": ["Yes", "No"]}),

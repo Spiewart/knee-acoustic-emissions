@@ -13,8 +13,8 @@ Note: These tests use the sync entrypoint since the fake_participant_directory
 fixture creates pre-built pkl files, not real .bin files.
 """
 
-import re
 from pathlib import Path
+import re
 
 import pandas as pd
 import pytest
@@ -36,17 +36,14 @@ class TestFullPipelineSyncSheetPopulation:
         participant_dir = fake_participant_directory["participant_dir"]
 
         # Process with sync entrypoint (pkl files already created by fixture)
-        success = process_participant(
-            participant_dir,
-            entrypoint="sync",
-            knee="left",
-            maneuver="fe"
-        )
+        success = process_participant(participant_dir, entrypoint="sync", knee="left", maneuver="fe")
 
         assert success, "Processing should succeed"
 
         # Check the Excel file
-        log_path = participant_dir / "Left Knee" / "Flexion-Extension" / "processing_log_1011_left_flexion_extension.xlsx"
+        log_path = (
+            participant_dir / "Left Knee" / "Flexion-Extension" / "processing_log_1011_left_flexion_extension.xlsx"
+        )
         assert log_path.exists(), f"Processing log not found at {log_path}"
 
         # Read Synchronization sheet
@@ -80,16 +77,13 @@ class TestFullPipelineSyncSheetPopulation:
         """Cycle extraction statistics should be populated in Synchronization sheet."""
         participant_dir = fake_participant_directory["participant_dir"]
 
-        success = process_participant(
-            participant_dir,
-            entrypoint="sync",
-            knee="left",
-            maneuver="fe"
-        )
+        success = process_participant(participant_dir, entrypoint="sync", knee="left", maneuver="fe")
 
         assert success
 
-        log_path = participant_dir / "Left Knee" / "Flexion-Extension" / "processing_log_1011_left_flexion_extension.xlsx"
+        log_path = (
+            participant_dir / "Left Knee" / "Flexion-Extension" / "processing_log_1011_left_flexion_extension.xlsx"
+        )
         sync_df = pd.read_excel(log_path, sheet_name="Synchronization")
 
         # Cycle statistics columns
@@ -98,7 +92,7 @@ class TestFullPipelineSyncSheetPopulation:
             "Clean Cycles",
             "Outlier Cycles",
             "Mean Cycle Duration",
-            "Median Cycle Duration"
+            "Median Cycle Duration",
         ]
 
         for col in cycle_stat_columns:
@@ -108,7 +102,7 @@ class TestFullPipelineSyncSheetPopulation:
 
         # If cycles stage ran, we should have non-zero cycle counts
         # (assuming test data has cycles)
-        total_cycles = row.get("Total Cycles Extracted", 0)
+        row.get("Total Cycles Extracted", 0)
 
         # This is currently expected to fail because cycles stage is not implemented
         # Once implemented, we should see:
@@ -125,19 +119,17 @@ class TestFullPipelineMovementCyclesSheetPopulation:
         """Movement Cycles sheet should contain individual cycle records."""
         participant_dir = fake_participant_directory["participant_dir"]
 
-        success = process_participant(
-            participant_dir,
-            entrypoint="sync",
-            knee="left",
-            maneuver="fe"
-        )
+        success = process_participant(participant_dir, entrypoint="sync", knee="left", maneuver="fe")
 
         assert success
 
-        log_path = participant_dir / "Left Knee" / "Flexion-Extension" / "processing_log_1011_left_flexion_extension.xlsx"
+        log_path = (
+            participant_dir / "Left Knee" / "Flexion-Extension" / "processing_log_1011_left_flexion_extension.xlsx"
+        )
 
         # Check which sheets exist
         import openpyxl
+
         wb = openpyxl.load_workbook(log_path, read_only=True)
         sheet_names = wb.sheetnames
         wb.close()
@@ -172,12 +164,7 @@ class TestFullPipelineWalkingMultiplePassesAndSpeeds:
         """Walking should create separate sync records for each speed/pass combination."""
         participant_dir = fake_participant_directory["participant_dir"]
 
-        success = process_participant(
-            participant_dir,
-            entrypoint="sync",
-            knee="left",
-            maneuver="walk"
-        )
+        success = process_participant(participant_dir, entrypoint="sync", knee="left", maneuver="walk")
 
         assert success
 
@@ -194,12 +181,12 @@ class TestFullPipelineWalkingMultiplePassesAndSpeeds:
 
         # Should have speed and pass_number columns
         if "Speed" in sync_df.columns:
-            speeds = sync_df["Speed"].dropna().unique()
+            sync_df["Speed"].dropna().unique()
             # assert len(speeds) > 1, "Should have multiple speeds"
 
         # Verify Pass Number column exists for walking
         if "Pass Number" in sync_df.columns:
-            pass_numbers = sync_df["Pass Number"].dropna().unique()
+            sync_df["Pass Number"].dropna().unique()
             # Once implemented: assert len(pass_numbers) > 0
 
     def test_walking_cycle_stats_per_sync_record(self, fake_participant_directory, use_test_db, monkeypatch):
@@ -290,23 +277,20 @@ class TestSyncDataValidation:
         pkl_file = outputs_dir / "test_with_freq.pkl"
 
         # Create minimal audio DataFrame
-        audio_df = pd.DataFrame({
-            "tt": [0.0, 0.021, 0.042],
-            "ch1": [0.1, 0.2, 0.3],
-            "ch2": [0.1, 0.2, 0.3],
-            "ch3": [0.1, 0.2, 0.3],
-            "ch4": [0.1, 0.2, 0.3],
-        })
+        audio_df = pd.DataFrame(
+            {
+                "tt": [0.0, 0.021, 0.042],
+                "ch1": [0.1, 0.2, 0.3],
+                "ch2": [0.1, 0.2, 0.3],
+                "ch3": [0.1, 0.2, 0.3],
+                "ch4": [0.1, 0.2, 0.3],
+            }
+        )
         audio_df.to_pickle(pkl_file)
 
         # NO Motion Capture directory - sync should fail gracefully
 
-        success = process_participant(
-            participant_dir,
-            entrypoint="bin",
-            knee="left",
-            maneuver="walk"
-        )
+        process_participant(participant_dir, entrypoint="bin", knee="left", maneuver="walk")
 
         # Processing may succeed but sync stage should note missing biomechanics
         log_path = walk_dir / "processing_log_1013_left_walk.xlsx"
@@ -317,7 +301,7 @@ class TestSyncDataValidation:
             # If no biomechanics, sync times should be None (NaN in pandas)
             # NOT 0.0 which implies "synced at time zero"
             if "Aligned Sync Time" in sync_df.columns:
-                aligned_sync_time = sync_df.iloc[0].get("Aligned Sync Time")
+                sync_df.iloc[0].get("Aligned Sync Time")
                 # Should be NaN, not 0
                 # Note: This test documents expected behavior once proper None handling is implemented
 
@@ -339,19 +323,16 @@ class TestFullPipelineEndToEnd:
         # Process all maneuvers with sync entrypoint (test data has pre-built pkl files)
         for knee in ["left", "right"]:
             for maneuver in ["walk", "fe", "sts"]:
-                success = process_participant(
-                    participant_dir,
-                    entrypoint="sync",
-                    knee=knee,
-                    maneuver=maneuver
-                )
+                process_participant(participant_dir, entrypoint="sync", knee=knee, maneuver=maneuver)
 
                 # Determine knee directory name
                 knee_dir_name = f"{knee.title()} Knee"
                 maneuver_names = {"walk": "Walking", "fe": "Flexion-Extension", "sts": "Sit-to-Stand"}
                 maneuver_dir_name = maneuver_names[maneuver]
 
-                log_path = participant_dir / knee_dir_name / maneuver_dir_name / f"processing_log_1011_{knee}_{maneuver}.xlsx"
+                log_path = (
+                    participant_dir / knee_dir_name / maneuver_dir_name / f"processing_log_1011_{knee}_{maneuver}.xlsx"
+                )
 
                 # If sync failed (test data incompatibility), skip this combination
                 if not log_path.exists():
@@ -372,6 +353,7 @@ class TestFullPipelineEndToEnd:
 
             # Validate Cycles sheet exists (or skip gracefully if no cycles extracted)
             import openpyxl
+
             wb = openpyxl.load_workbook(log_path, read_only=True)
             sheet_names = wb.sheetnames
             wb.close()
@@ -379,4 +361,4 @@ class TestFullPipelineEndToEnd:
             if "Cycles" in sheet_names:
                 cycles_df = pd.read_excel(log_path, sheet_name="Cycles")
                 # Should have cycle data if sheet was created
-                assert len(cycles_df) >= 0, f"Cycles sheet should exist if created"
+                assert len(cycles_df) >= 0, "Cycles sheet should exist if created"

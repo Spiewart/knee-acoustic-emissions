@@ -2,8 +2,8 @@
 """Quick test to verify database models work with PostgreSQL."""
 
 import os
-import sys
 from pathlib import Path
+import sys
 
 import pytest
 from sqlalchemy import create_engine
@@ -35,13 +35,10 @@ def test_models_with_postgres():
 
     engine = create_engine(db_url, echo=False)
     try:
-        with engine.connect() as conn:
+        with engine.connect():
             pass
     except Exception as e:
-        pytest.skip(
-            f"PostgreSQL not available: {e}\n"
-            "Make sure PostgreSQL is running and AE_DATABASE_URL is set."
-        )
+        pytest.skip(f"PostgreSQL not available: {e}\nMake sure PostgreSQL is running and AE_DATABASE_URL is set.")
 
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)

@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -38,13 +38,13 @@ def export_channels_to_csv(pkl_path: str | Path) -> Path:
     try:
         df = pd.read_pickle(pkl)
     except (OSError, EOFError, ValueError) as exc:
-        raise ValueError(f"Failed to read pickle: {exc}")
+        raise ValueError(f"Failed to read pickle: {exc}") from exc
 
     # Normalize column names to lower-case
     df.columns = [str(c).lower() for c in df.columns]
 
     # Determine timestamps
-    ts: Optional[pd.Series]
+    ts: pd.Series | None
     if "tt" in df.columns:
         ts = pd.to_numeric(df["tt"], errors="coerce")
     else:
@@ -61,7 +61,7 @@ def export_channels_to_csv(pkl_path: str | Path) -> Path:
     return csv_out
 
 
-def _load_meta_json(meta_json: Optional[Path | str]) -> Optional[dict[str, Any]]:
+def _load_meta_json(meta_json: Path | str | None) -> dict[str, Any] | None:
     if not meta_json:
         return None
 
@@ -79,7 +79,7 @@ def _load_meta_json(meta_json: Optional[Path | str]) -> Optional[dict[str, Any]]
 def dump_channels_to_csv(
     df: pd.DataFrame,
     csv_out: Path,
-    meta_json: Optional[Path | str] = None,
+    meta_json: Path | str | None = None,
 ) -> None:
     """Export time and channel columns from a DataFrame to CSV.
 
@@ -100,7 +100,7 @@ def dump_channels_to_csv(
 
     if ts is None:
         meta = _load_meta_json(meta_json)
-        ts_values: Optional[np.ndarray] = None
+        ts_values: np.ndarray | None = None
 
         if meta:
             try:

@@ -1,6 +1,3 @@
-from src.db.repository import Repository
-
-
 def test_cycle_upsert_preserves_primary_key(
     repository,
     audio_processing_factory,
@@ -21,7 +18,9 @@ def test_cycle_upsert_preserves_primary_key(
         biomechanics_import_id=biomech_record.id,
         sync_file_name="AOA5001_walk_sync",
     )
-    sync_record = repository.save_synchronization(sync, audio_processing_id=audio_record.id, biomechanics_import_id=biomech_record.id)
+    sync_record = repository.save_synchronization(
+        sync, audio_processing_id=audio_record.id, biomechanics_import_id=biomech_record.id
+    )
 
     cycle = movement_cycle_factory(
         study="AOA",

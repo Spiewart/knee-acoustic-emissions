@@ -1,4 +1,5 @@
 """Extended tests for audio exporters: multi-channel and edge cases."""
+
 import json
 from pathlib import Path
 
@@ -12,12 +13,14 @@ def test_dump_channels_to_csv_multichannel_with_tt():
     """Test multi-channel export with tt column present."""
     N = 50
     tt = np.linspace(0.0, 1.0, N)
-    df = pd.DataFrame({
-        "tt": tt,
-        "ch1": np.sin(2 * np.pi * 1.0 * tt),
-        "ch2": np.cos(2 * np.pi * 2.0 * tt),
-        "ch3": np.sin(2 * np.pi * 0.5 * tt),
-    })
+    df = pd.DataFrame(
+        {
+            "tt": tt,
+            "ch1": np.sin(2 * np.pi * 1.0 * tt),
+            "ch2": np.cos(2 * np.pi * 2.0 * tt),
+            "ch3": np.sin(2 * np.pi * 0.5 * tt),
+        }
+    )
 
     csv_path = Path("/tmp/test_multi_out.csv")
     dump_channels_to_csv(df, csv_path)

@@ -8,17 +8,18 @@ Performs two-stage QC on synchronized recordings:
 import ast
 import dataclasses
 from dataclasses import dataclass, field
-import logging
-import re
 from datetime import datetime, timedelta
+import logging
 from pathlib import Path
-from typing import Any, Literal, NamedTuple, Optional
+import re
+from typing import Any, Literal
 
 import numpy as np
 import pandas as pd
 
 try:
     import matplotlib.pyplot as plt
+
     MATPLOTLIB_AVAILABLE = True
 except ImportError:
     MATPLOTLIB_AVAILABLE = False
@@ -47,13 +48,14 @@ class SyncQCOutput:
     clean_cycles: list[pd.DataFrame]
     outlier_cycles: list[pd.DataFrame]
     output_dir: Path
-    sync_periodic_results: Optional[dict] = None
+    sync_periodic_results: dict | None = None
     cycle_qc_results: list[CycleQCResult] = dataclasses.field(default_factory=list)
 
 
 @dataclass
 class _CycleResult:
     """Internal per-cycle QC result within synchronization QC."""
+
     cycle: pd.DataFrame
     index: int
     energy: float
@@ -72,10 +74,10 @@ class _CycleResult:
     sync_qc_pass: bool = True  # Cross-modal sync QC pass/fail
     # Per-channel artifact intervals (from detect_cycle_artifacts)
     intermittent_intervals: dict = field(default_factory=dict)  # {ch: [(start, end), ...]}
-    periodic_intervals: dict = field(default_factory=dict)      # trimmed periodic intervals
+    periodic_intervals: dict = field(default_factory=dict)  # trimmed periodic intervals
 
 
-def _find_participant_dir(path: Path) -> Optional[Path]:
+def _find_participant_dir(path: Path) -> Path | None:
     for candidate in (path, *path.parents):
         if candidate.name.startswith("#"):
             return candidate
@@ -92,7 +94,7 @@ def _extract_study_id_from_path(path: Path) -> int:
         return 0
 
 
-def _infer_knee_from_path(path: Path) -> Optional[str]:
+def _infer_knee_from_path(path: Path) -> str | None:
     for part in path.parts:
         normalized = part.lower().replace(" ", "")
         if normalized == "leftknee":
@@ -102,7 +104,7 @@ def _infer_knee_from_path(path: Path) -> Optional[str]:
     return None
 
 
-def _parse_pass_number(file_stem: str) -> Optional[int]:
+def _parse_pass_number(file_stem: str) -> int | None:
     """Extract pass number from sync filename stem.
 
     Supports both old format (Pass0001) and new short format (p1).
@@ -124,7 +126,7 @@ def _parse_pass_number(file_stem: str) -> Optional[int]:
     return None
 
 
-def _find_acoustics_bin(maneuver_dir: Path) -> Optional[Path]:
+def _find_acoustics_bin(maneuver_dir: Path) -> Path | None:
     bin_files = sorted(maneuver_dir.glob("*.bin"))
     if bin_files:
         return bin_files[0]
@@ -163,11 +165,11 @@ def _parse_acoustics_filename(file_name: str) -> tuple[str, int, datetime]:
 
 
 def _load_microphone_metadata(
-    participant_dir: Optional[Path],
+    participant_dir: Path | None,
     maneuver: str,
     knee: str,
     study_name: str = "AOA",
-) -> tuple[dict[int, MicrophonePosition], Optional[dict[int, str]]]:
+) -> tuple[dict[int, MicrophonePosition], dict[int, str] | None]:
     from src.studies import get_study_config
 
     study_config = get_study_config(study_name)
@@ -186,11 +188,11 @@ def _load_microphone_metadata(
 
             meta, _mismatches = get_acoustics_metadata(
                 metadata_file_path=str(legend_path),
-                scripted_maneuver=maneuver,
-                knee=knee,
+                scripted_maneuver=maneuver,  # type: ignore[arg-type]
+                knee=knee,  # type: ignore[arg-type]
                 study_name=study_name,
             )
-            return meta.microphones, meta.microphone_notes
+            return meta.microphones, meta.microphone_notes  # type: ignore[return-value]
         except Exception as exc:  # pragma: no cover - best-effort fallback
             logger.debug("Failed to read acoustic legend %s: %s", legend_path, exc)
 
@@ -198,7 +200,7 @@ def _load_microphone_metadata(
 
 
 def _find_biomech_file_name(
-    participant_dir: Optional[Path],
+    participant_dir: Path | None,
     study_id: int,
     study_name: str = "AOA",
 ) -> str:
@@ -218,7 +220,7 @@ def _find_biomech_file_name(
 def _build_cycle_metadata_context(
     synced_pkl_path: Path,
     maneuver: str,
-    speed: Optional[str],
+    speed: str | None,
     study_name: str = "AOA",
 ) -> dict[str, Any]:
     participant_dir = _find_participant_dir(synced_pkl_path)
@@ -229,10 +231,15 @@ def _build_cycle_metadata_context(
     audio_file_name = bin_file.name if bin_file else f"{synced_pkl_path.stem}.bin"
     serial, firmware_version, recording_date = _parse_acoustics_filename(audio_file_name)
     microphones, microphone_notes = _load_microphone_metadata(
-        participant_dir, maneuver, knee, study_name=study_name,
+        participant_dir,
+        maneuver,
+        knee,
+        study_name=study_name,
     )
     biomech_file_name = _find_biomech_file_name(
-        participant_dir, study_id, study_name=study_name,
+        participant_dir,
+        study_id,
+        study_name=study_name,
     )
     pass_number = _parse_pass_number(synced_pkl_path.stem) if maneuver == "walk" else None
     effective_speed = speed or ("medium" if maneuver == "walk" else None)
@@ -243,20 +250,17 @@ def _build_cycle_metadata_context(
     audio_sync_time = timedelta(0)
     biomech_sync_left_time = timedelta(0)
     biomech_sync_right_time = timedelta(0)
-    audio_qc_bad_intervals = []  # Bad intervals from raw audio QC (any mic)
-    audio_qc_bad_intervals_per_mic = {}  # Per-mic bad intervals
+    audio_qc_bad_intervals: list[tuple[float, float]] = []  # Bad intervals from raw audio QC (any mic)
+    audio_qc_bad_intervals_per_mic: dict[str, list[tuple[float, float]]] = {}  # Per-mic bad intervals
 
     if participant_dir:
         try:
-            from src.orchestration.processing_log import ManeuverProcessingLog
-
-            knee_label = "Left" if knee == "left" else "Right"
             maneuver_map = {
                 "walk": "walk",
                 "sit_to_stand": "sit_to_stand",
                 "flexion_extension": "flexion_extension",
             }
-            maneuver_key = maneuver_map.get(maneuver, maneuver)
+            maneuver_map.get(maneuver, maneuver)
 
             # TODO: Query database directly for audio QC intervals
             # For now, skip loading Excel logs
@@ -338,10 +342,10 @@ class MovementCycleQC:
     def __init__(
         self,
         maneuver: Literal["walk", "sit_to_stand", "flexion_extension"],
-        speed: Optional[Literal["slow", "medium", "fast"]] = None,
+        speed: Literal["slow", "medium", "fast"] | None = None,
         acoustic_threshold: float = 100.0,
         acoustic_channel: Literal["raw", "filtered"] = "filtered",
-        biomech_min_rom: Optional[float] = None,
+        biomech_min_rom: float | None = None,
     ):
         """Initialize QC analyzer.
 
@@ -516,14 +520,10 @@ class MovementCycleQC:
 
             if is_valid:
                 clean_cycles.append(cycle_df)
-                logger.debug(
-                    f"Cycle {cycle_idx}: CLEAN biomechanics ({reason})"
-                )
+                logger.debug(f"Cycle {cycle_idx}: CLEAN biomechanics ({reason})")
             else:
                 outlier_cycles.append(cycle_df)
-                logger.debug(
-                    f"Cycle {cycle_idx}: OUTLIER biomechanics ({reason})"
-                )
+                logger.debug(f"Cycle {cycle_idx}: OUTLIER biomechanics ({reason})")
 
         return clean_cycles, outlier_cycles
 
@@ -609,17 +609,17 @@ class MovementCycleQC:
 
 def perform_sync_qc(
     synced_pkl_path: Path,
-    output_dir: Optional[Path] = None,
-    maneuver: Optional[Literal["walk", "sit_to_stand", "flexion_extension"]] = None,
-    speed: Optional[Literal["slow", "medium", "fast"]] = None,
+    output_dir: Path | None = None,
+    maneuver: Literal["walk", "sit_to_stand", "flexion_extension"] | None = None,
+    speed: Literal["slow", "medium", "fast"] | None = None,
     acoustic_threshold: float = 100.0,
-    biomech_min_rom: Optional[float] = None,
+    biomech_min_rom: float | None = None,
     create_plots: bool = True,
-    bad_audio_segments: Optional[list[tuple[float, float]]] = None,
-    bad_audio_segments_per_mic: Optional[dict[str, list[tuple[float, float]]]] = None,
-    continuous_artifact_segments: Optional[list[tuple[float, float]]] = None,
-    continuous_artifact_segments_per_mic: Optional[dict[str, list[tuple[float, float]]]] = None,
-) -> tuple[list[pd.DataFrame], list[pd.DataFrame], Path, Optional[dict]]:
+    bad_audio_segments: list[tuple[float, float]] | None = None,
+    bad_audio_segments_per_mic: dict[str, list[tuple[float, float]]] | None = None,
+    continuous_artifact_segments: list[tuple[float, float]] | None = None,
+    continuous_artifact_segments_per_mic: dict[str, list[tuple[float, float]]] | None = None,
+) -> SyncQCOutput:
     """Perform complete QC pipeline on a synchronized recording.
 
     Args:
@@ -656,23 +656,32 @@ def perform_sync_qc(
 
     # Infer maneuver and speed if not provided
     if maneuver is None:
-        maneuver = _infer_maneuver_from_path(synced_pkl_path)
+        maneuver = _infer_maneuver_from_path(synced_pkl_path)  # type: ignore[assignment]
     if speed is None and maneuver == "walk":
-        speed = _infer_speed_from_path(synced_pkl_path)
+        speed = _infer_speed_from_path(synced_pkl_path)  # type: ignore[assignment]
 
     logger.info(f"Maneuver: {maneuver}, Speed: {speed}")
 
     # Extract movement cycles
+    assert maneuver is not None
     try:
         cycles = extract_movement_cycles(synced_df, maneuver=maneuver, speed=speed)
     except ValueError as exc:
         logger.warning("Skipping cycle extraction: %s", exc)
-        return [], [], output_dir or synced_pkl_path.parent, None
+        return SyncQCOutput(
+            clean_cycles=[],
+            outlier_cycles=[],
+            output_dir=output_dir or synced_pkl_path.parent,
+        )
     logger.info(f"Extracted {len(cycles)} movement cycles")
 
     if not cycles:
         logger.warning("No movement cycles extracted")
-        return [], [], output_dir or synced_pkl_path.parent, None
+        return SyncQCOutput(
+            clean_cycles=[],
+            outlier_cycles=[],
+            output_dir=output_dir or synced_pkl_path.parent,
+        )
 
     # Perform QC analysis (Stage 1: acoustic threshold, Stage 2: biomechanics)
     qc = MovementCycleQC(
@@ -694,19 +703,15 @@ def perform_sync_qc(
     )
     from src.audio.raw_qc import merge_artifact_intervals, trim_intervals_to_cycle
 
-    sync_periodic_per_ch = detect_periodic_artifacts_sync_level(
-        synced_df, cycles, time_col="tt"
-    )
-    sync_has_periodic = any(
-        bool(intervals) for intervals in sync_periodic_per_ch.values()
-    )
+    sync_periodic_per_ch = detect_periodic_artifacts_sync_level(synced_df, cycles, time_col="tt")
+    sync_has_periodic = any(bool(intervals) for intervals in sync_periodic_per_ch.values())
     logger.info(
         f"Sync-level periodic detection: {'detected' if sync_has_periodic else 'none'} "
         f"across {sum(1 for v in sync_periodic_per_ch.values() if v)} channel(s)"
     )
 
     # Build sync_periodic_results for caller to persist on Synchronization record
-    sync_periodic_results: Optional[dict] = None
+    sync_periodic_results: dict | None = None
     if sync_has_periodic:
         # Merge all channels for overall segments
         all_ch_intervals: list[tuple[float, float]] = []
@@ -756,21 +761,17 @@ def perform_sync_qc(
         # Trim continuous artifacts to this cycle's bounds (Phase D)
         trimmed_continuous_per_ch: dict[str, list[tuple[float, float]]] = {}
         for ch, intervals in continuous_per_ch.items():
-            trimmed_continuous_per_ch[ch] = trim_intervals_to_cycle(
-                intervals, cycle_start, cycle_end
-            )
+            trimmed_continuous_per_ch[ch] = trim_intervals_to_cycle(intervals, cycle_start, cycle_end)
 
         # Trim periodic artifacts to this cycle's bounds (Phase E.1 → E.2)
         trimmed_periodic_per_ch: dict[str, list[tuple[float, float]]] = {}
         for ch, intervals in sync_periodic_per_ch.items():
-            trimmed_periodic_per_ch[ch] = trim_intervals_to_cycle(
-                intervals, cycle_start, cycle_end
-            )
+            trimmed_periodic_per_ch[ch] = trim_intervals_to_cycle(intervals, cycle_start, cycle_end)
 
         # Run per-cycle artifact detection (Phase E.2)
         cycle_artifact_results = detect_cycle_artifacts(
             cycle_df,
-            maneuver=maneuver,
+            maneuver=maneuver,  # type: ignore[arg-type]
             continuous_intervals_per_ch=trimmed_continuous_per_ch,
             periodic_intervals_per_ch=trimmed_periodic_per_ch,
         )
@@ -778,29 +779,20 @@ def perform_sync_qc(
         # Extract per-channel intermittent intervals from cycle artifact results
         channels = ["ch1", "ch2", "ch3", "ch4"]
         intermittent_per_ch: dict[str, list[tuple[float, float]]] = {
-            ch: cycle_artifact_results.get(ch, {}).get("intermittent", [])
-            for ch in channels
+            ch: cycle_artifact_results.get(ch, {}).get("intermittent", []) for ch in channels
         }
 
         # Determine periodic noise detection from trimmed periodic
-        periodic_noise_detected = any(
-            bool(trimmed_periodic_per_ch.get(ch, []))
-            for ch in channels
-        )
+        periodic_noise_detected = any(bool(trimmed_periodic_per_ch.get(ch, [])) for ch in channels)
 
         # Determine intermittent noise detection
-        intermittent_detected = any(
-            bool(intermittent_per_ch.get(ch, []))
-            for ch in channels
-        )
+        intermittent_detected = any(bool(intermittent_per_ch.get(ch, [])) for ch in channels)
 
         # Audio QC fails if any cycle-level artifact detected
         audio_qc_pass = not (periodic_noise_detected or intermittent_detected)
 
         # Run sync quality validation (Phase F)
-        sync_valid, sync_quality_score, sync_reason = validate_sync_quality(
-            cycle_df, maneuver=maneuver
-        )
+        sync_valid, sync_quality_score, sync_reason = validate_sync_quality(cycle_df, maneuver=maneuver)  # type: ignore[arg-type]
 
         cycle_results.append(
             _CycleResult(
@@ -809,15 +801,19 @@ def perform_sync_qc(
                 energy=energy,
                 qc_pass=id(cycle_df) in clean_ids,
                 audio_qc_pass=audio_qc_pass,
-                audio_qc_mic_1_pass=not bool(intermittent_per_ch.get("ch1")) and not bool(trimmed_periodic_per_ch.get("ch1")),
-                audio_qc_mic_2_pass=not bool(intermittent_per_ch.get("ch2")) and not bool(trimmed_periodic_per_ch.get("ch2")),
-                audio_qc_mic_3_pass=not bool(intermittent_per_ch.get("ch3")) and not bool(trimmed_periodic_per_ch.get("ch3")),
-                audio_qc_mic_4_pass=not bool(intermittent_per_ch.get("ch4")) and not bool(trimmed_periodic_per_ch.get("ch4")),
+                audio_qc_mic_1_pass=not bool(intermittent_per_ch.get("ch1"))
+                and not bool(trimmed_periodic_per_ch.get("ch1")),
+                audio_qc_mic_2_pass=not bool(intermittent_per_ch.get("ch2"))
+                and not bool(trimmed_periodic_per_ch.get("ch2")),
+                audio_qc_mic_3_pass=not bool(intermittent_per_ch.get("ch3"))
+                and not bool(trimmed_periodic_per_ch.get("ch3")),
+                audio_qc_mic_4_pass=not bool(intermittent_per_ch.get("ch4"))
+                and not bool(trimmed_periodic_per_ch.get("ch4")),
                 periodic_noise_detected=periodic_noise_detected,
-                periodic_noise_ch1=bool(trimmed_periodic_per_ch.get('ch1', [])),
-                periodic_noise_ch2=bool(trimmed_periodic_per_ch.get('ch2', [])),
-                periodic_noise_ch3=bool(trimmed_periodic_per_ch.get('ch3', [])),
-                periodic_noise_ch4=bool(trimmed_periodic_per_ch.get('ch4', [])),
+                periodic_noise_ch1=bool(trimmed_periodic_per_ch.get("ch1", [])),
+                periodic_noise_ch2=bool(trimmed_periodic_per_ch.get("ch2", [])),
+                periodic_noise_ch3=bool(trimmed_periodic_per_ch.get("ch3", [])),
+                periodic_noise_ch4=bool(trimmed_periodic_per_ch.get("ch4", [])),
                 sync_quality_score=sync_quality_score,
                 sync_qc_pass=sync_valid,
                 intermittent_intervals=intermittent_per_ch,
@@ -827,7 +823,7 @@ def perform_sync_qc(
 
     metadata_context = _build_cycle_metadata_context(
         synced_pkl_path=synced_pkl_path,
-        maneuver=maneuver,
+        maneuver=maneuver,  # type: ignore[arg-type]
         speed=speed,
     )
 
@@ -1040,7 +1036,7 @@ def _infer_maneuver_from_path(path: Path) -> str:
         raise ValueError(f"Cannot infer maneuver from path: {path}")
 
 
-def _infer_speed_from_path(path: Path) -> Optional[str]:
+def _infer_speed_from_path(path: Path) -> str | None:
     """Infer walking speed from file path.
 
     Args:
@@ -1054,9 +1050,7 @@ def _infer_speed_from_path(path: Path) -> Optional[str]:
 
     if "slow" in path_str:
         return "slow"
-    elif "medium" in path_str:
-        return "medium"
-    elif "normal" in path_str:
+    elif "medium" in path_str or "normal" in path_str:
         return "medium"
     elif "fast" in path_str:
         return "fast"
@@ -1064,7 +1058,7 @@ def _infer_speed_from_path(path: Path) -> Optional[str]:
     return None
 
 
-def _infer_pass_number_from_path(path: Path) -> Optional[int]:
+def _infer_pass_number_from_path(path: Path) -> int | None:
     """Infer pass number from file path.
 
     Supports both old format (Pass0001) and new short format (p1).
@@ -1079,14 +1073,14 @@ def _infer_pass_number_from_path(path: Path) -> Optional[int]:
 
     path_str = str(path)
     # Try old format: "Pass0001", "Pass0002", etc.
-    match = re.search(r'Pass(\d{4})', path_str, re.IGNORECASE)
+    match = re.search(r"Pass(\d{4})", path_str, re.IGNORECASE)
     if match:
         try:
             return int(match.group(1))
         except ValueError:
             return None
     # Try new short format: "_p1_", "_p7_", "_p11"
-    match = re.search(r'_p(\d+)(?:_|\.)', path_str)
+    match = re.search(r"_p(\d+)(?:_|\.)", path_str)
     if match:
         try:
             return int(match.group(1))
@@ -1103,8 +1097,8 @@ def _save_qc_results(
     file_stem: str,
     create_plots: bool = True,
     *,
-    cycle_results: Optional[list[_CycleResult]] = None,
-    metadata_context: Optional[dict[str, Any]] = None,
+    cycle_results: list[_CycleResult] | None = None,
+    metadata_context: dict[str, Any] | None = None,
 ) -> list[CycleQCResult]:
     """Save QC results to disk and build in-memory CycleQCResult objects.
 
@@ -1177,35 +1171,37 @@ def _save_qc_results(
             )
 
         # Build in-memory CycleQCResult for downstream consumption
-        qc_results.append(CycleQCResult(
-            cycle_index=result.index,
-            cycle_file=filename.name,
-            is_outlier=not is_clean,
-            acoustic_energy=float(result.energy),
-            biomechanics_qc_pass=not (not is_clean),  # outlier ↔ biomech fail
-            sync_qc_pass=result.sync_qc_pass,
-            sync_quality_score=result.sync_quality_score,
-            audio_qc_pass=result.audio_qc_pass,
-            audio_qc_mic_1_pass=result.audio_qc_mic_1_pass,
-            audio_qc_mic_2_pass=result.audio_qc_mic_2_pass,
-            audio_qc_mic_3_pass=result.audio_qc_mic_3_pass,
-            audio_qc_mic_4_pass=result.audio_qc_mic_4_pass,
-            periodic_noise_detected=result.periodic_noise_detected,
-            periodic_noise_ch1=result.periodic_noise_ch1,
-            periodic_noise_ch2=result.periodic_noise_ch2,
-            periodic_noise_ch3=result.periodic_noise_ch3,
-            periodic_noise_ch4=result.periodic_noise_ch4,
-            intermittent_intervals_ch1=result.intermittent_intervals.get("ch1", []),
-            intermittent_intervals_ch2=result.intermittent_intervals.get("ch2", []),
-            intermittent_intervals_ch3=result.intermittent_intervals.get("ch3", []),
-            intermittent_intervals_ch4=result.intermittent_intervals.get("ch4", []),
-            periodic_intervals_ch1=result.periodic_intervals.get("ch1", []),
-            periodic_intervals_ch2=result.periodic_intervals.get("ch2", []),
-            periodic_intervals_ch3=result.periodic_intervals.get("ch3", []),
-            periodic_intervals_ch4=result.periodic_intervals.get("ch4", []),
-            pass_number=metadata_context.get("pass_number") if metadata_context else None,
-            speed=metadata_context.get("speed") if metadata_context else None,
-        ))
+        qc_results.append(
+            CycleQCResult(
+                cycle_index=result.index,
+                cycle_file=filename.name,
+                is_outlier=not is_clean,
+                acoustic_energy=float(result.energy),
+                biomechanics_qc_pass=bool(is_clean),  # outlier ↔ biomech fail
+                sync_qc_pass=result.sync_qc_pass,
+                sync_quality_score=result.sync_quality_score,
+                audio_qc_pass=result.audio_qc_pass,
+                audio_qc_mic_1_pass=result.audio_qc_mic_1_pass,
+                audio_qc_mic_2_pass=result.audio_qc_mic_2_pass,
+                audio_qc_mic_3_pass=result.audio_qc_mic_3_pass,
+                audio_qc_mic_4_pass=result.audio_qc_mic_4_pass,
+                periodic_noise_detected=result.periodic_noise_detected,
+                periodic_noise_ch1=result.periodic_noise_ch1,
+                periodic_noise_ch2=result.periodic_noise_ch2,
+                periodic_noise_ch3=result.periodic_noise_ch3,
+                periodic_noise_ch4=result.periodic_noise_ch4,
+                intermittent_intervals_ch1=result.intermittent_intervals.get("ch1", []),
+                intermittent_intervals_ch2=result.intermittent_intervals.get("ch2", []),
+                intermittent_intervals_ch3=result.intermittent_intervals.get("ch3", []),
+                intermittent_intervals_ch4=result.intermittent_intervals.get("ch4", []),
+                periodic_intervals_ch1=result.periodic_intervals.get("ch1", []),
+                periodic_intervals_ch2=result.periodic_intervals.get("ch2", []),
+                periodic_intervals_ch3=result.periodic_intervals.get("ch3", []),
+                periodic_intervals_ch4=result.periodic_intervals.get("ch4", []),
+                pass_number=metadata_context.get("pass_number") if metadata_context else None,
+                speed=metadata_context.get("speed") if metadata_context else None,
+            )
+        )
 
     logger.info(f"Saved {clean_counter} clean cycles and {outlier_counter} outliers")
     return qc_results
@@ -1337,8 +1333,8 @@ def main() -> int:
         type=float,
         default=None,
         help="Minimum knee angle range of motion (degrees) for valid biomechanics. "
-             "If not specified, uses maneuver-specific defaults: "
-             "walk=20°, sit_to_stand=40°, flexion_extension=40°",
+        "If not specified, uses maneuver-specific defaults: "
+        "walk=20°, sit_to_stand=40°, flexion_extension=40°",
     )
 
     parser.add_argument(
@@ -1416,9 +1412,9 @@ def main() -> int:
             logger.error(f"✗ Failed to process {synced_file}: {e}", exc_info=args.verbose)
             continue
 
-    logger.info(f"\n{'='*60}")
+    logger.info(f"\n{'=' * 60}")
     logger.info(f"Total: {total_clean} clean cycles, {total_outliers} outliers")
-    logger.info(f"{'='*60}")
+    logger.info(f"{'=' * 60}")
 
     return 0
 

@@ -1,13 +1,10 @@
 """Integration tests for QC versioning across the pipeline."""
 
-import pandas as pd
-import pytest
-
 from src.models import (
     AcousticsFileMetadata,
     BiomechanicsFileMetadata,
-    MicrophonePosition,
     FullMovementCycleMetadata,
+    MicrophonePosition,
 )
 from src.qc_versions import (
     AUDIO_QC_VERSION,

@@ -2,7 +2,7 @@
 
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional, Tuple
+from typing import Any, Literal
 
 import pandas as pd
 
@@ -33,13 +33,12 @@ def load_demographics(
 
     if outcome_column not in df.columns:
         raise ValueError(
-            f"Outcome column '{outcome_column}' not found in demographics. "
-            f"Available columns: {df.columns.tolist()}"
+            f"Outcome column '{outcome_column}' not found in demographics. Available columns: {df.columns.tolist()}"
         )
 
     # Clean up whitespace in string columns
-    for col in df.select_dtypes(include=['object']).columns:
-        df[col] = df[col].str.strip() if hasattr(df[col], 'str') else df[col]
+    for col in df.select_dtypes(include=["object"]).columns:
+        df[col] = df[col].str.strip() if hasattr(df[col], "str") else df[col]
 
     logger.info(f"Loaded demographics: {len(df)} participants")
     return df
@@ -48,8 +47,8 @@ def load_demographics(
 def load_movement_cycles(
     participant_dir: Path,
     cycle_type: Literal["clean", "outliers"] = "clean",
-    maneuvers: Optional[List[str]] = None,
-) -> List[Tuple[int, Path, Dict[str, Any], pd.DataFrame]]:
+    maneuvers: list[str] | None = None,
+) -> list[tuple[int, Path, dict[str, Any], pd.DataFrame]]:
     """Load movement cycle data for a participant.
 
     TODO: Reimplement as a DB query via the ORM (MovementCycleRecord).
@@ -74,8 +73,8 @@ def load_movement_cycles(
 def load_all_participant_cycles(
     project_dir: Path,
     cycle_type: Literal["clean", "outliers"] = "clean",
-    maneuvers: Optional[List[str]] = None,
-    participant_ids: Optional[List[str]] = None,
+    maneuvers: list[str] | None = None,
+    participant_ids: list[str] | None = None,
 ) -> pd.DataFrame:
     """Load movement cycles from all participants in a project.
 
@@ -103,9 +102,9 @@ def prepare_ml_dataset(
     project_dir: Path,
     outcome_column: str = "Knee Pain",
     cycle_type: Literal["clean", "outliers"] = "clean",
-    maneuvers: Optional[List[str]] = None,
-    participant_ids: Optional[List[int]] = None,
-) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    maneuvers: list[str] | None = None,
+    participant_ids: list[int] | None = None,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Prepare combined dataset for ML analysis.
 
     Args:
@@ -145,9 +144,6 @@ def prepare_ml_dataset(
     available_ids = set(demographics["Study ID"].values)
     cycles = cycles[cycles["study_id"].isin(available_ids)]
 
-    logger.info(
-        f"Prepared ML dataset: {len(demographics)} participants, "
-        f"{len(cycles)} cycles"
-    )
+    logger.info(f"Prepared ML dataset: {len(demographics)} participants, {len(cycles)} cycles")
 
     return demographics, cycles

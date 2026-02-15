@@ -41,11 +41,7 @@ def _make_walk_df(duration_s: float, fs: int) -> pd.DataFrame:
 def _make_fe_df(duration_s: float, fs: int, freq_hz: float = 0.5) -> pd.DataFrame:
     n = int(duration_s * fs)
     tt = np.linspace(0, duration_s, n)
-    knee = (
-        50
-        + 40 * np.sin(2 * np.pi * freq_hz * tt - np.pi / 2)
-        + np.random.randn(n) * 1.0
-    )
+    knee = 50 + 40 * np.sin(2 * np.pi * freq_hz * tt - np.pi / 2) + np.random.randn(n) * 1.0
     noise = np.random.randn(n) * 0.001
     return pd.DataFrame(
         {

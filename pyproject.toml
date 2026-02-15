@@ -1,0 +1,122 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "acoustic_emissions_processing"
+version = "0.1.0"
+requires-python = ">=3.12"
+description = "Tools for processing acoustic emissions data from biomechanical research"
+
+[tool.setuptools.packages.find]
+include = ["src", "src.*", "cli", "cli.*"]
+
+# =============================================================================
+# Ruff — replaces black, isort, flake8
+# =============================================================================
+
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+
+extend-exclude = [
+    "alembic/versions/",
+    ".claude/",
+    "scripts/",
+]
+
+[tool.ruff.lint]
+select = [
+    "F",      # Pyflakes — unused imports, undefined names
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "I",      # isort — import sorting
+    "B",      # flake8-bugbear — common bug patterns
+    "C4",     # flake8-comprehensions — simplify comprehensions
+    "UP",     # pyupgrade — modernize syntax for Python 3.12+
+    "SIM",    # flake8-simplify — simplifiable conditionals and patterns
+    "RUF",    # Ruff-specific rules
+]
+
+ignore = [
+    "E501",   # Line too long — handled by the formatter
+    "E712",   # Comparison to True/False — pandas element-wise == is intentional
+    "B008",   # Function call in argument defaults (Pydantic Field() triggers this)
+    "B905",   # zip() without strict= — not needed in scientific data pipelines
+    "UP007",  # Use X | Y for union types — Optional[] is fine
+    "SIM102", # Collapsible if — readability judgment call
+    "SIM105", # Use contextlib.suppress — try/except/pass is often clearer
+    "SIM108", # Use ternary operator — readability judgment call
+    "SIM116", # Use dict instead of if chain — readability judgment call
+    "RUF002", # Ambiguous unicode character in string — false positives on units/symbols
+    "RUF003", # Ambiguous unicode character in comment
+    "RUF012", # Mutable class variables not annotated with ClassVar
+    "RUF059", # Unused unpacked variable — too noisy for tuple unpacking patterns
+]
+
+dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
+fixable = ["ALL"]
+unfixable = []
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = [
+    "B011",    # Do not assert False
+    "B017",    # assertRaises(Exception)
+    "E402",    # Module level import not at top (common in test files with fixtures)
+    "UP",      # Don't force modernization in tests
+    "SIM",     # Don't force simplification in test assertions
+]
+"cli/**/*.py" = []
+"tests/conftest.py" = [
+    "F811",    # Redefinition of unused variable (pytest fixtures)
+]
+"alembic/env.py" = [
+    "F401",    # Unused import
+    "E402",    # Module-level import not at top
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["src", "cli"]
+force-sort-within-sections = true
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
+docstring-code-format = true
+docstring-code-line-length = 88
+
+# =============================================================================
+# mypy — type checking
+# =============================================================================
+
+[tool.mypy]
+python_version = "3.12"
+plugins = ["pydantic.mypy"]
+warn_unused_configs = true
+warn_redundant_casts = true
+# Start permissive — tighten these as type coverage improves:
+check_untyped_defs = false
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+warn_return_any = false
+warn_unused_ignores = false
+ignore_missing_imports = true
+explicit_package_bases = true
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false
+check_untyped_defs = false
+
+
+# =============================================================================
+# pytest — migrated from pytest.ini
+# =============================================================================
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = [
+    "ignore:.*:DeprecationWarning:sklearn\\.linear_model\\._logistic",
+]

@@ -4,14 +4,14 @@ from datetime import timedelta
 
 import numpy as np
 import pandas as pd
-import pytest
 from pydantic import ValidationError
+import pytest
 
 from src.models import (
+    FullMovementCycleMetadata,
     MicrophonePosition,
     MovementCycle,
     SynchronizedData,
-    FullMovementCycleMetadata,
 )
 
 

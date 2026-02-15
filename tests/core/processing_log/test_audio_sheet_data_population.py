@@ -3,7 +3,6 @@
 from datetime import datetime
 
 import pandas as pd
-import pytest
 
 from src.reports.report_generator import ReportGenerator
 
@@ -49,12 +48,8 @@ class TestAudioSheetDataPopulation:
 
         # Device Serial should NOT be "UNKNOWN"
         device_serial = audio_sheet["Device Serial"].iloc[0]
-        assert device_serial != "UNKNOWN", (
-            f"Device Serial should be parsed from filename, got: {device_serial}"
-        )
-        assert str(device_serial) == "42", (
-            f"Device Serial should be '42', got: {device_serial}"
-        )
+        assert device_serial != "UNKNOWN", f"Device Serial should be parsed from filename, got: {device_serial}"
+        assert str(device_serial) == "42", f"Device Serial should be '42', got: {device_serial}"
 
     def test_audio_sheet_recording_date_not_datetime_now(
         self,
@@ -139,9 +134,7 @@ class TestAudioSheetDataPopulation:
 
         # Should have segment data
         segments = audio_sheet["QC Continuous Artifact Segments"].iloc[0]
-        assert segments is not None and len(segments) > 0, (
-            "QC Continuous Artifact Segments should be populated"
-        )
+        assert segments is not None and len(segments) > 0, "QC Continuous Artifact Segments should be populated"
 
     def test_audio_sheet_has_qc_signal_dropout_segments(
         self,
@@ -184,9 +177,7 @@ class TestAudioSheetDataPopulation:
 
         # Should have segment data
         segments = audio_sheet["QC Signal Dropout Segments"].iloc[0]
-        assert segments is not None and len(segments) > 0, (
-            "QC Signal Dropout Segments should be populated"
-        )
+        assert segments is not None and len(segments) > 0, "QC Signal Dropout Segments should be populated"
 
     def test_audio_sheet_has_per_channel_segments(
         self,
@@ -237,9 +228,7 @@ class TestAudioSheetDataPopulation:
         ]
 
         for col in expected_columns:
-            assert col in audio_sheet.columns, (
-                f"Audio sheet missing '{col}' column"
-            )
+            assert col in audio_sheet.columns, f"Audio sheet missing '{col}' column"
 
     def test_audio_sheet_recording_length_and_filename(
         self,

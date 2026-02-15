@@ -25,18 +25,16 @@ from src.db.repository import Repository
 def _count_active(session) -> dict[str, int]:
     """Count active records in every downstream table."""
     return {
-        "audio_processing": session.query(AudioProcessingRecord).filter(
-            AudioProcessingRecord.is_active == True  # noqa: E712
-        ).count(),
-        "biomechanics_imports": session.query(BiomechanicsImportRecord).filter(
-            BiomechanicsImportRecord.is_active == True  # noqa: E712
-        ).count(),
-        "synchronizations": session.query(SynchronizationRecord).filter(
-            SynchronizationRecord.is_active == True  # noqa: E712
-        ).count(),
-        "movement_cycles": session.query(MovementCycleRecord).filter(
-            MovementCycleRecord.is_active == True  # noqa: E712
-        ).count(),
+        "audio_processing": session.query(AudioProcessingRecord)
+        .filter(AudioProcessingRecord.is_active == True)
+        .count(),
+        "biomechanics_imports": session.query(BiomechanicsImportRecord)
+        .filter(BiomechanicsImportRecord.is_active == True)
+        .count(),
+        "synchronizations": session.query(SynchronizationRecord)
+        .filter(SynchronizationRecord.is_active == True)
+        .count(),
+        "movement_cycles": session.query(MovementCycleRecord).filter(MovementCycleRecord.is_active == True).count(),
     }
 
 
@@ -130,14 +128,20 @@ class TestIsActiveDeactivation:
         _wipe_all_tables(db_engine)
 
     def test_new_records_are_active_by_default(
-        self, db_session,
-        audio_processing_factory, biomechanics_import_factory,
-        synchronization_factory, movement_cycle_factory,
+        self,
+        db_session,
+        audio_processing_factory,
+        biomechanics_import_factory,
+        synchronization_factory,
+        movement_cycle_factory,
     ):
         """All records created via repository should have is_active=True."""
         audio_record, biomech_record, sync_record, cycle_records = _seed_participant(
-            db_session, audio_processing_factory, biomechanics_import_factory,
-            synchronization_factory, movement_cycle_factory,
+            db_session,
+            audio_processing_factory,
+            biomechanics_import_factory,
+            synchronization_factory,
+            movement_cycle_factory,
         )
 
         assert audio_record.is_active is True
@@ -147,14 +151,20 @@ class TestIsActiveDeactivation:
             assert cycle.is_active is True
 
     def test_deactivate_unseen_marks_cycles_inactive(
-        self, db_session,
-        audio_processing_factory, biomechanics_import_factory,
-        synchronization_factory, movement_cycle_factory,
+        self,
+        db_session,
+        audio_processing_factory,
+        biomechanics_import_factory,
+        synchronization_factory,
+        movement_cycle_factory,
     ):
         """Cycles not in seen_ids should be marked inactive."""
         audio_record, biomech_record, sync_record, cycle_records = _seed_participant(
-            db_session, audio_processing_factory, biomechanics_import_factory,
-            synchronization_factory, movement_cycle_factory,
+            db_session,
+            audio_processing_factory,
+            biomechanics_import_factory,
+            synchronization_factory,
+            movement_cycle_factory,
             num_cycles=5,
         )
 
@@ -184,9 +194,12 @@ class TestIsActiveDeactivation:
                 assert cycle.is_active is False, f"Cycle {i} should be inactive"
 
     def test_deactivate_preserves_other_maneuvers(
-        self, db_session,
-        audio_processing_factory, biomechanics_import_factory,
-        synchronization_factory, movement_cycle_factory,
+        self,
+        db_session,
+        audio_processing_factory,
+        biomechanics_import_factory,
+        synchronization_factory,
+        movement_cycle_factory,
     ):
         """Deactivation scoped to (study, knee, maneuver) — other maneuvers untouched."""
         repo = Repository(db_session)
@@ -197,7 +210,8 @@ class TestIsActiveDeactivation:
 
         # Create sts records
         sts_audio = audio_processing_factory(
-            study_id=1001, maneuver="sts",
+            study_id=1001,
+            maneuver="sts",
             audio_file_name="sts_audio.bin",
         )
         sts_audio_record = repo.save_audio_processing(sts_audio)
@@ -224,9 +238,12 @@ class TestIsActiveDeactivation:
         assert sts_audio_record.is_active is True  # untouched
 
     def test_reactivation_on_re_processing(
-        self, db_session,
-        audio_processing_factory, biomechanics_import_factory,
-        synchronization_factory, movement_cycle_factory,
+        self,
+        db_session,
+        audio_processing_factory,
+        biomechanics_import_factory,
+        synchronization_factory,
+        movement_cycle_factory,
     ):
         """A previously-deactivated record should be re-activated when upserted."""
         repo = Repository(db_session)
@@ -256,7 +273,7 @@ class TestIsActiveDeactivation:
         reactivated_record = repo.save_audio_processing(audio2)
 
         assert reactivated_record.id == original_pk  # Same PK
-        assert reactivated_record.is_active is True   # Re-activated
+        assert reactivated_record.is_active is True  # Re-activated
 
 
 class TestPkStability:
@@ -269,7 +286,9 @@ class TestPkStability:
         _wipe_all_tables(db_engine)
 
     def test_upsert_preserves_audio_pk(
-        self, db_session, audio_processing_factory,
+        self,
+        db_session,
+        audio_processing_factory,
     ):
         """Re-processing the same audio file should update, not create a new row."""
         repo = Repository(db_session)
@@ -286,14 +305,20 @@ class TestPkStability:
         assert record2.duration_seconds == 999.0
 
     def test_upsert_preserves_cycle_pks(
-        self, db_session,
-        audio_processing_factory, biomechanics_import_factory,
-        synchronization_factory, movement_cycle_factory,
+        self,
+        db_session,
+        audio_processing_factory,
+        biomechanics_import_factory,
+        synchronization_factory,
+        movement_cycle_factory,
     ):
         """Re-processing should update existing cycle records with same PKs."""
         audio_record, biomech_record, sync_record, cycle_records = _seed_participant(
-            db_session, audio_processing_factory, biomechanics_import_factory,
-            synchronization_factory, movement_cycle_factory,
+            db_session,
+            audio_processing_factory,
+            biomechanics_import_factory,
+            synchronization_factory,
+            movement_cycle_factory,
             num_cycles=5,
         )
 
@@ -331,17 +356,23 @@ class TestIsActiveInReports:
         _wipe_all_tables(db_engine)
 
     def test_summary_counts_only_active_records(
-        self, db_session,
-        audio_processing_factory, biomechanics_import_factory,
-        synchronization_factory, movement_cycle_factory,
+        self,
+        db_session,
+        audio_processing_factory,
+        biomechanics_import_factory,
+        synchronization_factory,
+        movement_cycle_factory,
         tmp_path,
     ):
         """Summary sheet counts should exclude inactive records."""
         from src.reports.report_generator import ReportGenerator
 
         audio_record, biomech_record, sync_record, cycle_records = _seed_participant(
-            db_session, audio_processing_factory, biomechanics_import_factory,
-            synchronization_factory, movement_cycle_factory,
+            db_session,
+            audio_processing_factory,
+            biomechanics_import_factory,
+            synchronization_factory,
+            movement_cycle_factory,
             num_cycles=5,
         )
 
@@ -360,20 +391,26 @@ class TestIsActiveInReports:
 
         report = ReportGenerator(db_session)
         summary = report.generate_summary_sheet(
-            audio_record.study_id, "walk", "left",
+            audio_record.study_id,
+            "walk",
+            "left",
         )
 
         summary_dict = dict(zip(summary["Metric"], summary["Value"]))
         assert summary_dict["Movement Cycles"] == 3  # 5 total - 2 inactive
 
     def test_inactive_records_hidden_from_excel(
-        self, db_session,
-        audio_processing_factory, biomechanics_import_factory,
-        synchronization_factory, movement_cycle_factory,
+        self,
+        db_session,
+        audio_processing_factory,
+        biomechanics_import_factory,
+        synchronization_factory,
+        movement_cycle_factory,
         tmp_path,
     ):
         """save_to_excel should not include inactive audio records."""
         import pandas as pd
+
         from src.reports.report_generator import ReportGenerator
 
         repo = Repository(db_session)
@@ -383,9 +420,10 @@ class TestIsActiveInReports:
         rec1 = repo.save_audio_processing(audio1)
 
         audio2 = audio_processing_factory(
-            study_id=1001, audio_file_name="file_b.bin",
+            study_id=1001,
+            audio_file_name="file_b.bin",
         )
-        rec2 = repo.save_audio_processing(audio2)
+        repo.save_audio_processing(audio2)
 
         # Deactivate file_b
         repo.deactivate_unseen_records(
@@ -421,7 +459,9 @@ class TestQueryIncludeInactive:
         _wipe_all_tables(db_engine)
 
     def test_get_audio_records_excludes_inactive_by_default(
-        self, db_session, audio_processing_factory,
+        self,
+        db_session,
+        audio_processing_factory,
     ):
         """Default query should only return active records."""
         repo = Repository(db_session)
@@ -442,13 +482,15 @@ class TestQueryIncludeInactive:
 
         # Default: active only
         results = repo.get_audio_processing_records(
-            study_name="AOA", participant_number=1001,
+            study_name="AOA",
+            participant_number=1001,
         )
         assert len(results) == 0
 
         # With include_inactive
         results_all = repo.get_audio_processing_records(
-            study_name="AOA", participant_number=1001,
+            study_name="AOA",
+            participant_number=1001,
             include_inactive=True,
         )
         assert len(results_all) == 1
@@ -461,6 +503,7 @@ class TestCleanupFilesystemOnly:
     def test_cleanup_has_no_db_parameters(self):
         """cleanup_participant_outputs should not accept purge_db or db_url."""
         import inspect
+
         from cli.cleanup_outputs import cleanup_participant_outputs
 
         sig = inspect.signature(cleanup_participant_outputs)

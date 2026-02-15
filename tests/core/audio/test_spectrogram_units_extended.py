@@ -1,6 +1,6 @@
 """Extended tests for spectrogram module: edge cases and error handling."""
+
 import json
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -54,9 +54,8 @@ def test_get_fs_from_df_or_meta_meta_malformed(tmp_path):
 
 def test_get_fs_from_df_or_meta_meta_fs_zero():
     """Test that zero fs in meta is treated as invalid."""
-    df = pd.DataFrame({"ch1": np.arange(50)})  # No tt
+    pd.DataFrame({"ch1": np.arange(50)})  # No tt
 
-    meta = {"fs": 0.0}  # Invalid fs
     # Simulating meta json path (won't exist, will fail to parse)
     # Actually, need to check: does 0 get treated as NaN by float()?
     # It doesn't. So this needs meta json to exist and be parsed.

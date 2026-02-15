@@ -1,7 +1,5 @@
 """Tests for Excel file finding functionality (.xlsx and .xlsm)."""
 
-from pathlib import Path
-
 import pytest
 
 from src.orchestration.participant import _find_excel_file

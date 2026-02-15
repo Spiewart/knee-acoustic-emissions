@@ -1,7 +1,7 @@
 import logging
+from pathlib import Path
 import shutil
 import sys
-from pathlib import Path
 from unittest.mock import patch
 
 import numpy as np
@@ -29,6 +29,7 @@ def _stub_report_generation(tmp_path, monkeypatch):
 
     monkeypatch.setattr(ManeuverProcessingLog, "save_to_excel", _maneuver_save_stub)
     monkeypatch.setattr(KneeProcessingLog, "save_to_excel", _knee_save_stub)
+
 
 from src.orchestration.participant import (
     _generate_synced_filename,
@@ -269,9 +270,7 @@ def test_motion_capture_folder_missing_maneuver_sheet(tmp_path):
         # All walking sheets (including pass metadata)
         empty_df.to_excel(writer, sheet_name=f"AOA{study_id}_Walk0001", index=False)
         empty_df.to_excel(writer, sheet_name=f"AOA{study_id}_Slow_Walking", index=False)
-        empty_df.to_excel(
-            writer, sheet_name=f"AOA{study_id}_Medium_Walking", index=False
-        )
+        empty_df.to_excel(writer, sheet_name=f"AOA{study_id}_Medium_Walking", index=False)
         empty_df.to_excel(writer, sheet_name=f"AOA{study_id}_Fast_Walking", index=False)
         # StoS events but missing StoS data sheet
         empty_df.to_excel(writer, sheet_name=f"AOA{study_id}_StoS_Events", index=False)
@@ -632,9 +631,7 @@ def test_process_participant_extracts_study_id(fake_participant_directory, caplo
     assert "#1011" in caplog.text or "1011" in caplog.text
 
 
-def test_process_participant_validation_passed_message(
-    fake_participant_directory, caplog, monkeypatch
-):
+def test_process_participant_validation_passed_message(fake_participant_directory, caplog, monkeypatch):
     """Test that processing completion message is logged."""
     participant_dir = fake_participant_directory["participant_dir"]
 
@@ -873,7 +870,6 @@ def mock_audio_df():
 @pytest.fixture
 def mock_biomechanics_recordings():
     """Create mock biomechanics recordings for all speeds."""
-    import numpy as np
 
     from src.models import BiomechanicsRecording
 
@@ -902,9 +898,7 @@ def mock_biomechanics_recordings():
 class TestSyncSingleAudioFile:
     """Tests for sync_single_audio_file function."""
 
-    def test_sync_walk_processes_all_speeds(
-        self, tmp_path, mock_audio_df, mock_biomechanics_recordings
-    ):
+    def test_sync_walk_processes_all_speeds(self, tmp_path, mock_audio_df, mock_biomechanics_recordings):
         """sync_single_audio_file should process all speeds for walking."""
         from src.orchestration.participant import sync_single_audio_file
 
@@ -925,16 +919,12 @@ class TestSyncSingleAudioFile:
         biomech_file.touch()
 
         # Mock the imports and sync functions
-        with patch(
-            "src.orchestration.participant.import_biomechanics_recordings"
-        ) as mock_import, patch(
-            "src.orchestration.participant.load_audio_data"
-        ) as mock_load_audio, patch(
-            "src.orchestration.participant._sync_and_save_recording"
-        ) as mock_sync, patch(
-            "src.orchestration.participant.plot_stomp_detection"
-        ) as mock_plot:
-
+        with (
+            patch("src.orchestration.participant.import_biomechanics_recordings") as mock_import,
+            patch("src.orchestration.participant.load_audio_data") as mock_load_audio,
+            patch("src.orchestration.participant._sync_and_save_recording") as mock_sync,
+            patch("src.orchestration.participant.plot_stomp_detection"),
+        ):
             # Configure mocks
             mock_load_audio.return_value = mock_audio_df
 
@@ -943,10 +933,7 @@ class TestSyncSingleAudioFile:
             def import_side_effect(biomechanics_file, maneuver, speed, **kwargs):
                 # Map medium -> normal for fixture lookup
                 lookup_speed = "normal" if speed == "medium" else speed
-                return [
-                    rec for rec in mock_biomechanics_recordings
-                    if rec.speed == lookup_speed
-                ]
+                return [rec for rec in mock_biomechanics_recordings if rec.speed == lookup_speed]
 
             mock_import.side_effect = import_side_effect
 
@@ -976,9 +963,7 @@ class TestSyncSingleAudioFile:
             # Should sync all 12 recordings (3 speeds × 4 passes)
             assert mock_sync.call_count == 12
 
-    def test_sync_walk_processes_all_passes_per_speed(
-        self, tmp_path, mock_audio_df, mock_biomechanics_recordings
-    ):
+    def test_sync_walk_processes_all_passes_per_speed(self, tmp_path, mock_audio_df, mock_biomechanics_recordings):
         """Each speed should have all passes synced."""
         from src.orchestration.participant import sync_single_audio_file
 
@@ -998,25 +983,18 @@ class TestSyncSingleAudioFile:
         biomech_file = motion_capture_dir / "AOA1011_Biomechanics_Full_Set.xlsx"
         biomech_file.touch()
 
-        with patch(
-            "src.orchestration.participant.import_biomechanics_recordings"
-        ) as mock_import, patch(
-            "src.orchestration.participant.load_audio_data"
-        ) as mock_load_audio, patch(
-            "src.orchestration.participant._sync_and_save_recording"
-        ) as mock_sync, patch(
-            "src.orchestration.participant.plot_stomp_detection"
-        ) as mock_plot:
-
+        with (
+            patch("src.orchestration.participant.import_biomechanics_recordings") as mock_import,
+            patch("src.orchestration.participant.load_audio_data") as mock_load_audio,
+            patch("src.orchestration.participant._sync_and_save_recording") as mock_sync,
+            patch("src.orchestration.participant.plot_stomp_detection"),
+        ):
             mock_load_audio.return_value = mock_audio_df
 
             def import_side_effect(biomechanics_file, maneuver, speed, **kwargs):
                 # Map medium -> normal for fixture lookup
                 lookup_speed = "normal" if speed == "medium" else speed
-                return [
-                    rec for rec in mock_biomechanics_recordings
-                    if rec.speed == lookup_speed
-                ]
+                return [rec for rec in mock_biomechanics_recordings if rec.speed == lookup_speed]
 
             mock_import.side_effect = import_side_effect
 
@@ -1043,9 +1021,7 @@ class TestSyncSingleAudioFile:
             assert pass_numbers_synced.count(3) == 3
             assert pass_numbers_synced.count(4) == 3
 
-    def test_sync_continues_on_individual_failures(
-        self, tmp_path, mock_audio_df, mock_biomechanics_recordings
-    ):
+    def test_sync_continues_on_individual_failures(self, tmp_path, mock_audio_df, mock_biomechanics_recordings):
         """Should continue syncing other recordings if one fails."""
         from src.orchestration.participant import sync_single_audio_file
 
@@ -1065,25 +1041,20 @@ class TestSyncSingleAudioFile:
         biomech_file = motion_capture_dir / "AOA1011_Biomechanics_Full_Set.xlsx"
         biomech_file.touch()
 
-        with patch(
-            "src.orchestration.participant.import_biomechanics_recordings"
-        ) as mock_import, patch(
-            "src.orchestration.participant.load_audio_data"
-        ) as mock_load_audio, patch(
-            "src.orchestration.participant._sync_and_save_recording"
-        ) as mock_sync, patch(
-            "src.orchestration.participant.plot_stomp_detection"
-        ) as mock_plot:
-
+        with (
+            patch("src.orchestration.participant.import_biomechanics_recordings") as mock_import,
+            patch("src.orchestration.participant.load_audio_data") as mock_load_audio,
+            patch("src.orchestration.participant._sync_and_save_recording") as mock_sync,
+            patch("src.orchestration.participant.plot_stomp_detection"),
+        ):
             mock_load_audio.return_value = mock_audio_df
 
             def import_side_effect(biomechanics_file, maneuver, speed, **kwargs):
                 # Map medium -> normal for fixture lookup
                 lookup_speed = "normal" if speed == "medium" else speed
-                return [
-                    rec for rec in mock_biomechanics_recordings
-                    if rec.speed == lookup_speed
-                ][:2]  # Only 2 passes per speed
+                return [rec for rec in mock_biomechanics_recordings if rec.speed == lookup_speed][
+                    :2
+                ]  # Only 2 passes per speed
 
             mock_import.side_effect = import_side_effect
 
@@ -1111,9 +1082,7 @@ class TestSyncSingleAudioFile:
             assert result is True
             assert mock_sync.call_count == 6
 
-    def test_sync_non_walk_maneuver_single_recording(
-        self, tmp_path, mock_audio_df
-    ):
+    def test_sync_non_walk_maneuver_single_recording(self, tmp_path, mock_audio_df):
         """Non-walking maneuvers should sync all recordings without speed."""
         from src.models import BiomechanicsRecording
         from src.orchestration.participant import sync_single_audio_file
@@ -1151,16 +1120,12 @@ class TestSyncSingleAudioFile:
             data=bio_df,
         )
 
-        with patch(
-            "src.orchestration.participant.import_biomechanics_recordings"
-        ) as mock_import, patch(
-            "src.orchestration.participant.load_audio_data"
-        ) as mock_load_audio, patch(
-            "src.orchestration.participant._sync_and_save_recording"
-        ) as mock_sync, patch(
-            "src.orchestration.participant.plot_stomp_detection"
-        ) as mock_plot:
-
+        with (
+            patch("src.orchestration.participant.import_biomechanics_recordings") as mock_import,
+            patch("src.orchestration.participant.load_audio_data") as mock_load_audio,
+            patch("src.orchestration.participant._sync_and_save_recording") as mock_sync,
+            patch("src.orchestration.participant.plot_stomp_detection"),
+        ):
             mock_load_audio.return_value = mock_audio_df
             mock_import.return_value = [recording]
 
@@ -1217,6 +1182,7 @@ class TestSyncSingleAudioFile:
 
         # Create audio file missing required channels
         import numpy as np
+
         bad_audio_df = pd.DataFrame(
             {
                 "tt": np.arange(100) / 1000.0,
@@ -1239,12 +1205,15 @@ class TestSyncSingleAudioFile:
             assert result is False
 
 
-@pytest.mark.parametrize("knee, maneuver, expected_count", [
-    ("left", "walk", 1),
-    ("right", "fe", 1),
-    (None, "sts", 2),
-    ("left", None, 2),
-])
+@pytest.mark.parametrize(
+    "knee, maneuver, expected_count",
+    [
+        ("left", "walk", 1),
+        ("right", "fe", 1),
+        (None, "sts", 2),
+        ("left", None, 2),
+    ],
+)
 def test_process_participant_with_filters(fake_participant_directory, knee, maneuver, expected_count):
     """Test that process_participant correctly applies knee and maneuver filters.
 
@@ -1293,33 +1262,41 @@ def test_process_participant_with_filters(fake_participant_directory, knee, mane
     assert len(expected_dirs) == expected_count
 
 
-@pytest.mark.parametrize("knee, maneuver, expected_files", [
-    ("left", "walk", ["Left Knee/Walking"]),
-    ("right", "fe", ["Right Knee/Flexion-Extension"]),
-    (None, "sts", ["Left Knee/Sit-Stand", "Right Knee/Sit-Stand"]),
-    ("left", None, ["Left Knee/Walking", "Left Knee/Sit-Stand", "Left Knee/Flexion-Extension"]),
-])
+@pytest.mark.parametrize(
+    "knee, maneuver, expected_files",
+    [
+        ("left", "walk", ["Left Knee/Walking"]),
+        ("right", "fe", ["Right Knee/Flexion-Extension"]),
+        (None, "sts", ["Left Knee/Sit-Stand", "Right Knee/Sit-Stand"]),
+        ("left", None, ["Left Knee/Walking", "Left Knee/Sit-Stand", "Left Knee/Flexion-Extension"]),
+    ],
+)
 def test_process_bin_stage_with_filters(fake_participant_directory, knee, maneuver, expected_files):
     participant_dir = fake_participant_directory["participant_dir"]
 
-    with patch("src.orchestration.participant._find_maneuver_dir") as mock_find_maneuver_dir, \
-         patch("src.audio.readers.read_audio_board_file") as mock_read_audio:
-
+    with (
+        patch("src.orchestration.participant._find_maneuver_dir") as mock_find_maneuver_dir,
+        patch("src.audio.readers.read_audio_board_file") as mock_read_audio,
+    ):
         maneuver_map = {
             "walk": "Walking",
             "sit_to_stand": "Sit-Stand",
             "flexion_extension": "Flexion-Extension",
         }
-        mock_find_maneuver_dir.side_effect = lambda knee_dir, maneuver_key: knee_dir / maneuver_map.get(maneuver_key) if maneuver_key in maneuver_map else None
+        mock_find_maneuver_dir.side_effect = lambda knee_dir, maneuver_key: (
+            knee_dir / maneuver_map.get(maneuver_key) if maneuver_key in maneuver_map else None
+        )
 
         # Mock read_audio_board_file to return a valid DataFrame
-        mock_read_audio.return_value = pd.DataFrame({
-            "tt": np.arange(4096) / 1000.0,
-            "ch1": np.random.randn(4096),
-            "ch2": np.random.randn(4096),
-            "ch3": np.random.randn(4096),
-            "ch4": np.random.randn(4096),
-        })
+        mock_read_audio.return_value = pd.DataFrame(
+            {
+                "tt": np.arange(4096) / 1000.0,
+                "ch1": np.random.randn(4096),
+                "ch2": np.random.randn(4096),
+                "ch3": np.random.randn(4096),
+                "ch4": np.random.randn(4096),
+            }
+        )
 
         produced_files, produced_dfs = _process_bin_stage(participant_dir, knee=knee, maneuver=maneuver)
 

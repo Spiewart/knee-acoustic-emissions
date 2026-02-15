@@ -30,7 +30,7 @@ Event sheets:
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal, Optional
+from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
     from src.audio.parsers import MicSetupData
@@ -66,11 +66,10 @@ class AOAConfig:
             numeric = cleaned
         try:
             return "AOA", int(numeric)
-        except ValueError:
+        except ValueError as exc:
             raise ValueError(
-                f"Cannot parse AOA participant ID from '{directory_name}'. "
-                f"Expected format: #AOA1011 or AOA1011"
-            )
+                f"Cannot parse AOA participant ID from '{directory_name}'. Expected format: #AOA1011 or AOA1011"
+            ) from exc
 
     def format_study_prefix(self, study_id: int) -> str:
         """Format AOA study prefix: AOA1011."""
@@ -90,10 +89,8 @@ class AOAConfig:
     def get_maneuver_from_directory(
         self,
         directory_name: str,
-    ) -> Optional[Literal["walk", "sit_to_stand", "flexion_extension"]]:
-        _reverse_map: dict[
-            str, Literal["walk", "sit_to_stand", "flexion_extension"]
-        ] = {
+    ) -> Literal["walk", "sit_to_stand", "flexion_extension"] | None:
+        _reverse_map: dict[str, Literal["walk", "sit_to_stand", "flexion_extension"]] = {
             "Walking": "walk",
             "Sit-Stand": "sit_to_stand",
             "Flexion-Extension": "flexion_extension",
@@ -118,7 +115,7 @@ class AOAConfig:
         self,
         directory: Path,
         filename_pattern: str,
-    ) -> Optional[Path]:
+    ) -> Path | None:
         """Find an Excel file (.xlsx or .xlsm) matching the pattern.
 
         Searches for both extensions, returns the first match.
@@ -142,15 +139,15 @@ class AOAConfig:
     def parse_legend_fallback(
         self,
         metadata_file_path: str,
-        scripted_maneuver: Literal[
-            "walk", "sit_to_stand", "flexion_extension"
-        ],
+        scripted_maneuver: Literal["walk", "sit_to_stand", "flexion_extension"],
         knee: Literal["left", "right"],
-    ) -> Optional[MicSetupData]:
+    ) -> MicSetupData | None:
         from src.studies.aoa.legend import parse_aoa_mic_setup_sheet
 
         return parse_aoa_mic_setup_sheet(
-            metadata_file_path, scripted_maneuver, knee,
+            metadata_file_path,
+            scripted_maneuver,
+            knee,
         )
 
     def get_default_microphones(self) -> dict[int, MicrophonePosition]:
@@ -158,16 +155,20 @@ class AOAConfig:
 
         return {
             1: MicrophonePosition(
-                patellar_position="Infrapatellar", laterality="Lateral",
+                patellar_position="Infrapatellar",
+                laterality="Lateral",
             ),
             2: MicrophonePosition(
-                patellar_position="Infrapatellar", laterality="Medial",
+                patellar_position="Infrapatellar",
+                laterality="Medial",
             ),
             3: MicrophonePosition(
-                patellar_position="Suprapatellar", laterality="Medial",
+                patellar_position="Suprapatellar",
+                laterality="Medial",
             ),
             4: MicrophonePosition(
-                patellar_position="Suprapatellar", laterality="Lateral",
+                patellar_position="Suprapatellar",
+                laterality="Lateral",
             ),
         }
 
@@ -181,7 +182,7 @@ class AOAConfig:
         self,
         study_id: str,
         maneuver: Literal["walk", "sit_to_stand", "flexion_extension"],
-        speed: Optional[str] = None,
+        speed: str | None = None,
     ) -> dict[str, str]:
         """Construct AOA biomechanics sheet names.
 
@@ -200,14 +201,9 @@ class AOAConfig:
                 "fast": "Fast",
             }
             if speed not in speed_map:
-                raise ValueError(
-                    f"Invalid speed '{speed}' for walk. "
-                    f"Expected: {list(speed_map.keys())}"
-                )
+                raise ValueError(f"Invalid speed '{speed}' for walk. Expected: {list(speed_map.keys())}")
             data_sheet = f"{study_id}_{speed_map[speed]}_Walking"
-            event_sheet = (
-                f"{study_id}_{self.get_walk_event_sheet_base_name()}"
-            )
+            event_sheet = f"{study_id}_{self.get_walk_event_sheet_base_name()}"
         elif maneuver == "sit_to_stand":
             data_sheet = f"{study_id}_SitToStand"
             event_sheet = f"{study_id}_StoS_Events"
@@ -245,9 +241,13 @@ class AOAConfig:
 
         # --- Extract study token (first underscore-delimited segment) ---
         study_token = uid.split("_")[0]
-        study_alpha = "".join(filter(str.isalpha, study_token)) or None
+        study_alpha = "".join(filter(str.isalpha, study_token))
+        if not study_alpha:
+            raise ValueError(f"Cannot extract study prefix from UID '{uid}'")
         study_digits = "".join(filter(str.isdigit, study_token))
-        study_id = int(study_digits) if study_digits else None
+        if not study_digits:
+            raise ValueError(f"Cannot extract numeric study ID from UID '{uid}'")
+        study_id = int(study_digits)
 
         # --- Extract maneuver from second token ---
         maneuver = self._extract_maneuver_from_uid(uid)
@@ -295,14 +295,15 @@ class AOAConfig:
     # ── Synchronization (Event Names & Columns) ──────────────────
 
     def get_stomp_event_name(
-        self, foot: Literal["left", "right"],
+        self,
+        foot: Literal["left", "right"],
     ) -> str:
         return f"Sync {foot.capitalize()}"
 
     def get_movement_start_event(
         self,
         maneuver: Literal["walk", "sit_to_stand", "flexion_extension"],
-        speed: Optional[str] = None,
+        speed: str | None = None,
         pass_number: int = 1,
     ) -> str:
         if maneuver == "walk":
@@ -312,7 +313,7 @@ class AOAConfig:
     def get_movement_end_event(
         self,
         maneuver: Literal["walk", "sit_to_stand", "flexion_extension"],
-        speed: Optional[str] = None,
+        speed: str | None = None,
         pass_number: int = 1,
     ) -> str:
         if maneuver == "walk":
@@ -332,17 +333,14 @@ class AOAConfig:
 
     def _walking_event_name(
         self,
-        speed: Optional[str],
+        speed: str | None,
         pass_number: int,
         event_type: Literal["Start", "End"],
     ) -> str:
         """Build AOA walking event name, e.g. 'SS Pass 1 Start'."""
         speed_codes = self.get_speed_code_map()
         if speed not in speed_codes:
-            raise ValueError(
-                f"Invalid speed '{speed}' for walk. "
-                f"Expected: {list(speed_codes.keys())}"
-            )
+            raise ValueError(f"Invalid speed '{speed}' for walk. Expected: {list(speed_codes.keys())}")
         return f"{speed_codes[speed]} Pass {pass_number} {event_type}"
 
     @staticmethod
@@ -371,9 +369,7 @@ class AOAConfig:
 
         maneuver = maneuver_map.get(maneuver_raw)
         if maneuver is None:
-            raise ValueError(
-                f"Unknown maneuver '{maneuver_raw}' in UID '{uid}'"
-            )
+            raise ValueError(f"Unknown maneuver '{maneuver_raw}' in UID '{uid}'")
         return maneuver
 
     @staticmethod
@@ -385,9 +381,7 @@ class AOAConfig:
         Parses the penultimate ``_``-delimited token (e.g. ``NSP1``)
         into a pass number and speed name.
         """
-        reverse_speed_map: dict[
-            str, Literal["slow", "normal", "fast"]
-        ] = {
+        reverse_speed_map: dict[str, Literal["slow", "normal", "fast"]] = {
             "SS": "slow",
             "NS": "normal",
             "FS": "fast",
@@ -401,8 +395,5 @@ class AOAConfig:
 
         speed = reverse_speed_map.get(pass_speed_code)
         if speed is None:
-            raise ValueError(
-                f"Unknown speed code '{pass_speed_code}' "
-                f"in pass info '{pass_info}'"
-            )
+            raise ValueError(f"Unknown speed code '{pass_speed_code}' in pass info '{pass_info}'")
         return pass_number, speed

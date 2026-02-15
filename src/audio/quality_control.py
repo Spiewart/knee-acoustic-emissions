@@ -7,8 +7,9 @@ channels at the target frequency.
 
 from __future__ import annotations
 
+import argparse
 from pathlib import Path
-from typing import Literal, Optional, Tuple, Union
+from typing import Literal, Union
 
 import numpy as np
 import pandas as pd
@@ -21,7 +22,7 @@ from src.orchestration.participant import get_audio_file_name
 def _load_walk_events_from_biomechanics(
     biomech_file: Path,
     study_name: str = "AOA",
-) -> Optional[dict[str, list[tuple[str, float]]]]:
+) -> dict[str, list[tuple[str, float]]] | None:
     """Load walking events from biomechanics Excel file.
 
     Reads the walk event sheet from the biomechanics Excel file and extracts
@@ -43,7 +44,6 @@ def _load_walk_events_from_biomechanics(
     event_col = study_config.get_biomechanics_event_column()
     time_col = study_config.get_biomechanics_time_column()
     speed_keywords = study_config.get_speed_event_keywords()
-    speed_codes = set(study_config.get_speed_code_map().values())
 
     # Try study-prefixed sheet name first, then bare base name
     raw_id = biomech_file.stem.split("_")[0]
@@ -70,9 +70,7 @@ def _load_walk_events_from_biomechanics(
 
     # Build speed code set from config
     all_speed_codes = set(speed_keywords.values())
-    events_by_speed: dict[str, list[tuple[str, float]]] = {
-        code: [] for code in all_speed_codes
-    }
+    events_by_speed: dict[str, list[tuple[str, float]]] = {code: [] for code in all_speed_codes}
 
     current_speed: str | None = None
     for _, row in df.iterrows():
@@ -112,9 +110,7 @@ def _parse_pass_intervals_from_events(
         - "start_s" (float): Start time in seconds
         - "end_s" (float): End time in seconds (or None if unpaired)
     """
-    passes_by_speed: dict[str, list[dict[str, float | int]]] = {
-        speed: [] for speed in events_by_speed
-    }
+    passes_by_speed: dict[str, list[dict[str, float | int]]] = {speed: [] for speed in events_by_speed}
 
     for speed, events in events_by_speed.items():
         for event_info, time_sec in events:
@@ -124,9 +120,7 @@ def _parse_pass_intervals_from_events(
                     parts = event_info.split()
                     idx = parts.index("Pass")
                     pass_num = int(parts[idx + 1])
-                    passes_by_speed[speed].append(
-                        {"pass_num": pass_num, "start_s": time_sec, "end_s": None}
-                    )
+                    passes_by_speed[speed].append({"pass_num": pass_num, "start_s": time_sec, "end_s": 0.0})
                 except (ValueError, IndexError):
                     pass
             # Look for "Pass X End" pattern to close the interval
@@ -145,9 +139,7 @@ def _parse_pass_intervals_from_events(
 
     # Filter out incomplete passes
     for speed in passes_by_speed:
-        passes_by_speed[speed] = [
-            p for p in passes_by_speed[speed] if p["end_s"] is not None
-        ]
+        passes_by_speed[speed] = [p for p in passes_by_speed[speed] if p["end_s"] is not None]
 
     return passes_by_speed
 
@@ -334,11 +326,7 @@ def _qc_walk_single_pass(
         bandpower_rel_width=bandpower_rel_width,
     )
 
-    meets_bandpower = (
-        True
-        if bandpower_min_ratio is None
-        else bandpower_ratio >= bandpower_min_ratio
-    )
+    meets_bandpower = True if bandpower_min_ratio is None else bandpower_ratio >= bandpower_min_ratio
     passed = bool(pass_result["passed"] and meets_bandpower)
 
     return [
@@ -448,7 +436,8 @@ def qc_audio_walk(
     if biomech_file and biomech_file.exists():
         # Biomechanics file takes priority
         events_by_speed = _load_walk_events_from_biomechanics(
-            biomech_file, study_name=study_name,
+            biomech_file,
+            study_name=study_name,
         )
         if events_by_speed:
             passes_by_speed = _parse_pass_intervals_from_events(events_by_speed)
@@ -459,9 +448,7 @@ def qc_audio_walk(
                     start_s_interval = float(pass_info["start_s"])
                     end_s_interval = float(pass_info["end_s"])
                     intervals.append((start_s_interval, end_s_interval))
-                    speed_pass_map[
-                        (start_s_interval, end_s_interval)
-                    ] = (speed, int(pass_info["pass_num"]))
+                    speed_pass_map[(start_s_interval, end_s_interval)] = (speed, int(pass_info["pass_num"]))
         else:
             # Fall back to frequency-based or gap-based
             if use_frequency_segmentation:
@@ -529,11 +516,7 @@ def qc_audio_walk(
             bandpower_rel_width=bandpower_rel_width,
         )
 
-        meets_bandpower = (
-            True
-            if bandpower_min_ratio is None
-            else bandpower_ratio >= bandpower_min_ratio
-        )
+        meets_bandpower = True if bandpower_min_ratio is None else bandpower_ratio >= bandpower_min_ratio
         passed = bool(pass_result["passed"] and meets_bandpower)
 
         result_dict: dict[str, float | bool | int | str] = {
@@ -559,9 +542,7 @@ def qc_audio_walk(
     return results
 
 
-def _resample_uniform(
-    time_s: np.ndarray, signal: np.ndarray, fs: float
-) -> Tuple[np.ndarray, np.ndarray]:
+def _resample_uniform(time_s: np.ndarray, signal: np.ndarray, fs: float) -> tuple[np.ndarray, np.ndarray]:
     """Resample irregular signal onto a uniform time grid."""
     if len(time_s) == 0:
         return np.array([]), np.array([])
@@ -658,6 +639,7 @@ def _identify_walk_speed_intervals_by_frequency(
     Returns:
         List of (start_time, end_time) tuples for each frequency cluster.
     """
+
     def _cluster_with_tol(times: np.ndarray, tol: float) -> list[tuple[float, float]]:
         if len(times) < min_pass_peaks:
             return []
@@ -761,7 +743,7 @@ def _evaluate_walk_interval(
     min_coverage_frac: float,
     min_step_hz: float,
     max_step_hz: float,
-) -> Optional[dict[str, Union[float, bool, int]]]:
+) -> dict[str, Union[float, bool, int]] | None:
     """Compute gait metrics and QC for a single pass."""
     start_s, end_s = interval
     if end_s <= start_s:
@@ -792,7 +774,7 @@ def _evaluate_walk_interval(
     passed = bool(coverage >= min_coverage_frac and np.sum(valid) >= 1)
 
     return {
-        "heel_strike_count": int(len(window)),
+        "heel_strike_count": len(window),
         "gait_cycle_hz": freq_hz,
         "coverage_frac": coverage,
         "passed": passed,
@@ -816,6 +798,7 @@ def _qc_periodic_audio(
     return_bandpower: bool,
 ) -> tuple[bool, float] | tuple[bool, float, float]:
     """Shared periodic QC routine with optional spectral gating."""
+
     def _fail() -> tuple[bool, float] | tuple[bool, float, float]:
         return (False, 0.0, 0.0) if return_bandpower else (False, 0.0)
 
@@ -886,9 +869,7 @@ def _qc_periodic_audio(
     valid_durations = periods[valid_cycles]
     total_valid_time = float(np.sum(valid_durations))
     total_time = float(np.max(time_s) - np.min(time_s))
-    coverage_fraction = (
-        total_valid_time / total_time
-    ) if total_time > 0 else 0.0
+    coverage_fraction = (total_valid_time / total_time) if total_time > 0 else 0.0
 
     bandpower_ratio = _bandpower_ratio(
         signal=aud_uni,
@@ -898,11 +879,7 @@ def _qc_periodic_audio(
     )
 
     meets_coverage = coverage_fraction >= min_coverage_frac
-    meets_bandpower = (
-        True
-        if bandpower_min_ratio is None
-        else bandpower_ratio >= bandpower_min_ratio
-    )
+    meets_bandpower = True if bandpower_min_ratio is None else bandpower_ratio >= bandpower_min_ratio
     passed_qc = bool(meets_coverage and meets_bandpower)
 
     if return_bandpower:
@@ -950,7 +927,7 @@ def _run_qc_on_file(
             "passes": walk_results,
         }
 
-    passed, coverage = (
+    _qc_result = (
         qc_audio_flexion_extension(
             df=df,
             time_col=time_col,
@@ -969,6 +946,7 @@ def _run_qc_on_file(
             bandpower_min_ratio=bandpower_min_ratio,
         )
     )
+    passed, coverage = _qc_result[0], _qc_result[1]
 
     return {
         "path": str(pkl_path),
@@ -1004,7 +982,9 @@ def qc_audio_directory(
     study_config = get_study_config(study_name)
 
     maneuver_keys: list[Literal["walk", "sit_to_stand", "flexion_extension"]] = [
-        "walk", "sit_to_stand", "flexion_extension",
+        "walk",
+        "sit_to_stand",
+        "flexion_extension",
     ]
 
     channels = audio_channels or DEFAULT_CHANNELS
@@ -1013,7 +993,7 @@ def qc_audio_directory(
     results: list[dict[str, object]] = []
 
     for knee_side in ("left", "right"):
-        knee_dir = participant_dir / study_config.get_knee_directory_name(knee_side)
+        knee_dir = participant_dir / study_config.get_knee_directory_name(knee_side)  # type: ignore[arg-type]
         if not knee_dir.exists():
             continue
 
@@ -1062,18 +1042,12 @@ def qc_audio_directory(
 
             # Fallback: use primary processed file
             try:
-                audio_base = Path(
-                    get_audio_file_name(maneuver_dir, with_freq=False)
-                ).name
-                pickle_base = Path(
-                    get_audio_file_name(maneuver_dir, with_freq=True)
-                ).name
+                audio_base = Path(get_audio_file_name(maneuver_dir, with_freq=False)).name
+                pickle_base = Path(get_audio_file_name(maneuver_dir, with_freq=True)).name
             except FileNotFoundError:
                 continue
 
-            pkl_path = (
-                maneuver_dir / f"{audio_base}_outputs" / f"{pickle_base}.pkl"
-            )
+            pkl_path = maneuver_dir / f"{audio_base}_outputs" / f"{pickle_base}.pkl"
             if not pkl_path.exists():
                 continue
 
@@ -1099,9 +1073,7 @@ def qc_audio_directory(
     return results
 
 
-def _build_cli_parser() -> "argparse.ArgumentParser":
-    import argparse
-
+def _build_cli_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Audio QC utilities for maneuver-specific checks",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
@@ -1121,9 +1093,7 @@ def _build_cli_parser() -> "argparse.ArgumentParser":
 
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    file_parser = subparsers.add_parser(
-        "file", help="Run QC on a single audio pickle"
-    )
+    file_parser = subparsers.add_parser("file", help="Run QC on a single audio pickle")
     file_parser.add_argument("pkl", help="Path to audio pickle file")
     file_parser.add_argument(
         "--maneuver",
@@ -1178,9 +1148,7 @@ def _build_cli_parser() -> "argparse.ArgumentParser":
         help="Fractional tolerance for grouping similar frequencies (0.06 = 6%%)",
     )
 
-    dir_parser = subparsers.add_parser(
-        "dir", help="Run QC across a participant directory"
-    )
+    dir_parser = subparsers.add_parser("dir", help="Run QC across a participant directory")
     dir_parser.add_argument(
         "participant_dir",
         help="Path to participant directory (contains Left/Right Knee)",
@@ -1246,9 +1214,9 @@ def _print_file_result(result: dict[str, object]) -> None:
     print(f"QC result for {maneuver} on {result['path']}")
     if maneuver == "walk":
         passes = result.get("passes", [])
-        has_numbering = any(("speed" in p) or ("pass_num" in p) for p in passes)
+        has_numbering = any(("speed" in p) or ("pass_num" in p) for p in passes)  # type: ignore[attr-defined]
         if passes and not has_numbering:
-            grouped = _group_passes_by_speed(passes)
+            grouped = _group_passes_by_speed(passes)  # type: ignore[arg-type]
             if not grouped:
                 print("  No walking passes detected")
             else:
@@ -1261,7 +1229,7 @@ def _print_file_result(result: dict[str, object]) -> None:
                         f"passed={g['passed']} (passes={g['pass_count']}, pass_rate={g['pass_rate']:.0%})"
                     )
         else:
-            for idx, p in enumerate(passes, start=1):
+            for idx, p in enumerate(passes, start=1):  # type: ignore[var-annotated, arg-type]
                 print(
                     f"  Pass {idx}: freq={p['gait_cycle_hz']:.2f} Hz, "
                     f"coverage={p['coverage_frac']:.2%}, "
@@ -1271,10 +1239,7 @@ def _print_file_result(result: dict[str, object]) -> None:
             if not passes:
                 print("  No walking passes detected")
     else:
-        print(
-            f"  passed={result['passed']}, "
-            f"coverage={result['coverage']:.2%}"
-        )
+        print(f"  passed={result['passed']}, coverage={result['coverage']:.2%}")
 
 
 def _print_dir_results(results: list[dict[str, object]]) -> None:
@@ -1282,15 +1247,13 @@ def _print_dir_results(results: list[dict[str, object]]) -> None:
         print("No QC results found.")
         return
     for res in results:
-        header = (
-            f"{res['knee']} | {res['maneuver']} | {res['path']}"
-        )
+        header = f"{res['knee']} | {res['maneuver']} | {res['path']}"
         print(header)
         if res["maneuver"] == "walk":
             passes = res.get("passes", [])
-            has_numbering = any(("speed" in p) or ("pass_num" in p) for p in passes)
+            has_numbering = any(("speed" in p) or ("pass_num" in p) for p in passes)  # type: ignore[attr-defined]
             if passes and not has_numbering:
-                grouped = _group_passes_by_speed(passes)
+                grouped = _group_passes_by_speed(passes)  # type: ignore[arg-type]
                 if not grouped:
                     print("  No walking passes detected")
                     continue
@@ -1306,7 +1269,7 @@ def _print_dir_results(results: list[dict[str, object]]) -> None:
             if not passes:
                 print("  No walking passes detected")
                 continue
-            for idx, p in enumerate(passes, start=1):
+            for idx, p in enumerate(passes, start=1):  # type: ignore[var-annotated, arg-type]
                 print(
                     f"  Pass {idx}: freq={p['gait_cycle_hz']:.2f} Hz, "
                     f"coverage={p['coverage_frac']:.2%}, "
@@ -1314,10 +1277,7 @@ def _print_dir_results(results: list[dict[str, object]]) -> None:
                     f"passed={p['passed']}"
                 )
         else:
-            print(
-                f"  passed={res['passed']}, "
-                f"coverage={res['coverage']:.2%}"
-            )
+            print(f"  passed={res['passed']}, coverage={res['coverage']:.2%}")
 
 
 def _group_passes_by_speed(
@@ -1333,13 +1293,13 @@ def _group_passes_by_speed(
     if not passes:
         return []
 
-    sorted_passes = sorted(passes, key=lambda p: float(p["gait_cycle_hz"]))
+    sorted_passes = sorted(passes, key=lambda p: float(p["gait_cycle_hz"]))  # type: ignore[arg-type]
     groups: list[list[dict[str, object]]] = []
     current_group: list[dict[str, object]] = []
     current_freq: float | None = None
 
     for p in sorted_passes:
-        freq = float(p["gait_cycle_hz"])
+        freq = float(p["gait_cycle_hz"])  # type: ignore[arg-type]
         if current_freq is None:
             current_group = [p]
             current_freq = freq
@@ -1349,7 +1309,7 @@ def _group_passes_by_speed(
         if deviation <= tolerance_frac:
             current_group.append(p)
             # update representative frequency to mean of group for stability
-            current_freq = float(np.mean([float(x["gait_cycle_hz"]) for x in current_group]))
+            current_freq = float(np.mean([float(x["gait_cycle_hz"]) for x in current_group]))  # type: ignore[arg-type]
         else:
             groups.append(current_group)
             current_group = [p]
@@ -1360,11 +1320,11 @@ def _group_passes_by_speed(
 
     grouped_results: list[dict[str, float | bool | int | str]] = []
     for idx, g in enumerate(groups, start=1):
-        freqs = np.array([float(p["gait_cycle_hz"]) for p in g])
-        coverages = np.array([float(p["coverage_frac"]) for p in g])
-        bandpowers = np.array([float(p["bandpower_ratio"]) for p in g])
-        durations = np.array([float(p["duration_s"]) for p in g])
-        heel_counts = np.array([int(p["heel_strike_count"]) for p in g])
+        freqs = np.array([float(p["gait_cycle_hz"]) for p in g])  # type: ignore[arg-type]
+        coverages = np.array([float(p["coverage_frac"]) for p in g])  # type: ignore[arg-type]
+        bandpowers = np.array([float(p["bandpower_ratio"]) for p in g])  # type: ignore[arg-type]
+        durations = np.array([float(p["duration_s"]) for p in g])  # type: ignore[arg-type]
+        heel_counts = np.array([int(p["heel_strike_count"]) for p in g])  # type: ignore[call-overload]
         passes_passed = np.array([bool(p["passed"]) for p in g])
 
         grouped_results.append(
@@ -1376,7 +1336,7 @@ def _group_passes_by_speed(
                 "duration_s": float(np.sum(durations)),
                 "heel_strike_count": int(np.sum(heel_counts)),
                 "passed": bool(np.all(passes_passed)),
-                "pass_count": int(len(g)),
+                "pass_count": len(g),
                 "pass_rate": float(np.mean(passes_passed)),
             }
         )

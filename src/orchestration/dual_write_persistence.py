@@ -7,11 +7,10 @@ Design: If database write fails, processing continues and results are saved loca
 This creates a searchable index of all processing attempts.
 """
 
+from datetime import datetime
 import json
 import logging
-from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 from sqlalchemy.orm import Session
 
@@ -42,7 +41,7 @@ class LocalStorageIndex:
                     index.json
     """
 
-    def __init__(self, index_root: Optional[Path] = None):
+    def __init__(self, index_root: Path | None = None):
         """Initialize local storage index.
 
         Args:
@@ -61,7 +60,7 @@ class LocalStorageIndex:
         audio_file: str,
         pkl_path: str,
         db_saved: bool,
-        db_record_id: Optional[int] = None,
+        db_record_id: int | None = None,
     ) -> None:
         """Record audio processing attempt.
 
@@ -87,8 +86,8 @@ class LocalStorageIndex:
         study_id: str,
         biomech_file: str,
         db_saved: bool,
-        db_record_id: Optional[int] = None,
-        audio_id: Optional[int] = None,
+        db_record_id: int | None = None,
+        audio_id: int | None = None,
     ) -> None:
         """Record biomechanics import attempt.
 
@@ -115,9 +114,9 @@ class LocalStorageIndex:
         maneuver: str,
         pass_number: int,
         db_saved: bool,
-        db_record_id: Optional[int] = None,
-        audio_id: Optional[int] = None,
-        biomech_id: Optional[int] = None,
+        db_record_id: int | None = None,
+        audio_id: int | None = None,
+        biomech_id: int | None = None,
     ) -> None:
         """Record synchronization attempt.
 
@@ -148,8 +147,8 @@ class LocalStorageIndex:
         cycle_number: int,
         maneuver: str,
         db_saved: bool,
-        db_record_id: Optional[int] = None,
-        sync_id: Optional[int] = None,
+        db_record_id: int | None = None,
+        sync_id: int | None = None,
     ) -> None:
         """Record movement cycle attempt.
 
@@ -186,7 +185,7 @@ class LocalStorageIndex:
 
             # Load existing or create new
             if index_file.exists():
-                with open(index_file, 'r') as f:
+                with open(index_file) as f:
                     data = json.load(f)
                     if not isinstance(data, dict):
                         data = {"entries": []}
@@ -199,7 +198,7 @@ class LocalStorageIndex:
             data["entries"].append(entry)
 
             # Write back
-            with open(index_file, 'w') as f:
+            with open(index_file, "w") as f:
                 json.dump(data, f, indent=2)
 
         except Exception as e:
@@ -218,7 +217,7 @@ class LocalStorageIndex:
             if not index_file.exists():
                 return []
 
-            with open(index_file, 'r') as f:
+            with open(index_file) as f:
                 data = json.load(f)
 
             return [e for e in data.get("entries", []) if not e.get("db_saved", False)]
@@ -246,8 +245,8 @@ class DualWritePersistence:
 
     def __init__(
         self,
-        db_session: Optional[Session] = None,
-        local_storage_root: Optional[Path] = None,
+        db_session: Session | None = None,
+        local_storage_root: Path | None = None,
     ):
         """Initialize dual-write persistence.
 
@@ -268,8 +267,8 @@ class DualWritePersistence:
         self,
         audio,
         pkl_file_path: str,
-        biomechanics_import_id: Optional[int] = None,
-    ) -> Optional[int]:
+        biomechanics_import_id: int | None = None,
+    ) -> int | None:
         """Save audio processing with dual-write.
 
         Returns record ID if database save succeeded, None if local-only save.
@@ -279,9 +278,7 @@ class DualWritePersistence:
         # Try database first
         try:
             if self.db_persistence.enabled:
-                db_record_id = self.db_persistence.save_audio_processing(
-                    audio, pkl_file_path, biomechanics_import_id
-                )
+                db_record_id = self.db_persistence.save_audio_processing(audio, pkl_file_path, biomechanics_import_id)
         except Exception as e:
             logger.warning(f"Database save failed: {e}, continuing with local save")
 
@@ -302,16 +299,14 @@ class DualWritePersistence:
     def save_biomechanics_import(
         self,
         biomech,
-        audio_processing_id: Optional[int] = None,
-    ) -> Optional[int]:
+        audio_processing_id: int | None = None,
+    ) -> int | None:
         """Save biomechanics import with dual-write."""
         db_record_id = None
 
         try:
             if self.db_persistence.enabled:
-                db_record_id = self.db_persistence.save_biomechanics_import(
-                    biomech, audio_processing_id
-                )
+                db_record_id = self.db_persistence.save_biomechanics_import(biomech, audio_processing_id)
         except Exception as e:
             logger.warning(f"Database save failed: {e}, continuing with local save")
 
@@ -331,15 +326,15 @@ class DualWritePersistence:
     def save_synchronization(
         self,
         sync,
-        audio_processing_id: Optional[int] = None,
-        biomechanics_import_id: Optional[int] = None,
-        sync_file_path: Optional[str] = None,
-    ) -> Optional[int]:
+        audio_processing_id: int | None = None,
+        biomechanics_import_id: int | None = None,
+        sync_file_path: str | None = None,
+    ) -> int | None:
         """Save synchronization with dual-write."""
         db_record_id = None
 
         try:
-            if self.db_persistence.enabled:
+            if self.db_persistence.enabled and audio_processing_id is not None and biomechanics_import_id is not None:
                 db_record_id = self.db_persistence.save_synchronization(
                     sync, audio_processing_id, biomechanics_import_id, sync_file_path
                 )
@@ -347,7 +342,7 @@ class DualWritePersistence:
             logger.warning(f"Database save failed: {e}, continuing with local save")
 
         try:
-            pass_num = getattr(sync, 'pass_number', None) or 1
+            pass_num = getattr(sync, "pass_number", None) or 1
             self.local_index.record_synchronization(
                 study_id=sync.study_id,
                 maneuver=sync.maneuver,
@@ -365,16 +360,16 @@ class DualWritePersistence:
     def save_movement_cycle(
         self,
         cycle,
-        audio_processing_id: Optional[int] = None,
-        biomechanics_import_id: Optional[int] = None,
-        synchronization_id: Optional[int] = None,
-        cycles_file_path: Optional[str] = None,
-    ) -> Optional[int]:
+        audio_processing_id: int | None = None,
+        biomechanics_import_id: int | None = None,
+        synchronization_id: int | None = None,
+        cycles_file_path: str | None = None,
+    ) -> int | None:
         """Save movement cycle with dual-write."""
         db_record_id = None
 
         try:
-            if self.db_persistence.enabled:
+            if self.db_persistence.enabled and audio_processing_id is not None:
                 db_record_id = self.db_persistence.save_movement_cycle(
                     cycle,
                     audio_processing_id,
@@ -386,7 +381,7 @@ class DualWritePersistence:
             logger.warning(f"Database save failed: {e}, continuing with local save")
 
         try:
-            cycle_num = getattr(cycle, 'cycle_number', None) or 1
+            cycle_num = getattr(cycle, "cycle_number", None) or 1
             self.local_index.record_movement_cycle(
                 study_id=cycle.study_id,
                 cycle_number=cycle_num,

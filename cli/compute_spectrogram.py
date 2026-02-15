@@ -42,7 +42,7 @@ def main() -> int:
     except FileNotFoundError as e:
         logging.error(str(e))
         return 1
-    except Exception as e:  # noqa: BLE001 - report unexpected errors
+    except Exception as e:
         logging.exception("Failed to compute spectrogram: %s", e)
         return 1
 

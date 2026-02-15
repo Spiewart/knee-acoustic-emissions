@@ -17,9 +17,7 @@ def main() -> None:
     and a joint-angle column (default: `Knee Angle Z`). Saves to
     `--save-path` when provided; otherwise displays.
     """
-    parser = argparse.ArgumentParser(
-        description="Plot synchronized audio and biomechanics data"
-    )
+    parser = argparse.ArgumentParser(description="Plot synchronized audio and biomechanics data")
     parser.add_argument(
         "syncd_data_path",
         type=str,

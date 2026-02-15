@@ -5,8 +5,8 @@ Aligned with the normalized metadata models in src/metadata.py.
 
 from datetime import datetime
 
-import pytest
 from pydantic import ValidationError
+import pytest
 
 from src.metadata import (
     AudioProcessing,

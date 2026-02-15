@@ -1,13 +1,12 @@
 """Tests for process_participant_directory execution functions."""
 
-from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
 import pytest
 
-from src.models import BiomechanicsFileMetadata, BiomechanicsRecording
+from src.models import BiomechanicsRecording
 from src.orchestration.participant import sync_single_audio_file
 
 
@@ -54,9 +53,7 @@ def mock_biomechanics_recordings():
 class TestSyncSingleAudioFile:
     """Tests for sync_single_audio_file function."""
 
-    def test_sync_walk_processes_all_speeds(
-        self, tmp_path, mock_audio_df, mock_biomechanics_recordings
-    ):
+    def test_sync_walk_processes_all_speeds(self, tmp_path, mock_audio_df, mock_biomechanics_recordings):
         """sync_single_audio_file should process all speeds for walking."""
         # Setup directory structure
         participant_dir = tmp_path / "#1011"
@@ -75,16 +72,12 @@ class TestSyncSingleAudioFile:
         biomech_file.touch()
 
         # Mock the imports and sync functions
-        with patch(
-            "src.orchestration.participant.import_biomechanics_recordings"
-        ) as mock_import, patch(
-            "src.orchestration.participant.load_audio_data"
-        ) as mock_load_audio, patch(
-            "src.orchestration.participant._sync_and_save_recording"
-        ) as mock_sync, patch(
-            "src.orchestration.participant.plot_stomp_detection"
-        ) as mock_plot:
-
+        with (
+            patch("src.orchestration.participant.import_biomechanics_recordings") as mock_import,
+            patch("src.orchestration.participant.load_audio_data") as mock_load_audio,
+            patch("src.orchestration.participant._sync_and_save_recording") as mock_sync,
+            patch("src.orchestration.participant.plot_stomp_detection"),
+        ):
             # Configure mocks
             mock_load_audio.return_value = mock_audio_df
 
@@ -93,10 +86,7 @@ class TestSyncSingleAudioFile:
             def import_side_effect(biomechanics_file, maneuver, speed, **kwargs):
                 # Map medium -> normal for fixture lookup
                 lookup_speed = "normal" if speed == "medium" else speed
-                return [
-                    rec for rec in mock_biomechanics_recordings
-                    if rec.speed == lookup_speed
-                ]
+                return [rec for rec in mock_biomechanics_recordings if rec.speed == lookup_speed]
 
             mock_import.side_effect = import_side_effect
 
@@ -127,9 +117,7 @@ class TestSyncSingleAudioFile:
             # Should sync all 12 recordings (3 speeds × 4 passes)
             assert mock_sync.call_count == 12
 
-    def test_sync_walk_processes_all_passes_per_speed(
-        self, tmp_path, mock_audio_df, mock_biomechanics_recordings
-    ):
+    def test_sync_walk_processes_all_passes_per_speed(self, tmp_path, mock_audio_df, mock_biomechanics_recordings):
         """Each speed should have all passes synced."""
         # Setup
         participant_dir = tmp_path / "#1011"
@@ -147,25 +135,18 @@ class TestSyncSingleAudioFile:
         biomech_file = motion_capture_dir / "AOA1011_Biomechanics_Full_Set.xlsx"
         biomech_file.touch()
 
-        with patch(
-            "src.orchestration.participant.import_biomechanics_recordings"
-        ) as mock_import, patch(
-            "src.orchestration.participant.load_audio_data"
-        ) as mock_load_audio, patch(
-            "src.orchestration.participant._sync_and_save_recording"
-        ) as mock_sync, patch(
-            "src.orchestration.participant.plot_stomp_detection"
-        ) as mock_plot:
-
+        with (
+            patch("src.orchestration.participant.import_biomechanics_recordings") as mock_import,
+            patch("src.orchestration.participant.load_audio_data") as mock_load_audio,
+            patch("src.orchestration.participant._sync_and_save_recording") as mock_sync,
+            patch("src.orchestration.participant.plot_stomp_detection"),
+        ):
             mock_load_audio.return_value = mock_audio_df
 
             def import_side_effect(biomechanics_file, maneuver, speed, **kwargs):
                 # Map medium -> normal for fixture lookup
                 lookup_speed = "normal" if speed == "medium" else speed
-                return [
-                    rec for rec in mock_biomechanics_recordings
-                    if rec.speed == lookup_speed
-                ]
+                return [rec for rec in mock_biomechanics_recordings if rec.speed == lookup_speed]
 
             mock_import.side_effect = import_side_effect
 
@@ -193,9 +174,7 @@ class TestSyncSingleAudioFile:
             assert pass_numbers_synced.count(3) == 3
             assert pass_numbers_synced.count(4) == 3
 
-    def test_sync_continues_on_individual_failures(
-        self, tmp_path, mock_audio_df, mock_biomechanics_recordings
-    ):
+    def test_sync_continues_on_individual_failures(self, tmp_path, mock_audio_df, mock_biomechanics_recordings):
         """Should continue syncing other recordings if one fails."""
         # Setup
         participant_dir = tmp_path / "#1011"
@@ -213,25 +192,20 @@ class TestSyncSingleAudioFile:
         biomech_file = motion_capture_dir / "AOA1011_Biomechanics_Full_Set.xlsx"
         biomech_file.touch()
 
-        with patch(
-            "src.orchestration.participant.import_biomechanics_recordings"
-        ) as mock_import, patch(
-            "src.orchestration.participant.load_audio_data"
-        ) as mock_load_audio, patch(
-            "src.orchestration.participant._sync_and_save_recording"
-        ) as mock_sync, patch(
-            "src.orchestration.participant.plot_stomp_detection"
-        ) as mock_plot:
-
+        with (
+            patch("src.orchestration.participant.import_biomechanics_recordings") as mock_import,
+            patch("src.orchestration.participant.load_audio_data") as mock_load_audio,
+            patch("src.orchestration.participant._sync_and_save_recording") as mock_sync,
+            patch("src.orchestration.participant.plot_stomp_detection"),
+        ):
             mock_load_audio.return_value = mock_audio_df
 
             def import_side_effect(biomechanics_file, maneuver, speed, **kwargs):
                 # Map medium -> normal for fixture lookup
                 lookup_speed = "normal" if speed == "medium" else speed
-                return [
-                    rec for rec in mock_biomechanics_recordings
-                    if rec.speed == lookup_speed
-                ][:2]  # Only 2 passes per speed
+                return [rec for rec in mock_biomechanics_recordings if rec.speed == lookup_speed][
+                    :2
+                ]  # Only 2 passes per speed
 
             mock_import.side_effect = import_side_effect
 
@@ -261,9 +235,7 @@ class TestSyncSingleAudioFile:
             assert result is True
             assert mock_sync.call_count == 6
 
-    def test_sync_non_walk_maneuver_single_recording(
-        self, tmp_path, mock_audio_df
-    ):
+    def test_sync_non_walk_maneuver_single_recording(self, tmp_path, mock_audio_df):
         """Non-walking maneuvers should sync all recordings without speed."""
         # Setup for sit-to-stand
         participant_dir = tmp_path / "#1011"
@@ -298,16 +270,12 @@ class TestSyncSingleAudioFile:
             data=bio_df,
         )
 
-        with patch(
-            "src.orchestration.participant.import_biomechanics_recordings"
-        ) as mock_import, patch(
-            "src.orchestration.participant.load_audio_data"
-        ) as mock_load_audio, patch(
-            "src.orchestration.participant._sync_and_save_recording"
-        ) as mock_sync, patch(
-            "src.orchestration.participant.plot_stomp_detection"
-        ) as mock_plot:
-
+        with (
+            patch("src.orchestration.participant.import_biomechanics_recordings") as mock_import,
+            patch("src.orchestration.participant.load_audio_data") as mock_load_audio,
+            patch("src.orchestration.participant._sync_and_save_recording") as mock_sync,
+            patch("src.orchestration.participant.plot_stomp_detection"),
+        ):
             mock_load_audio.return_value = mock_audio_df
             mock_import.return_value = [recording]
 

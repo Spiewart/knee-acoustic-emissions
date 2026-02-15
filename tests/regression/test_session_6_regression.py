@@ -4,12 +4,12 @@ Tests the complete FK-based data persistence pipeline with real sample data.
 Requires PostgreSQL and sample data directory to be available.
 """
 
-import os
 from datetime import datetime
+import os
 from pathlib import Path
 
-import pytest
 from dotenv import load_dotenv
+import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -53,7 +53,7 @@ def test_db_engine():
         engine = create_engine(db_url, echo=False)
 
         # Test connection
-        with engine.connect() as conn:
+        with engine.connect():
             pass
 
         # Drop all tables first (clean slate)
@@ -194,7 +194,7 @@ class TestDatabasePersistenceWithSampleData:
 
         # Attempting to save should handle the error gracefully
         # (in real implementation, would log warning and return None)
-        result = persistence.save_audio_processing(None, None)  # type: ignore
+        persistence.save_audio_processing(None, None)  # type: ignore
         # Result depends on error handling implementation
         # Should not raise an exception
 
@@ -341,9 +341,11 @@ class TestDatabasePersistenceWithSampleData:
         assert biomech_record.audio_processing_id == audio_id
 
         # Query back to verify FK relationship
-        queried_biomech = repository._session.query(
-            repository._models["BiomechanicsImportRecord"]
-        ).filter_by(id=biomech_record.id).first()
+        queried_biomech = (
+            repository._session.query(repository._models["BiomechanicsImportRecord"])
+            .filter_by(id=biomech_record.id)
+            .first()
+        )
 
         assert queried_biomech is not None
         assert queried_biomech.audio_processing_id == audio_id

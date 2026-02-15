@@ -12,9 +12,8 @@ Warning:
     Back up your data before running if you have important data.
 """
 
-import os
-import sys
 from pathlib import Path
+import sys
 
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -59,6 +58,7 @@ def sync_production_db():
     except Exception as e:
         print(f"\n❌ Failed to sync database: {e}")
         import traceback
+
         traceback.print_exc()
         sys.exit(1)
 

@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Dict, List, Union
-
-import pandas as pd
+from typing import Union
 
 from ._utils import (
     attach_normalized_ids,
@@ -20,8 +18,8 @@ _REQUIRED_COLUMNS = ["Age (years)", "BMI", "Gender", "Knee Pain"]
 
 def import_demographics(
     excel_path: Union[str, Path],
-    ids: Union[int, str, List[Union[int, str]], None] = None,
-) -> Dict[int, Dict[str, object]]:
+    ids: Union[int, str, list[Union[int, str]], None] = None,
+) -> dict[int, dict[str, object]]:
     """Load basic participant demographics from the "Demographics" sheet.
 
     Extracts age, BMI, gender, and a Yes/No flag for knee pain for the
@@ -52,7 +50,7 @@ def import_demographics(
     )
     df["Gender"] = gender_series.map(lambda g: "M" if g.startswith("m") else "F")
 
-    results: Dict[int, Dict[str, object]] = {}
+    results: dict[int, dict[str, object]] = {}
     for _, row in df.iterrows():
         study_id = int(row["study_id"])
         results[study_id] = {

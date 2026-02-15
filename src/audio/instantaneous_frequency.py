@@ -3,16 +3,13 @@
 from __future__ import annotations
 
 import logging
-from typing import List, Tuple
 
 import numpy as np
 import pandas as pd
 from scipy.signal import butter, filtfilt, hilbert
 
 
-def butter_bandpass(
-    lowcut: float, highcut: float, fs: float, order: int = 4
-) -> Tuple[np.ndarray, np.ndarray]:
+def butter_bandpass(lowcut: float, highcut: float, fs: float, order: int = 4) -> tuple[np.ndarray, np.ndarray]:
     nyq = 0.5 * fs
     low = lowcut / nyq
     high = highcut / nyq
@@ -38,7 +35,7 @@ def add_instantaneous_frequency(
     lowcut: float = 10.0,
     highcut: float = 5000.0,
     order: int = 4,
-    channels: List[str] | None = None,
+    channels: list[str] | None = None,
 ) -> pd.DataFrame:
     """Add instantaneous frequency to a DataFrame using a Hilbert transform.
 
@@ -68,16 +65,12 @@ def add_instantaneous_frequency(
 
         y = pd.to_numeric(df[ch], errors="coerce").to_numpy()
         y_centered = y - np.nanmean(y)
-        y_filtered = apply_bandpass(
-            y_centered, fs, lowcut=lowcut, highcut=highcut, order=order
-        )
+        y_filtered = apply_bandpass(y_centered, fs, lowcut=lowcut, highcut=highcut, order=order)
 
         try:
             analytic = hilbert(y_filtered)
         except (ValueError, TypeError) as e:
-            logging.exception(
-                "Hilbert transform failed for %s; filling with NaN: %s", ch, e
-            )
+            logging.exception("Hilbert transform failed for %s; filling with NaN: %s", ch, e)
             df[col_freq] = np.nan
             continue
 

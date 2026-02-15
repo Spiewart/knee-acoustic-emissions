@@ -11,9 +11,8 @@ Environment:
     Requires AE_DATABASE_URL to be set (production database)
 """
 
-import os
-import sys
 from pathlib import Path
+import sys
 
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -43,12 +42,14 @@ def migrate_add_biomechanics_import_id():
 
         with engine.begin() as conn:
             # Check if column already exists
-            result = conn.execute(text("""
+            result = conn.execute(
+                text("""
                 SELECT column_name
                 FROM information_schema.columns
                 WHERE table_name='audio_processing'
                 AND column_name='biomechanics_import_id'
-            """))
+            """)
+            )
 
             if result.fetchone():
                 print("✅ Column 'biomechanics_import_id' already exists in audio_processing table")
@@ -57,19 +58,23 @@ def migrate_add_biomechanics_import_id():
             print("📝 Adding biomechanics_import_id column to audio_processing table...")
 
             # Add the column
-            conn.execute(text("""
+            conn.execute(
+                text("""
                 ALTER TABLE audio_processing
                 ADD COLUMN biomechanics_import_id INTEGER
-            """))
+            """)
+            )
 
             # Add foreign key constraint
-            conn.execute(text("""
+            conn.execute(
+                text("""
                 ALTER TABLE audio_processing
                 ADD CONSTRAINT fk_audio_biomechanics
                 FOREIGN KEY (biomechanics_import_id)
                 REFERENCES biomechanics_import(id)
                 ON DELETE SET NULL
-            """))
+            """)
+            )
 
             print("✅ Successfully added biomechanics_import_id column")
             print("✅ Successfully added foreign key constraint")

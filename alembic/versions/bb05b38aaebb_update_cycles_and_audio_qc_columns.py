@@ -77,21 +77,21 @@ def downgrade() -> None:
     op.drop_column('movement_cycles', 'audio_artifact_intermittent_fail')
     op.drop_column('movement_cycles', 'audio_qc_failures')
     op.drop_column('movement_cycles', 'audio_qc_fail')
-    
+
     # Restore default for is_outlier
     op.alter_column('movement_cycles', 'is_outlier',
                     existing_type=sa.Boolean(),
                     nullable=False,
                     server_default='false')
-    
+
     # Restore bio_start_time and bio_end_time columns
     op.add_column('movement_cycles', sa.Column('bio_end_time', sa.DateTime(), nullable=True))
     op.add_column('movement_cycles', sa.Column('bio_start_time', sa.DateTime(), nullable=True))
-    
+
     # Rename start_time/end_time back to audio_start_time/audio_end_time
     op.alter_column('movement_cycles', 'end_time', new_column_name='audio_end_time')
     op.alter_column('movement_cycles', 'start_time', new_column_name='audio_start_time')
-    
+
     # AudioProcessingRecord: Rename qc_continuous_artifact columns back to qc_artifact
     op.alter_column('audio_processing', 'qc_continuous_artifact_segments_ch4', new_column_name='qc_artifact_segments_ch4')
     op.alter_column('audio_processing', 'qc_continuous_artifact_ch4', new_column_name='qc_artifact_ch4')

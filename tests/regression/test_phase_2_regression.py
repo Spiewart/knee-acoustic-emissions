@@ -1,9 +1,9 @@
 """Tests for Phase 2A (Full Record Extraction) and Phase 2B (Dual-Write Pattern)."""
 
-import json
-import tempfile
 from datetime import datetime
+import json
 from pathlib import Path
+import tempfile
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -185,9 +185,7 @@ class TestDualWritePersistence:
         assert dual_write.enabled
         assert dual_write.tracker is not None
 
-    def test_save_audio_processing_saves_locally_when_db_disabled(
-        self, dual_write, temp_storage_dir
-    ):
+    def test_save_audio_processing_saves_locally_when_db_disabled(self, dual_write, temp_storage_dir):
         """Test audio save creates local index even without database."""
         from src.metadata import AudioProcessing
 
@@ -246,9 +244,7 @@ class TestDualWritePersistence:
         assert index_file.exists()
 
     @patch("src.orchestration.dual_write_persistence.OrchestrationDatabasePersistence")
-    def test_save_audio_processing_returns_db_id_when_successful(
-        self, mock_db_class, dual_write, temp_storage_dir
-    ):
+    def test_save_audio_processing_returns_db_id_when_successful(self, mock_db_class, dual_write, temp_storage_dir):
         """Test audio save returns DB ID when database save succeeds."""
         from src.metadata import AudioProcessing
 
@@ -311,9 +307,7 @@ class TestDualWritePersistence:
         mock_db.save_audio_processing.assert_called_once()
 
     @patch("src.orchestration.dual_write_persistence.OrchestrationDatabasePersistence")
-    def test_save_audio_processing_continues_on_db_failure(
-        self, mock_db_class, dual_write, temp_storage_dir
-    ):
+    def test_save_audio_processing_continues_on_db_failure(self, mock_db_class, dual_write, temp_storage_dir):
         """Test audio save continues and saves locally even if DB fails."""
         from src.metadata import AudioProcessing
 

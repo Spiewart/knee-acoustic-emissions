@@ -1,7 +1,5 @@
 """Report generator sheet integrity tests."""
 
-from datetime import datetime
-
 import numpy as np
 import pandas as pd
 
@@ -63,9 +61,8 @@ def test_cycles_sheet_has_expected_columns(
     cycles = pd.read_excel(output_path, sheet_name="Cycles")
     assert {"Cycle File", "Start Time (s)", "Duration (s)"}.issubset(cycles.columns)
 
-from src.metadata import Synchronization
+
 from src.orchestration.processing_log import (
-    ManeuverProcessingLog,
     create_sync_record_from_data,
 )
 
@@ -271,10 +268,12 @@ class TestMethodAgreementSpanCalculation:
         maneuver_dir.mkdir(parents=True)
 
         # Create synced dataframe
-        synced_df = pd.DataFrame({
-            'tt': np.arange(0, 10.0, 0.01),
-            'ch1': np.random.randn(1000),
-        })
+        synced_df = pd.DataFrame(
+            {
+                "tt": np.arange(0, 10.0, 0.01),
+                "ch1": np.random.randn(1000),
+            }
+        )
 
         # Only RMS method contributes
         detection_results = {
@@ -301,27 +300,31 @@ class TestMethodAgreementSpanCalculation:
         )
 
         # CRITICAL: With only one method, span should be 0
-        assert sync_record.method_agreement_span == 0.0, \
+        assert sync_record.method_agreement_span == 0.0, (
             f"Method agreement span should be 0 with single method, got {sync_record.method_agreement_span}"
-        assert sync_record.consensus_methods == "rms", \
+        )
+        assert sync_record.consensus_methods == "rms", (
             f"Consensus methods should be 'rms', got {sync_record.consensus_methods}"
+        )
 
     def test_two_methods_span_is_difference(self, tmp_path):
         """Test that method_agreement_span is the difference between two methods."""
         maneuver_dir = tmp_path / "Left Knee" / "Walking"
         maneuver_dir.mkdir(parents=True)
 
-        synced_df = pd.DataFrame({
-            'tt': np.arange(0, 10.0, 0.01),
-            'ch1': np.random.randn(1000),
-        })
+        synced_df = pd.DataFrame(
+            {
+                "tt": np.arange(0, 10.0, 0.01),
+                "ch1": np.random.randn(1000),
+            }
+        )
 
         # RMS and Onset methods contribute
         detection_results = {
             "consensus_time": 5.0,
-            "rms_time": 4.7,      # Earlier
-            "onset_time": 5.2,    # Later
-            "freq_time": 6.0,     # Not used
+            "rms_time": 4.7,  # Earlier
+            "onset_time": 5.2,  # Later
+            "freq_time": 6.0,  # Not used
             "consensus_methods": ["rms", "onset"],
         }
 
@@ -341,27 +344,31 @@ class TestMethodAgreementSpanCalculation:
         )
 
         expected_span = 5.2 - 4.7  # 0.5
-        assert abs(sync_record.method_agreement_span - expected_span) < 0.001, \
+        assert abs(sync_record.method_agreement_span - expected_span) < 0.001, (
             f"Method agreement span should be {expected_span}, got {sync_record.method_agreement_span}"
-        assert "rms" in sync_record.consensus_methods and "onset" in sync_record.consensus_methods, \
+        )
+        assert "rms" in sync_record.consensus_methods and "onset" in sync_record.consensus_methods, (
             f"Consensus methods should contain 'rms' and 'onset', got {sync_record.consensus_methods}"
+        )
 
     def test_three_methods_span_is_range(self, tmp_path):
         """Test that method_agreement_span is max-min with three methods."""
         maneuver_dir = tmp_path / "Left Knee" / "Walking"
         maneuver_dir.mkdir(parents=True)
 
-        synced_df = pd.DataFrame({
-            'tt': np.arange(0, 10.0, 0.01),
-            'ch1': np.random.randn(1000),
-        })
+        synced_df = pd.DataFrame(
+            {
+                "tt": np.arange(0, 10.0, 0.01),
+                "ch1": np.random.randn(1000),
+            }
+        )
 
         # All three methods contribute with different times
         detection_results = {
             "consensus_time": 5.0,
-            "rms_time": 4.8,      # Earliest
-            "onset_time": 5.1,    # Middle
-            "freq_time": 5.2,     # Latest
+            "rms_time": 4.8,  # Earliest
+            "onset_time": 5.1,  # Middle
+            "freq_time": 5.2,  # Latest
             "consensus_methods": ["rms", "onset", "freq"],
         }
 
@@ -381,20 +388,24 @@ class TestMethodAgreementSpanCalculation:
         )
 
         expected_span = 5.2 - 4.8  # 0.4
-        assert abs(sync_record.method_agreement_span - expected_span) < 0.001, \
+        assert abs(sync_record.method_agreement_span - expected_span) < 0.001, (
             f"Method agreement span should be {expected_span}, got {sync_record.method_agreement_span}"
-        assert all(method in sync_record.consensus_methods for method in ["rms", "onset", "freq"]), \
+        )
+        assert all(method in sync_record.consensus_methods for method in ["rms", "onset", "freq"]), (
             f"Consensus methods should contain all three methods, got {sync_record.consensus_methods}"
+        )
 
     def test_all_methods_same_time_span_is_zero(self, tmp_path):
         """Test that method_agreement_span is 0 when all methods agree perfectly."""
         maneuver_dir = tmp_path / "Left Knee" / "Walking"
         maneuver_dir.mkdir(parents=True)
 
-        synced_df = pd.DataFrame({
-            'tt': np.arange(0, 10.0, 0.01),
-            'ch1': np.random.randn(1000),
-        })
+        synced_df = pd.DataFrame(
+            {
+                "tt": np.arange(0, 10.0, 0.01),
+                "ch1": np.random.randn(1000),
+            }
+        )
 
         # All methods at exactly the same time (perfect agreement)
         detection_results = {
@@ -421,25 +432,28 @@ class TestMethodAgreementSpanCalculation:
         )
 
         # Perfect agreement = 0 span
-        assert sync_record.method_agreement_span == 0.0, \
+        assert sync_record.method_agreement_span == 0.0, (
             f"Method agreement span should be 0 with perfect agreement, got {sync_record.method_agreement_span}"
+        )
 
     def test_large_disagreement_span(self, tmp_path):
         """Test method_agreement_span with large disagreement between methods."""
         maneuver_dir = tmp_path / "Left Knee" / "Walking"
         maneuver_dir.mkdir(parents=True)
 
-        synced_df = pd.DataFrame({
-            'tt': np.arange(0, 30.0, 0.01),
-            'ch1': np.random.randn(3000),
-        })
+        synced_df = pd.DataFrame(
+            {
+                "tt": np.arange(0, 30.0, 0.01),
+                "ch1": np.random.randn(3000),
+            }
+        )
 
         # Large disagreement (could indicate poor signal quality)
         detection_results = {
             "consensus_time": 15.0,
-            "rms_time": 10.0,     # 5 seconds early
-            "onset_time": 15.0,   # On time
-            "freq_time": 20.0,    # 5 seconds late
+            "rms_time": 10.0,  # 5 seconds early
+            "onset_time": 15.0,  # On time
+            "freq_time": 20.0,  # 5 seconds late
             "consensus_methods": ["rms", "onset", "freq"],
         }
 
@@ -459,18 +473,21 @@ class TestMethodAgreementSpanCalculation:
         )
 
         expected_span = 20.0 - 10.0  # 10.0 seconds
-        assert abs(sync_record.method_agreement_span - expected_span) < 0.001, \
+        assert abs(sync_record.method_agreement_span - expected_span) < 0.001, (
             f"Method agreement span should be {expected_span}, got {sync_record.method_agreement_span}"
+        )
 
     def test_method_agreement_span_persists_in_cycles_record(self, tmp_path):
         """Test that method_agreement_span is inherited by cycles records."""
         maneuver_dir = tmp_path / "Left Knee" / "Walking"
         maneuver_dir.mkdir(parents=True)
 
-        synced_df = pd.DataFrame({
-            'tt': np.arange(0, 10.0, 0.01),
-            'ch1': np.random.randn(1000),
-        })
+        synced_df = pd.DataFrame(
+            {
+                "tt": np.arange(0, 10.0, 0.01),
+                "ch1": np.random.randn(1000),
+            }
+        )
 
         # Create sync record with method_agreement_span
         detection_results = {
@@ -497,14 +514,17 @@ class TestMethodAgreementSpanCalculation:
         )
 
         expected_span = 5.3 - 4.8  # 0.5
-        assert abs(sync_record.method_agreement_span - expected_span) < 0.001, \
+        assert abs(sync_record.method_agreement_span - expected_span) < 0.001, (
             f"Sync record method_agreement_span should be {expected_span}"
+        )
 
         # Update sync record with cycle data (simulating what participant_processor does)
-        cycle_data = pd.DataFrame({
-            'tt': np.arange(0, 1.0, 0.01),
-            'ch1': np.random.randn(100),
-        })
+        cycle_data = pd.DataFrame(
+            {
+                "tt": np.arange(0, 1.0, 0.01),
+                "ch1": np.random.randn(100),
+            }
+        )
 
         # Directly update sync record with cycle statistics
         clean_cycles = [cycle_data]
@@ -514,8 +534,9 @@ class TestMethodAgreementSpanCalculation:
         sync_record.outlier_cycles = len(outlier_cycles)
 
         # Sync record should preserve method_agreement_span after update
-        assert abs(sync_record.method_agreement_span - expected_span) < 0.001, \
+        assert abs(sync_record.method_agreement_span - expected_span) < 0.001, (
             f"Sync record should preserve method_agreement_span={expected_span} after cycle update, got {sync_record.method_agreement_span}"
+        )
 
     def test_method_agreement_span_in_excel_output(
         self,

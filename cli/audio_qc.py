@@ -37,9 +37,7 @@ def _build_cli_parser() -> argparse.ArgumentParser:
 
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    file_parser = subparsers.add_parser(
-        "file", help="Run QC on a single audio pickle"
-    )
+    file_parser = subparsers.add_parser("file", help="Run QC on a single audio pickle")
     file_parser.add_argument("pkl", help="Path to audio pickle file")
     file_parser.add_argument(
         "--maneuver",
@@ -94,9 +92,7 @@ def _build_cli_parser() -> argparse.ArgumentParser:
         help="Fractional tolerance for grouping similar frequencies (0.06 = 6%%)",
     )
 
-    dir_parser = subparsers.add_parser(
-        "dir", help="Run QC across a participant directory"
-    )
+    dir_parser = subparsers.add_parser("dir", help="Run QC across a participant directory")
     dir_parser.add_argument(
         "participant_dir",
         help="Path to participant directory (contains Left/Right Knee)",
@@ -165,9 +161,9 @@ def _print_file_result(result: dict[str, object]) -> None:
     print(f"QC result for {maneuver} on {result['path']}")
     if maneuver == "walk":
         passes = result.get("passes", [])
-        has_numbering = any(("speed" in p) or ("pass_num" in p) for p in passes)
+        has_numbering = any(("speed" in p) or ("pass_num" in p) for p in passes)  # type: ignore[attr-defined]
         if passes and not has_numbering:
-            grouped = _group_passes_by_speed(passes)
+            grouped = _group_passes_by_speed(passes)  # type: ignore[arg-type]
             if not grouped:
                 print("  No walking passes detected")
             else:
@@ -180,7 +176,7 @@ def _print_file_result(result: dict[str, object]) -> None:
                         f"passed={g['passed']} (passes={g['pass_count']}, pass_rate={g['pass_rate']:.0%})"
                     )
         else:
-            for idx, p in enumerate(passes, start=1):
+            for idx, p in enumerate(passes, start=1):  # type: ignore[var-annotated, arg-type]
                 print(
                     f"  Pass {idx}: freq={p['gait_cycle_hz']:.2f} Hz, "
                     f"coverage={p['coverage_frac']:.2%}, "
@@ -190,10 +186,7 @@ def _print_file_result(result: dict[str, object]) -> None:
             if not passes:
                 print("  No walking passes detected")
     else:
-        print(
-            f"  passed={result['passed']}, "
-            f"coverage={result['coverage']:.2%}"
-        )
+        print(f"  passed={result['passed']}, coverage={result['coverage']:.2%}")
 
 
 def _print_dir_results(results: list[dict[str, object]]) -> None:
@@ -204,15 +197,13 @@ def _print_dir_results(results: list[dict[str, object]]) -> None:
         print("No QC results found.")
         return
     for res in results:
-        header = (
-            f"{res['knee']} | {res['maneuver']} | {res['path']}"
-        )
+        header = f"{res['knee']} | {res['maneuver']} | {res['path']}"
         print(header)
         if res["maneuver"] == "walk":
             passes = res.get("passes", [])
-            has_numbering = any(("speed" in p) or ("pass_num" in p) for p in passes)
+            has_numbering = any(("speed" in p) or ("pass_num" in p) for p in passes)  # type: ignore[attr-defined]
             if passes and not has_numbering:
-                grouped = _group_passes_by_speed(passes)
+                grouped = _group_passes_by_speed(passes)  # type: ignore[arg-type]
                 if not grouped:
                     print("  No walking passes detected")
                     continue
@@ -228,7 +219,7 @@ def _print_dir_results(results: list[dict[str, object]]) -> None:
             if not passes:
                 print("  No walking passes detected")
                 continue
-            for idx, p in enumerate(passes, start=1):
+            for idx, p in enumerate(passes, start=1):  # type: ignore[var-annotated, arg-type]
                 print(
                     f"  Pass {idx}: freq={p['gait_cycle_hz']:.2f} Hz, "
                     f"coverage={p['coverage_frac']:.2%}, "
@@ -236,10 +227,7 @@ def _print_dir_results(results: list[dict[str, object]]) -> None:
                     f"passed={p['passed']}"
                 )
         else:
-            print(
-                f"  passed={res['passed']}, "
-                f"coverage={res['coverage']:.2%}"
-            )
+            print(f"  passed={res['passed']}, coverage={res['coverage']:.2%}")
 
 
 def main() -> None:

@@ -1,7 +1,7 @@
 """Tests for Phase 2D (Performance Optimization)."""
 
 import time
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -9,7 +9,6 @@ from src.orchestration.performance_optimization import (
     BatchMovementCyclePersister,
     PerformanceOptimizedPersistence,
     PersistenceMetrics,
-    create_optimized_db_session,
 )
 
 
@@ -94,6 +93,7 @@ class TestPerformanceOptimizedPersistence:
 
     def test_batch_insert_cycles_with_empty_list(self, optimized_persistence):
         """Test batch insert with empty cycle list."""
+
         def mock_save(cycle_data):
             return 1
 
@@ -104,6 +104,7 @@ class TestPerformanceOptimizedPersistence:
 
     def test_batch_insert_cycles_with_single_batch(self, optimized_persistence):
         """Test batch insert with single batch of cycles."""
+
         def mock_save(cycle_data):
             return cycle_data.get("cycle_id", 1)
 
@@ -120,6 +121,7 @@ class TestPerformanceOptimizedPersistence:
 
     def test_batch_insert_cycles_with_multiple_batches(self, optimized_persistence):
         """Test batch insert with multiple batches (batch_size=10, 25 cycles)."""
+
         def mock_save(cycle_data):
             return cycle_data.get("cycle_id", 1)
 
@@ -133,6 +135,7 @@ class TestPerformanceOptimizedPersistence:
 
     def test_batch_insert_cycles_handles_errors(self, optimized_persistence):
         """Test batch insert continues on save errors."""
+
         def mock_save_with_errors(cycle_data):
             if cycle_data.get("cycle_id") == 2:
                 raise ValueError("Save failed")
@@ -144,9 +147,7 @@ class TestPerformanceOptimizedPersistence:
             {"cycle_id": 3},
         ]
 
-        results = optimized_persistence.batch_insert_cycles(
-            cycles, mock_save_with_errors
-        )
+        results = optimized_persistence.batch_insert_cycles(cycles, mock_save_with_errors)
 
         assert len(results) == 3
         assert results[0] == 1
@@ -182,6 +183,7 @@ class TestPerformanceOptimizedPersistence:
 
     def test_async_save_submission(self, optimized_persistence):
         """Test submitting async save operation."""
+
         def mock_save():
             return 101
 
@@ -196,6 +198,7 @@ class TestPerformanceOptimizedPersistence:
 
     def test_wait_for_async_saves_collects_results(self, optimized_persistence):
         """Test waiting for multiple async saves."""
+
         def mock_save():
             return 101
 

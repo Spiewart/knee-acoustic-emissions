@@ -196,10 +196,7 @@ def test_normalize_maneuver_column() -> None:
 
     # Check that "-" was replaced with space in "Flexion - Extension"
     assert "Flexion - Extension" not in result["Maneuvers"].values
-    assert (
-        "Flexion   Extension" in result["Maneuvers"].values
-        or "Flexion Extension" in result["Maneuvers"].values
-    )
+    assert "Flexion   Extension" in result["Maneuvers"].values or "Flexion Extension" in result["Maneuvers"].values
     # Check that ffill worked
     assert result["Maneuvers"].iloc[1] == result["Maneuvers"].iloc[0]
     assert result["Maneuvers"].iloc[2] == result["Maneuvers"].iloc[0]
@@ -352,7 +349,9 @@ class TestParseMicSetupSheet:
         legend_path = str(fake_participant_directory["legend_file"])
 
         result = parse_aoa_mic_setup_sheet(
-            legend_path, "flexion_extension", "left",
+            legend_path,
+            "flexion_extension",
+            "left",
         )
 
         assert result.file_name == "HP_W11.2-1-20240126_135704"
@@ -393,7 +392,9 @@ class TestMicSetupExtraFields:
         legend_path = str(fake_participant_directory["legend_file"])
 
         metadata, _ = get_acoustics_metadata(
-            legend_path, "walk", "left",
+            legend_path,
+            "walk",
+            "left",
         )
 
         assert metadata.audio_serial_number == "HP_W11.2-5"
@@ -405,7 +406,9 @@ class TestMicSetupExtraFields:
         legend_path = str(fake_participant_directory["legend_file"])
 
         metadata, _ = get_acoustics_metadata(
-            legend_path, "walk", "left",
+            legend_path,
+            "walk",
+            "left",
         )
 
         assert metadata.date_of_recording == datetime(2024, 1, 26)
@@ -453,36 +456,52 @@ def _create_legend_with_blank_acoustic_notes(tmp_path):
 
     # Mic Setup with populated file names
     mic_setup_data = [
-        ["Study ID: 1013", None, "Date of Recording: 02/01/2024",
-         None, None, None, None, None],
-        ["Left Knee HP_W11.2-5", None, None,
-         "Right Knee: HP_W11.2-1", None, None, None, None],
-        ["Microphones", "Patellar Position", "Medial / Lateral",
-         "Microphones", "Patellar Position", "Medial / Lateral", None, None],
+        ["Study ID: 1013", None, "Date of Recording: 02/01/2024", None, None, None, None, None],
+        ["Left Knee HP_W11.2-5", None, None, "Right Knee: HP_W11.2-1", None, None, None, None],
+        [
+            "Microphones",
+            "Patellar Position",
+            "Medial / Lateral",
+            "Microphones",
+            "Patellar Position",
+            "Medial / Lateral",
+            None,
+            None,
+        ],
         [1, "Infrapatellar", "Lateral", 1, "Infrapatellar", "Lateral", None, None],
         [2, "Infrapatellar", "Medial", 2, "Infrapatellar", "Medial", None, None],
         [3, "Suprapatellar", "Medial", 3, "Suprapatellar", "Medial", None, None],
         [4, "Suprapatellar", "Lateral", 4, "Suprapatellar", "Lateral", None, None],
         ["Left knee", None, None, None, None, None, None, None],
-        ["File Name", "File Size (mb)", "Audio Board Serial Number",
-         "Timestamp", "Maneuver", "Notes", None, None],
-        ["HP_W11.2-5-20240201_112407", 123.7, "HP_W11.2-5", "11:24:07",
-         "Walk (slow,medium, fast) 80 seconds each speed", None, None, None],
-        ["HP_W11.2-5-20240201_113516", 33.6, "HP_W11.2-5", "11:35:16",
-         "Flexion - Extension", None, None, None],
-        ["HP_W11.2-5-20240201_114038", 32.3, "HP_W11.2-5", "11:40:38",
-         "Sit - to - Stand", None, None, None],
+        ["File Name", "File Size (mb)", "Audio Board Serial Number", "Timestamp", "Maneuver", "Notes", None, None],
+        [
+            "HP_W11.2-5-20240201_112407",
+            123.7,
+            "HP_W11.2-5",
+            "11:24:07",
+            "Walk (slow,medium, fast) 80 seconds each speed",
+            None,
+            None,
+            None,
+        ],
+        ["HP_W11.2-5-20240201_113516", 33.6, "HP_W11.2-5", "11:35:16", "Flexion - Extension", None, None, None],
+        ["HP_W11.2-5-20240201_114038", 32.3, "HP_W11.2-5", "11:40:38", "Sit - to - Stand", None, None, None],
         [None] * 8,
         [None] * 8,
         ["Right Knee", None, None, None, None, None, None, None],
-        ["File Name", "File Size (mb)", "Audio Board Serial Number",
-         "Timestamp", "Maneuver", "Notes", None, None],
-        ["HP_W11.2-1-20240201_112411", 122.2, "HP_W11.2-1", "11:24:11",
-         "Walk (slow,medium, fast) 80 seconds each speed", None, None, None],
-        ["HP_W11.2-1-20240201_113517", 32.2, "HP_W11.2-1", "11:35:17",
-         "Flexion - Extension", None, None, None],
-        ["HP_W11.2-1-20240201_114035", 34, "HP_W11.2-1", "11:40:35",
-         "Sit - to - Stand", None, None, None],
+        ["File Name", "File Size (mb)", "Audio Board Serial Number", "Timestamp", "Maneuver", "Notes", None, None],
+        [
+            "HP_W11.2-1-20240201_112411",
+            122.2,
+            "HP_W11.2-1",
+            "11:24:11",
+            "Walk (slow,medium, fast) 80 seconds each speed",
+            None,
+            None,
+            None,
+        ],
+        ["HP_W11.2-1-20240201_113517", 32.2, "HP_W11.2-1", "11:35:17", "Flexion - Extension", None, None, None],
+        ["HP_W11.2-1-20240201_114035", 34, "HP_W11.2-1", "11:40:35", "Sit - to - Stand", None, None, None],
         *[[None] * 8 for _ in range(7)],
         [None, None, None, None, None, None, "Red Device", "HP_W11.2-5"],
         [None, None, None, None, None, None, "White Device", "HP_W11.2-1"],
@@ -490,10 +509,16 @@ def _create_legend_with_blank_acoustic_notes(tmp_path):
 
     with pd.ExcelWriter(excel_path, engine="openpyxl") as writer:
         pd.DataFrame(acoustic_data).to_excel(
-            writer, sheet_name="Acoustic Notes", index=False, header=False,
+            writer,
+            sheet_name="Acoustic Notes",
+            index=False,
+            header=False,
         )
         pd.DataFrame(mic_setup_data).to_excel(
-            writer, sheet_name="Mic Setup", index=False, header=False,
+            writer,
+            sheet_name="Mic Setup",
+            index=False,
+            header=False,
         )
 
     return excel_path
@@ -507,7 +532,9 @@ class TestMicSetupFallback:
         legend_path = _create_legend_with_blank_acoustic_notes(tmp_path)
 
         metadata, mismatches = get_acoustics_metadata(
-            str(legend_path), "walk", "left",
+            str(legend_path),
+            "walk",
+            "left",
         )
 
         # File name came from Mic Setup
@@ -520,7 +547,9 @@ class TestMicSetupFallback:
         legend_path = _create_legend_with_blank_acoustic_notes(tmp_path)
 
         metadata, _ = get_acoustics_metadata(
-            str(legend_path), "walk", "right",
+            str(legend_path),
+            "walk",
+            "right",
         )
 
         assert metadata.file_name == "HP_W11.2-1-20240201_112411"
@@ -530,7 +559,9 @@ class TestMicSetupFallback:
         legend_path = _create_legend_with_blank_acoustic_notes(tmp_path)
 
         metadata, _ = get_acoustics_metadata(
-            str(legend_path), "sit_to_stand", "left",
+            str(legend_path),
+            "sit_to_stand",
+            "left",
         )
 
         assert metadata.file_name == "HP_W11.2-5-20240201_114038"
@@ -540,7 +571,9 @@ class TestMicSetupFallback:
         legend_path = _create_legend_with_blank_acoustic_notes(tmp_path)
 
         metadata, _ = get_acoustics_metadata(
-            str(legend_path), "walk", "left",
+            str(legend_path),
+            "walk",
+            "left",
         )
 
         assert metadata.audio_serial_number == "HP_W11.2-5"
@@ -552,7 +585,9 @@ class TestMicSetupFallback:
         legend_path = _create_legend_with_blank_acoustic_notes(tmp_path)
 
         metadata, _ = get_acoustics_metadata(
-            str(legend_path), "walk", "left",
+            str(legend_path),
+            "walk",
+            "left",
         )
 
         assert metadata.date_of_recording == datetime(2024, 2, 1)
@@ -569,8 +604,8 @@ class TestMicSetupFallback:
             ["Maneuvers", "File Name", "Microphone", "Patellar Position", "Laterality", "Notes"],
             ["Walk (slow,medium, fast)", None, 1, "Infrapatellar", "Lateral", None],
             [None, None, 2, "Infrapatellar", "Medial", None],
-            [None, None, 3, "Suprapatellar", "Lateral", None],   # template default
-            [None, None, 4, "Suprapatellar", "Medial", None],    # template default
+            [None, None, 3, "Suprapatellar", "Lateral", None],  # template default
+            [None, None, 4, "Suprapatellar", "Medial", None],  # template default
             ["Flexion - Extension", None, 1, "Infrapatellar", "Lateral", None],
             [None, None, 2, "Infrapatellar", "Medial", None],
             [None, None, 3, "Suprapatellar", "Lateral", None],
@@ -598,36 +633,52 @@ class TestMicSetupFallback:
 
         # Mic Setup: mic 3 = Medial, mic 4 = Lateral (opposite of AN template)
         mic_setup_data = [
-            ["Study ID: 1013", None, "Date of Recording: 02/01/2024",
-             None, None, None, None, None],
-            ["Left Knee HP_W11.2-5", None, None,
-             "Right Knee: HP_W11.2-1", None, None, None, None],
-            ["Microphones", "Patellar Position", "Medial / Lateral",
-             "Microphones", "Patellar Position", "Medial / Lateral", None, None],
+            ["Study ID: 1013", None, "Date of Recording: 02/01/2024", None, None, None, None, None],
+            ["Left Knee HP_W11.2-5", None, None, "Right Knee: HP_W11.2-1", None, None, None, None],
+            [
+                "Microphones",
+                "Patellar Position",
+                "Medial / Lateral",
+                "Microphones",
+                "Patellar Position",
+                "Medial / Lateral",
+                None,
+                None,
+            ],
             [1, "Infrapatellar", "Lateral", 1, "Infrapatellar", "Lateral", None, None],
             [2, "Infrapatellar", "Medial", 2, "Infrapatellar", "Medial", None, None],
             [3, "Suprapatellar", "Medial", 3, "Suprapatellar", "Medial", None, None],
             [4, "Suprapatellar", "Lateral", 4, "Suprapatellar", "Lateral", None, None],
             ["Left knee", None, None, None, None, None, None, None],
-            ["File Name", "File Size (mb)", "Audio Board Serial Number",
-             "Timestamp", "Maneuver", "Notes", None, None],
-            ["HP_W11.2-5-20240201_112407", 123.7, "HP_W11.2-5", "11:24:07",
-             "Walk (slow,medium, fast) 80 seconds each speed", None, None, None],
-            ["HP_W11.2-5-20240201_113516", 33.6, "HP_W11.2-5", "11:35:16",
-             "Flexion - Extension", None, None, None],
-            ["HP_W11.2-5-20240201_114038", 32.3, "HP_W11.2-5", "11:40:38",
-             "Sit - to - Stand", None, None, None],
+            ["File Name", "File Size (mb)", "Audio Board Serial Number", "Timestamp", "Maneuver", "Notes", None, None],
+            [
+                "HP_W11.2-5-20240201_112407",
+                123.7,
+                "HP_W11.2-5",
+                "11:24:07",
+                "Walk (slow,medium, fast) 80 seconds each speed",
+                None,
+                None,
+                None,
+            ],
+            ["HP_W11.2-5-20240201_113516", 33.6, "HP_W11.2-5", "11:35:16", "Flexion - Extension", None, None, None],
+            ["HP_W11.2-5-20240201_114038", 32.3, "HP_W11.2-5", "11:40:38", "Sit - to - Stand", None, None, None],
             [None] * 8,
             [None] * 8,
             ["Right Knee", None, None, None, None, None, None, None],
-            ["File Name", "File Size (mb)", "Audio Board Serial Number",
-             "Timestamp", "Maneuver", "Notes", None, None],
-            ["HP_W11.2-1-20240201_112411", 122.2, "HP_W11.2-1", "11:24:11",
-             "Walk (slow,medium, fast) 80 seconds each speed", None, None, None],
-            ["HP_W11.2-1-20240201_113517", 32.2, "HP_W11.2-1", "11:35:17",
-             "Flexion - Extension", None, None, None],
-            ["HP_W11.2-1-20240201_114035", 34, "HP_W11.2-1", "11:40:35",
-             "Sit - to - Stand", None, None, None],
+            ["File Name", "File Size (mb)", "Audio Board Serial Number", "Timestamp", "Maneuver", "Notes", None, None],
+            [
+                "HP_W11.2-1-20240201_112411",
+                122.2,
+                "HP_W11.2-1",
+                "11:24:11",
+                "Walk (slow,medium, fast) 80 seconds each speed",
+                None,
+                None,
+                None,
+            ],
+            ["HP_W11.2-1-20240201_113517", 32.2, "HP_W11.2-1", "11:35:17", "Flexion - Extension", None, None, None],
+            ["HP_W11.2-1-20240201_114035", 34, "HP_W11.2-1", "11:40:35", "Sit - to - Stand", None, None, None],
             *[[None] * 8 for _ in range(7)],
             [None, None, None, None, None, None, "Red Device", "HP_W11.2-5"],
             [None, None, None, None, None, None, "White Device", "HP_W11.2-1"],
@@ -635,21 +686,29 @@ class TestMicSetupFallback:
 
         with pd.ExcelWriter(excel_path, engine="openpyxl") as writer:
             pd.DataFrame(acoustic_data).to_excel(
-                writer, sheet_name="Acoustic Notes", index=False, header=False,
+                writer,
+                sheet_name="Acoustic Notes",
+                index=False,
+                header=False,
             )
             pd.DataFrame(mic_setup_data).to_excel(
-                writer, sheet_name="Mic Setup", index=False, header=False,
+                writer,
+                sheet_name="Mic Setup",
+                index=False,
+                header=False,
             )
 
         metadata, mismatches = get_acoustics_metadata(
-            str(excel_path), "walk", "left",
+            str(excel_path),
+            "walk",
+            "left",
         )
 
         # No mismatches — AN is unfilled so template defaults are ignored
         assert mismatches == []
 
         # Mic positions should come from Mic Setup, NOT the AN template
-        assert metadata.microphones[3].laterality == "Medial"   # Mic Setup value
+        assert metadata.microphones[3].laterality == "Medial"  # Mic Setup value
         assert metadata.microphones[4].laterality == "Lateral"  # Mic Setup value
 
 
@@ -712,37 +771,44 @@ def _create_legend_with_mismatch(tmp_path):
 
     # Mic Setup: mic 1 = Infrapatellar MEDIAL (mismatch!)
     mic_setup_data = [
-        ["Study ID: 9999", None, "Date of Recording: 01/26/2024",
-         None, None, None, None, None],
-        ["Left Knee HP_W11.2-5", None, None,
-         "Right Knee: HP_W12.2-5", None, None, None, None],
-        ["Microphones", "Patellar Position", "Medial / Lateral",
-         "Microphones", "Patellar Position", "Medial / Lateral", None, None],
+        ["Study ID: 9999", None, "Date of Recording: 01/26/2024", None, None, None, None, None],
+        ["Left Knee HP_W11.2-5", None, None, "Right Knee: HP_W12.2-5", None, None, None, None],
+        [
+            "Microphones",
+            "Patellar Position",
+            "Medial / Lateral",
+            "Microphones",
+            "Patellar Position",
+            "Medial / Lateral",
+            None,
+            None,
+        ],
         # Mic 1: MEDIAL instead of LATERAL (mismatch!)
         [1, "Infrapatellar", "Medial", 1, "Infrapatellar", "Lateral", None, None],
         [2, "Infrapatellar", "Medial", 2, "Infrapatellar", "Medial", None, None],
         [3, "Suprapatellar", "Medial", 3, "Suprapatellar", "Medial", None, None],
         [4, "Suprapatellar", "Lateral", 4, "Suprapatellar", "Lateral", None, None],
         ["Left knee", None, None, None, None, None, None, None],
-        ["File Name", "File Size (mb)", "Audio Board Serial Number",
-         "Timestamp", "Maneuver", "Notes", None, None],
-        ["SAME_FILE_NAME", 100.0, "HP_W11.2-5", "12:00:00",
-         "Walk (slow,medium, fast) 80 seconds each speed", None, None, None],
-        ["FE_FILE", 30.0, "HP_W11.2-5", "12:10:00",
-         "Flexion - Extension", None, None, None],
-        ["STS_FILE", 28.0, "HP_W11.2-5", "12:20:00",
-         "Sit - to - Stand", None, None, None],
+        ["File Name", "File Size (mb)", "Audio Board Serial Number", "Timestamp", "Maneuver", "Notes", None, None],
+        [
+            "SAME_FILE_NAME",
+            100.0,
+            "HP_W11.2-5",
+            "12:00:00",
+            "Walk (slow,medium, fast) 80 seconds each speed",
+            None,
+            None,
+            None,
+        ],
+        ["FE_FILE", 30.0, "HP_W11.2-5", "12:10:00", "Flexion - Extension", None, None, None],
+        ["STS_FILE", 28.0, "HP_W11.2-5", "12:20:00", "Sit - to - Stand", None, None, None],
         [None] * 8,
         [None] * 8,
         ["Right Knee", None, None, None, None, None, None, None],
-        ["File Name", "File Size (mb)", "Audio Board Serial Number",
-         "Timestamp", "Maneuver", "Notes", None, None],
-        ["R_FILE", 98.0, "HP_W12.2-5", "12:00:00",
-         "Walk (slow,medium, fast) 80 seconds each speed", None, None, None],
-        ["R_FE_FILE", 29.0, "HP_W12.2-5", "12:10:00",
-         "Flexion - Extension", None, None, None],
-        ["R_STS_FILE", 27.0, "HP_W12.2-5", "12:20:00",
-         "Sit - to - Stand", None, None, None],
+        ["File Name", "File Size (mb)", "Audio Board Serial Number", "Timestamp", "Maneuver", "Notes", None, None],
+        ["R_FILE", 98.0, "HP_W12.2-5", "12:00:00", "Walk (slow,medium, fast) 80 seconds each speed", None, None, None],
+        ["R_FE_FILE", 29.0, "HP_W12.2-5", "12:10:00", "Flexion - Extension", None, None, None],
+        ["R_STS_FILE", 27.0, "HP_W12.2-5", "12:20:00", "Sit - to - Stand", None, None, None],
         *[[None] * 8 for _ in range(7)],
         [None, None, None, None, None, None, "Red Device", "HP_W11.2-5"],
         [None, None, None, None, None, None, "White Device", "HP_W12.2-5"],
@@ -750,10 +816,16 @@ def _create_legend_with_mismatch(tmp_path):
 
     with pd.ExcelWriter(excel_path, engine="openpyxl") as writer:
         pd.DataFrame(acoustic_data).to_excel(
-            writer, sheet_name="Acoustic Notes", index=False, header=False,
+            writer,
+            sheet_name="Acoustic Notes",
+            index=False,
+            header=False,
         )
         pd.DataFrame(mic_setup_data).to_excel(
-            writer, sheet_name="Mic Setup", index=False, header=False,
+            writer,
+            sheet_name="Mic Setup",
+            index=False,
+            header=False,
         )
 
     return excel_path
@@ -767,13 +839,13 @@ class TestCrossSheetMismatch:
         legend_path = _create_legend_with_mismatch(tmp_path)
 
         metadata, mismatches = get_acoustics_metadata(
-            str(legend_path), "walk", "left",
+            str(legend_path),
+            "walk",
+            "left",
         )
 
         # Should have detected the mic 1 laterality mismatch
-        laterality_mismatches = [
-            m for m in mismatches if m.field == "mic_1_laterality"
-        ]
+        laterality_mismatches = [m for m in mismatches if m.field == "mic_1_laterality"]
         assert len(laterality_mismatches) == 1
         assert laterality_mismatches[0].acoustic_notes_value == "Lateral"
         assert laterality_mismatches[0].mic_setup_value == "Medial"
@@ -783,12 +855,12 @@ class TestCrossSheetMismatch:
         legend_path = _create_legend_with_mismatch(tmp_path)
 
         _, mismatches = get_acoustics_metadata(
-            str(legend_path), "walk", "left",
+            str(legend_path),
+            "walk",
+            "left",
         )
 
-        file_name_mismatches = [
-            m for m in mismatches if m.field == "file_name"
-        ]
+        file_name_mismatches = [m for m in mismatches if m.field == "file_name"]
         assert len(file_name_mismatches) == 0
 
     def test_no_mismatch_when_sheets_agree(self, fake_participant_directory):
@@ -796,7 +868,9 @@ class TestCrossSheetMismatch:
         legend_path = fake_participant_directory["legend_file"]
 
         _, mismatches = get_acoustics_metadata(
-            str(legend_path), "walk", "left",
+            str(legend_path),
+            "walk",
+            "left",
         )
 
         assert mismatches == []
@@ -806,7 +880,9 @@ class TestCrossSheetMismatch:
         legend_path = _create_legend_with_mismatch(tmp_path)
 
         _, mismatches = get_acoustics_metadata(
-            str(legend_path), "walk", "left",
+            str(legend_path),
+            "walk",
+            "left",
         )
 
         assert len(mismatches) > 0
@@ -827,7 +903,8 @@ class TestLegendValidationSheet:
 
         mismatches = [
             LegendMismatch(
-                knee="left", maneuver="walk",
+                knee="left",
+                maneuver="walk",
                 field="mic_1_laterality",
                 acoustic_notes_value="Lateral",
                 mic_setup_value="Medial",

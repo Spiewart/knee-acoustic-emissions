@@ -12,9 +12,7 @@ from src.audio.readers import read_audio_board_file
 
 def main() -> None:
     """Main entry point for audio board file reader CLI."""
-    parser = argparse.ArgumentParser(
-        description="Read binary audio board file and convert to CSV"
-    )
+    parser = argparse.ArgumentParser(description="Read binary audio board file and convert to CSV")
     parser.add_argument(
         "fname",
         help="Path to binary audio board file",

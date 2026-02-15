@@ -12,22 +12,26 @@ from src.synchronization.sync import sync_audio_with_biomechanics
 @pytest.fixture
 def audio_df():
     """Create audio DataFrame covering 0-60 seconds."""
-    return pd.DataFrame({
-        'tt': np.arange(0, 60, 0.01),  # 60 seconds at 100 Hz
-        'ch1': np.random.randn(6000) * 0.1,
-        'ch2': np.random.randn(6000) * 0.1,
-        'ch3': np.random.randn(6000) * 0.1,
-        'ch4': np.random.randn(6000) * 0.1,
-    })
+    return pd.DataFrame(
+        {
+            "tt": np.arange(0, 60, 0.01),  # 60 seconds at 100 Hz
+            "ch1": np.random.randn(6000) * 0.1,
+            "ch2": np.random.randn(6000) * 0.1,
+            "ch3": np.random.randn(6000) * 0.1,
+            "ch4": np.random.randn(6000) * 0.1,
+        }
+    )
 
 
 @pytest.fixture
 def bio_df():
     """Create biomechanics DataFrame covering 0-120 seconds."""
-    return pd.DataFrame({
-        'TIME': pd.to_timedelta(np.arange(0, 120, 0.01), unit='s'),
-        'bio_metric': np.sin(np.arange(0, 120, 0.01)),
-    })
+    return pd.DataFrame(
+        {
+            "TIME": pd.to_timedelta(np.arange(0, 120, 0.01), unit="s"),
+            "bio_metric": np.sin(np.arange(0, 120, 0.01)),
+        }
+    )
 
 
 def test_pass_outside_audio_range(audio_df, bio_df):
@@ -77,10 +81,10 @@ def test_pass_partial_overlap(audio_df, bio_df):
 
     # Should return a DataFrame with data clipped to available audio range
     assert not result.empty
-    assert 'ch1' in result.columns
-    assert 'ch2' in result.columns
-    assert 'ch3' in result.columns
-    assert 'ch4' in result.columns
+    assert "ch1" in result.columns
+    assert "ch2" in result.columns
+    assert "ch3" in result.columns
+    assert "ch4" in result.columns
 
     # The result should have been clipped - check that we got some data back
     # but it covers less than the full requested window
@@ -109,8 +113,8 @@ def test_pass_fully_within_audio(audio_df, bio_df):
 
     # Should return a DataFrame with full audio coverage
     assert not result.empty
-    assert 'ch1' in result.columns
+    assert "ch1" in result.columns
 
     # Audio coverage should be at or near 100%
-    audio_coverage = result[['ch1', 'ch2', 'ch3', 'ch4']].notna().any(axis=1).sum() / len(result)
+    audio_coverage = result[["ch1", "ch2", "ch3", "ch4"]].notna().any(axis=1).sum() / len(result)
     assert audio_coverage >= 0.95, f"Expected >95% coverage, got {audio_coverage:.1%}"

@@ -2,12 +2,11 @@
 
 import argparse
 from pathlib import Path
-from typing import Optional
 
+from matplotlib.figure import Figure
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from matplotlib.figure import Figure
 from scipy.signal import savgol_filter
 
 
@@ -15,7 +14,7 @@ def plot_syncd_data(
     syncd_data_path: str,
     joint_angle_col: str = "Knee Angle Z",
     figsize: tuple[int, int] = (14, 8),
-    save_path: Optional[str] = None,
+    save_path: str | None = None,
 ) -> Figure:
     """Plot synchronized audio and biomechanics data as time series.
 
@@ -45,35 +44,26 @@ def plot_syncd_data(
     # Load synchronized data
     syncd_path = Path(syncd_data_path)
     if not syncd_path.exists():
-        raise FileNotFoundError(
-            f"Synchronized data file not found: {syncd_data_path}"
-        )
+        raise FileNotFoundError(f"Synchronized data file not found: {syncd_data_path}")
 
     syncd_df = pd.read_pickle(syncd_path)
 
     # Validate audio channels
     audio_channels = ["ch1", "ch2", "ch3", "ch4"]
-    missing_channels = [
-        ch for ch in audio_channels if ch not in syncd_df.columns
-    ]
+    missing_channels = [ch for ch in audio_channels if ch not in syncd_df.columns]
     if missing_channels:
-        raise ValueError(
-            f"Missing audio channels in DataFrame: {missing_channels}"
-        )
+        raise ValueError(f"Missing audio channels in DataFrame: {missing_channels}")
 
     # Check if joint angle column exists (no laterality prefix)
     if joint_angle_col not in syncd_df.columns:
         raise ValueError(
-            f"Joint angle column '{joint_angle_col}' not found. "
-            f"Available columns: {list(syncd_df.columns)}"
+            f"Joint angle column '{joint_angle_col}' not found. Available columns: {list(syncd_df.columns)}"
         )
 
     # Determine time column ('tt' or 'TIME')
     time_col = "tt" if "tt" in syncd_df.columns else "TIME"
     if time_col not in syncd_df.columns:
-        raise ValueError(
-            "No time column found. Expected 'tt' or 'TIME' in DataFrame."
-        )
+        raise ValueError("No time column found. Expected 'tt' or 'TIME' in DataFrame.")
 
     # Convert time to seconds if it's timedelta
     if pd.api.types.is_timedelta64_dtype(syncd_df[time_col]):
@@ -85,7 +75,7 @@ def plot_syncd_data(
 
     # Normalize joint angle to [0, 1] range and convert to numeric
     # Handle potential object dtype by converting to numeric first
-    angle_series = pd.to_numeric(syncd_df[joint_angle_col], errors='coerce')
+    angle_series = pd.to_numeric(syncd_df[joint_angle_col], errors="coerce")
     angle_data = angle_series.dropna()
 
     if len(angle_data) > 0:
@@ -114,11 +104,7 @@ def plot_syncd_data(
                     window_length += 1
 
                 # Apply filter directly to valid data values
-                smoothed_valid = savgol_filter(
-                    valid_data.values,
-                    window_length=window_length,
-                    polyorder=3
-                )
+                smoothed_valid = savgol_filter(valid_data.values, window_length=window_length, polyorder=3)
 
                 # Replace values with smoothed version at sparse locations
                 normalized_angle[valid_indices] = smoothed_valid
@@ -177,10 +163,7 @@ def plot_syncd_data(
         angle_max = angle_data.max()
         # Show 5 tick marks with actual angle values
         tick_positions = [0.25, 0.375, 0.5, 0.625, 0.75]
-        tick_labels = [
-            f"{angle_min + (pos - 0.25) / 0.5 * (angle_max - angle_min):.1f}"
-            for pos in tick_positions
-        ]
+        tick_labels = [f"{angle_min + (pos - 0.25) / 0.5 * (angle_max - angle_min):.1f}" for pos in tick_positions]
         ax2.set_yticks(tick_positions)
         ax2.set_yticklabels(tick_labels)
 
@@ -246,9 +229,7 @@ def plot_per_channel(df: pd.DataFrame, out_png: Path) -> None:
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Plot synchronized audio and biomechanics data"
-    )
+    parser = argparse.ArgumentParser(description="Plot synchronized audio and biomechanics data")
     parser.add_argument(
         "syncd_data_path",
         type=str,

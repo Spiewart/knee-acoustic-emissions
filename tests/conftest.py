@@ -89,23 +89,22 @@ For detailed guidelines, see:
 
 """
 
+from datetime import datetime, timezone
 import json
 import os
-import pickle
-import sys
-import warnings
-from datetime import datetime, timezone
 from pathlib import Path
+import sys
 
+from dotenv import load_dotenv
 import numpy as np
 import pandas as pd
 import pytest
-from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
 # Add parent directory to path for module imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
+
 
 @pytest.fixture
 def dummy_pkl_file(tmp_path):
@@ -225,14 +224,20 @@ def _create_acoustic_legend(participant_dir: Path) -> Path:
     # Must match Acoustic Notes data so cross-validation produces no mismatches.
     mic_setup_data = [
         # Row 0: header
-        ["Study ID: 9999", None, "Date of Recording: 01/26/2024",
-         None, None, None, None, None],
+        ["Study ID: 9999", None, "Date of Recording: 01/26/2024", None, None, None, None, None],
         # Row 1: knee board IDs
-        ["Left Knee HP_W11.2-5", None, None,
-         "Right Knee: HP_W12.2-5", None, None, None, None],
+        ["Left Knee HP_W11.2-5", None, None, "Right Knee: HP_W12.2-5", None, None, None, None],
         # Row 2: mic position headers
-        ["Microphones", "Patellar Position", "Medial / Lateral",
-         "Microphones", "Patellar Position", "Medial / Lateral", None, None],
+        [
+            "Microphones",
+            "Patellar Position",
+            "Medial / Lateral",
+            "Microphones",
+            "Patellar Position",
+            "Medial / Lateral",
+            None,
+            None,
+        ],
         # Rows 3-6: mic positions (left cols 0-2, right cols 3-5)
         [1, "Infrapatellar", "Lateral", 1, "Infrapatellar", "Lateral", None, None],
         [2, "Infrapatellar", "Medial", 2, "Infrapatellar", "Medial", None, None],
@@ -241,30 +246,40 @@ def _create_acoustic_legend(participant_dir: Path) -> Path:
         # Row 7: left knee landmark
         ["Left knee", None, None, None, None, None, None, None],
         # Row 8: left knee file header
-        ["File Name", "File Size (mb)", "Audio Board Serial Number",
-         "Timestamp", "Maneuver", "Notes", None, None],
+        ["File Name", "File Size (mb)", "Audio Board Serial Number", "Timestamp", "Maneuver", "Notes", None, None],
         # Rows 9-11: left knee data (Walk, FE, STS)
-        ["HP_W11.2-5-20240126_135702", 100.5, "HP_W11.2-5", "13:57:02",
-         "Walk (slow,medium, fast) 80 seconds each speed", None, None, None],
-        ["HP_W11.2-1-20240126_135704", 30.2, "HP_W11.2-5", "13:57:04",
-         "Flexion - Extension", None, None, None],
-        ["HP_W11.2-3-20240126_135706", 28.1, "HP_W11.2-5", "13:57:06",
-         "Sit - to - Stand", None, None, None],
+        [
+            "HP_W11.2-5-20240126_135702",
+            100.5,
+            "HP_W11.2-5",
+            "13:57:02",
+            "Walk (slow,medium, fast) 80 seconds each speed",
+            None,
+            None,
+            None,
+        ],
+        ["HP_W11.2-1-20240126_135704", 30.2, "HP_W11.2-5", "13:57:04", "Flexion - Extension", None, None, None],
+        ["HP_W11.2-3-20240126_135706", 28.1, "HP_W11.2-5", "13:57:06", "Sit - to - Stand", None, None, None],
         # Rows 12-13: empty
         [None] * 8,
         [None] * 8,
         # Row 14: right knee landmark
         ["Right Knee", None, None, None, None, None, None, None],
         # Row 15: right knee file header
-        ["File Name", "File Size (mb)", "Audio Board Serial Number",
-         "Timestamp", "Maneuver", "Notes", None, None],
+        ["File Name", "File Size (mb)", "Audio Board Serial Number", "Timestamp", "Maneuver", "Notes", None, None],
         # Rows 16-18: right knee data
-        ["HP_W12.2-5-20240126_135802", 98.3, "HP_W12.2-5", "13:58:02",
-         "Walk (slow,medium, fast) 80 seconds each speed", None, None, None],
-        ["HP_W12.2-1-20240126_135804", 29.8, "HP_W12.2-5", "13:58:04",
-         "Flexion - Extension", None, None, None],
-        ["HP_W12.2-3-20240126_135806", 27.5, "HP_W12.2-5", "13:58:06",
-         "Sit - to - Stand", None, None, None],
+        [
+            "HP_W12.2-5-20240126_135802",
+            98.3,
+            "HP_W12.2-5",
+            "13:58:02",
+            "Walk (slow,medium, fast) 80 seconds each speed",
+            None,
+            None,
+            None,
+        ],
+        ["HP_W12.2-1-20240126_135804", 29.8, "HP_W12.2-5", "13:58:04", "Flexion - Extension", None, None, None],
+        ["HP_W12.2-3-20240126_135806", 27.5, "HP_W12.2-5", "13:58:06", "Sit - to - Stand", None, None, None],
         # Rows 19-25: empty
         [None] * 8,
         [None] * 8,
@@ -366,7 +381,7 @@ def _write_valid_audio_bin(
     header[24:28] = int(firmware_version).to_bytes(4, byteorder="little", signed=False)
 
     # numSDBlocks at bytes 61-65
-    header[61:65] = int(1).to_bytes(4, byteorder="little", signed=False)
+    header[61:65] = (1).to_bytes(4, byteorder="little", signed=False)
 
     # fileTime at bytes 65-73
     header[65:73] = _filetime_bytes_for_datetime(file_time)
@@ -446,22 +461,11 @@ def _walk_sheet(
     pass_number: int,
     time_points: np.ndarray,
 ) -> pd.DataFrame:
-    uid_base = (
-        f"V3D\\AOA{study_id}_Walk{pass_number:04d}_"
-        f"{speed_code}P{pass_number}_Filt.c3d"
-    )
+    uid_base = f"V3D\\AOA{study_id}_Walk{pass_number:04d}_{speed_code}P{pass_number}_Filt.c3d"
     data_dict = {
-        f"{uid_base}": ["Frame", ""] + time_points.tolist(),
-            f"{uid_base}.1": [
-                "Left Knee Angle",
-                "Z",
-            ]
-            + (np.sin(time_points + pass_number) * 20).tolist(),
-            f"{uid_base}.2": [
-                "Right Knee Angle",
-                "Z",
-            ]
-            + (np.cos(time_points + pass_number) * 20).tolist(),
+        f"{uid_base}": ["Frame", "", *time_points.tolist()],
+        f"{uid_base}.1": ["Left Knee Angle", "Z", *(np.sin(time_points + pass_number) * 20).tolist()],
+        f"{uid_base}.2": ["Right Knee Angle", "Z", *(np.cos(time_points + pass_number) * 20).tolist()],
     }
     return pd.DataFrame(data_dict)
 
@@ -473,17 +477,9 @@ def _non_walk_sheet(
 ) -> pd.DataFrame:
     uid_base = f"V3D\\AOA{study_id}_{maneuver_stub}0001_Filt.c3d"
     data_dict = {
-        f"{uid_base}": ["Frame", ""] + time_points.tolist(),
-        f"{uid_base}.1": [
-            "Left Knee Angle",
-            "Z",
-        ]
-        + (np.sin(time_points) * 20).tolist(),
-        f"{uid_base}.2": [
-            "Right Knee Angle",
-            "Z",
-        ]
-        + (np.cos(time_points) * 20).tolist(),
+        f"{uid_base}": ["Frame", "", *time_points.tolist()],
+        f"{uid_base}.1": ["Left Knee Angle", "Z", *(np.sin(time_points) * 20).tolist()],
+        f"{uid_base}.2": ["Right Knee Angle", "Z", *(np.cos(time_points) * 20).tolist()],
     }
     return pd.DataFrame(data_dict)
 
@@ -636,10 +632,7 @@ def _create_biomechanics_excel(
     return {
         "excel_path": excel_path,
         "data_sheets": {
-            "walk": {
-                speed.lower(): f"AOA{study_id}_{speed}_Walking"
-                for speed in ["Slow", "Medium", "Fast"]
-            },
+            "walk": {speed.lower(): f"AOA{study_id}_{speed}_Walking" for speed in ["Slow", "Medium", "Fast"]},
             "sit_to_stand": f"AOA{study_id}_SitToStand",
             "flexion_extension": f"AOA{study_id}_FlexExt",
         },
@@ -670,11 +663,7 @@ def syncd_walk(tmp_path):
     gait_freq = 1.0  # Hz (1 cycle per second)
     # Use -cos to get minima at integer seconds
     # Reduce noise to 0.1° to avoid spurious minima
-    knee_angle = (
-        20
-        - 30 * np.cos(2 * np.pi * gait_freq * time_array)
-        + np.random.randn(num_samples) * 0.1
-    )
+    knee_angle = 20 - 30 * np.cos(2 * np.pi * gait_freq * time_array) + np.random.randn(num_samples) * 0.1
 
     # Acoustic events at heel strikes (impacts)
     acoustic_base = np.random.randn(num_samples) * 0.001
@@ -684,12 +673,8 @@ def syncd_walk(tmp_path):
     for heel_strike_time in [0.0, 1.0, 2.0, 3.0]:
         idx = int(heel_strike_time * 1000)
         spike_width = 50  # 50ms spike
-        acoustic_base[idx : idx + spike_width] += (
-            np.exp(-np.arange(spike_width) / 10) * 0.1
-        )
-        f_ch_base[idx : idx + spike_width] += (
-            np.exp(-np.arange(spike_width) / 10) * 2.0
-        )
+        acoustic_base[idx : idx + spike_width] += np.exp(-np.arange(spike_width) / 10) * 0.1
+        f_ch_base[idx : idx + spike_width] += np.exp(-np.arange(spike_width) / 10) * 2.0
 
     syncd_df = pd.DataFrame(
         {
@@ -744,12 +729,8 @@ def syncd_sit_to_stand(tmp_path):
         # Peak acoustic activity during extension (standing)
         peak_idx = cycle * 5000 + 2500
         spike_width = 500  # 500ms of activity
-        acoustic_base[peak_idx : peak_idx + spike_width] += (
-            np.exp(-np.arange(spike_width) / 100) * 0.05
-        )
-        f_ch_base[peak_idx : peak_idx + spike_width] += (
-            np.exp(-np.arange(spike_width) / 100) * 0.5
-        )
+        acoustic_base[peak_idx : peak_idx + spike_width] += np.exp(-np.arange(spike_width) / 100) * 0.05
+        f_ch_base[peak_idx : peak_idx + spike_width] += np.exp(-np.arange(spike_width) / 100) * 0.5
 
     syncd_df = pd.DataFrame(
         {
@@ -786,11 +767,7 @@ def syncd_flexion_extension(tmp_path):
     # Knee angle: smooth oscillation between flexion (~90°) and extension (~10°)
     # Cycles every 2 seconds, extension peaks at 1, 3, 5, 7, 9 seconds
     cycle_freq = 0.5  # Hz (1 cycle per 2 seconds)
-    knee_angle = (
-        50
-        + 40 * np.sin(2 * np.pi * cycle_freq * time_array - np.pi / 2)
-        + np.random.randn(num_samples) * 3
-    )
+    knee_angle = 50 + 40 * np.sin(2 * np.pi * cycle_freq * time_array - np.pi / 2) + np.random.randn(num_samples) * 3
 
     # Acoustic activity during extension (peak extension = minimum knee angle)
     acoustic_base = np.random.randn(num_samples) * 0.001
@@ -800,9 +777,7 @@ def syncd_flexion_extension(tmp_path):
     for peak_time in [1.0, 3.0, 5.0, 7.0, 9.0]:
         idx = int(peak_time * 1000)
         spike_width = 200  # 200ms activity window
-        acoustic_base[idx : idx + spike_width] += (
-            np.exp(-np.arange(spike_width) / 50) * 0.03
-        )
+        acoustic_base[idx : idx + spike_width] += np.exp(-np.arange(spike_width) / 50) * 0.03
         f_ch_base[idx : idx + spike_width] += np.exp(-np.arange(spike_width) / 50) * 0.3
 
     syncd_df = pd.DataFrame(
@@ -1194,9 +1169,7 @@ def db_engine():
             conn.execute(text("CREATE SCHEMA public"))
         engine.dispose()
     except Exception as exc:
-        pytest.skip(
-            f"PostgreSQL not available: {exc}\nMake sure PostgreSQL is running and AE_DATABASE_URL is set."
-        )
+        pytest.skip(f"PostgreSQL not available: {exc}\nMake sure PostgreSQL is running and AE_DATABASE_URL is set.")
 
 
 @pytest.fixture

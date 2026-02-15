@@ -27,7 +27,9 @@ def test_knee_log_generates_summary_sheet(
         biomechanics_import_id=biomech_record.id,
         sync_file_name="AOA4001_walk_sync",
     )
-    sync_record = repository.save_synchronization(sync, audio_processing_id=audio_record.id, biomechanics_import_id=biomech_record.id)
+    sync_record = repository.save_synchronization(
+        sync, audio_processing_id=audio_record.id, biomechanics_import_id=biomech_record.id
+    )
 
     cycle = movement_cycle_factory(
         study="AOA",
@@ -37,7 +39,12 @@ def test_knee_log_generates_summary_sheet(
         synchronization_id=sync_record.id,
         cycle_file="AOA4001_walk_cycle_0",
     )
-    repository.save_movement_cycle(cycle, audio_processing_id=audio_record.id, biomechanics_import_id=biomech_record.id, synchronization_id=sync_record.id)
+    repository.save_movement_cycle(
+        cycle,
+        audio_processing_id=audio_record.id,
+        biomechanics_import_id=biomech_record.id,
+        synchronization_id=sync_record.id,
+    )
 
     knee_log = KneeProcessingLog(
         study_id="AOA4001",

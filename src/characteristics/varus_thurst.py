@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Dict, List, Union
+from typing import Union
 
 from ._utils import (
     attach_normalized_ids,
@@ -14,8 +14,8 @@ from ._utils import (
 
 def import_varus_thurst(
     excel_path: Union[str, Path],
-    ids: Union[int, str, List[Union[int, str]], None] = None,
-) -> Dict[int, Dict[str, bool]]:
+    ids: Union[int, str, list[Union[int, str]], None] = None,
+) -> dict[int, dict[str, bool]]:
     """Load varus thrust findings for each knee.
 
     Reads the "Varus Thrust" sheet (columns: Study ID, Right Knee, Left Knee)
@@ -36,7 +36,7 @@ def import_varus_thurst(
     df["Right Knee"] = coerce_choice_column(df["Right Knee"], "Right Knee", {"y", "n"})
     df["Left Knee"] = coerce_choice_column(df["Left Knee"], "Left Knee", {"y", "n"})
 
-    results: Dict[int, Dict[str, bool]] = {}
+    results: dict[int, dict[str, bool]] = {}
     for _, row in df.iterrows():
         study_id = int(row["study_id"])
         results[study_id] = {

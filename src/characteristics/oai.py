@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Dict, List, Literal, Tuple, Union
+from typing import Literal, Union
 
 from ._utils import (
     attach_normalized_ids,
@@ -45,10 +45,10 @@ _PFM_COLUMNS = [
 def _load_oai_sheet(
     excel_path: Path,
     sheet_name: str,
-    columns: List[str],
-    ids: List[int],
+    columns: list[str],
+    ids: list[int],
     knees: Literal["left", "right", "both"],
-) -> Tuple[Dict[int, Dict[str, int]], Dict[int, set[str]]]:
+) -> tuple[dict[int, dict[str, int]], dict[int, set[str]]]:
     df = read_sheet(excel_path, sheet_name)
     missing = [c for c in ["Knee", *columns] if c not in df.columns]
     if missing:
@@ -65,8 +65,8 @@ def _load_oai_sheet(
     for col in columns:
         df[col] = coerce_numeric_column(df[col], col, integer=True)
 
-    data: Dict[int, Dict[str, int]] = {}
-    seen_knees: Dict[int, set[str]] = {}
+    data: dict[int, dict[str, int]] = {}
+    seen_knees: dict[int, set[str]] = {}
 
     for _, row in df.iterrows():
         study_id = int(row["study_id"])
@@ -81,10 +81,10 @@ def _load_oai_sheet(
 
 def import_oai(
     excel_path: Union[str, Path],
-    ids: Union[int, str, List[Union[int, str]], None] = None,
+    ids: Union[int, str, list[Union[int, str]], None] = None,
     *,
     knees: Literal["left", "right", "both"] = "both",
-) -> Dict[int, Dict[str, int]]:
+) -> dict[int, dict[str, int]]:
     """Load Osteoarthritis Initiative imaging scores for both compartments.
 
     Pulls tibiofemoral (TFM) and patellofemoral (PFM) scores from the "TFM OAI"
@@ -98,7 +98,7 @@ def import_oai(
     tfm_data, tfm_seen = _load_oai_sheet(path, "TFM OAI", _TFM_COLUMNS, id_list, knees)
     pfm_data, pfm_seen = _load_oai_sheet(path, "PFM OAI", _PFM_COLUMNS, id_list, knees)
 
-    combined: Dict[int, Dict[str, int]] = {}
+    combined: dict[int, dict[str, int]] = {}
     for source in (tfm_data, pfm_data):
         for study_id, payload in source.items():
             combined.setdefault(study_id, {}).update(payload)

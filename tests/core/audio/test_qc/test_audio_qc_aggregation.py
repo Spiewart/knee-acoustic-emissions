@@ -7,8 +7,6 @@ and cycle-stage QC sources:
   - Cycle-stage: intermittent, periodic (from CycleQCResult)
 """
 
-import pytest
-
 from src.audio.raw_qc import trim_intervals_to_cycle
 from src.orchestration.participant_processor import ManeuverProcessor
 
@@ -44,7 +42,7 @@ class TestTrimIntervalsToKnownCycleBoundaries:
     def test_multiple_intervals_mixed(self):
         """Multiple intervals with varying overlap should be filtered/clipped."""
         intervals = [
-            (1.0, 3.0),    # no overlap
+            (1.0, 3.0),  # no overlap
             (18.0, 22.0),  # partial start
             (21.0, 23.0),  # full overlap
             (23.0, 28.0),  # partial end
@@ -87,7 +85,8 @@ class TestAudioQCFailAggregation:
             flat = dropout_segments_per_ch.get(ch_key)
             trimmed = trim_intervals_to_cycle(
                 ManeuverProcessor._unflatten_intervals(flat),
-                cycle_start, cycle_end,
+                cycle_start,
+                cycle_end,
             )
             if trimmed:
                 has_dropout = True
@@ -101,7 +100,8 @@ class TestAudioQCFailAggregation:
             flat = continuous_segments_per_ch.get(ch_key)
             trimmed = trim_intervals_to_cycle(
                 ManeuverProcessor._unflatten_intervals(flat),
-                cycle_start, cycle_end,
+                cycle_start,
+                cycle_end,
             )
             if trimmed:
                 has_continuous = True
@@ -109,10 +109,7 @@ class TestAudioQCFailAggregation:
             audio_qc_failures.append("continuous")
 
         # Cycle-stage: intermittent
-        has_intermittent = any(
-            bool(intermittent_intervals_per_ch.get(f"ch{ch}", []))
-            for ch in range(1, 5)
-        )
+        has_intermittent = any(bool(intermittent_intervals_per_ch.get(f"ch{ch}", [])) for ch in range(1, 5))
         if has_intermittent:
             audio_qc_failures.append("intermittent")
 
@@ -141,7 +138,9 @@ class TestAudioQCFailAggregation:
         fail, failures = self._compute_audio_qc_failures(
             dropout_segments_per_ch={
                 "ch1": [9.0, 10.5],  # overlaps [10.0, 11.2]
-                "ch2": None, "ch3": None, "ch4": None,
+                "ch2": None,
+                "ch3": None,
+                "ch4": None,
             },
             continuous_segments_per_ch={"ch1": None, "ch2": None, "ch3": None, "ch4": None},
             intermittent_intervals_per_ch={"ch1": [], "ch2": [], "ch3": [], "ch4": []},
@@ -157,7 +156,8 @@ class TestAudioQCFailAggregation:
         fail, failures = self._compute_audio_qc_failures(
             dropout_segments_per_ch={"ch1": None, "ch2": None, "ch3": None, "ch4": None},
             continuous_segments_per_ch={
-                "ch1": None, "ch2": None,
+                "ch1": None,
+                "ch2": None,
                 "ch3": [10.5, 11.0],  # overlaps cycle
                 "ch4": None,
             },
@@ -175,7 +175,10 @@ class TestAudioQCFailAggregation:
             dropout_segments_per_ch={"ch1": None, "ch2": None, "ch3": None, "ch4": None},
             continuous_segments_per_ch={"ch1": None, "ch2": None, "ch3": None, "ch4": None},
             intermittent_intervals_per_ch={
-                "ch1": [], "ch2": [(10.3, 10.6)], "ch3": [], "ch4": [],
+                "ch1": [],
+                "ch2": [(10.3, 10.6)],
+                "ch3": [],
+                "ch4": [],
             },
             periodic_noise_detected=False,
             cycle_start=10.0,
@@ -201,13 +204,22 @@ class TestAudioQCFailAggregation:
         """Cycle with all four failure types should list all four."""
         fail, failures = self._compute_audio_qc_failures(
             dropout_segments_per_ch={
-                "ch1": [10.0, 10.2], "ch2": None, "ch3": None, "ch4": None,
+                "ch1": [10.0, 10.2],
+                "ch2": None,
+                "ch3": None,
+                "ch4": None,
             },
             continuous_segments_per_ch={
-                "ch1": None, "ch2": [10.5, 11.0], "ch3": None, "ch4": None,
+                "ch1": None,
+                "ch2": [10.5, 11.0],
+                "ch3": None,
+                "ch4": None,
             },
             intermittent_intervals_per_ch={
-                "ch1": [], "ch2": [], "ch3": [(10.3, 10.5)], "ch4": [],
+                "ch1": [],
+                "ch2": [],
+                "ch3": [(10.3, 10.5)],
+                "ch4": [],
             },
             periodic_noise_detected=True,
             cycle_start=10.0,
@@ -221,7 +233,9 @@ class TestAudioQCFailAggregation:
         fail, failures = self._compute_audio_qc_failures(
             dropout_segments_per_ch={
                 "ch1": [5.0, 8.0],  # entirely before cycle [10, 11.2]
-                "ch2": None, "ch3": None, "ch4": None,
+                "ch2": None,
+                "ch3": None,
+                "ch4": None,
             },
             continuous_segments_per_ch={"ch1": None, "ch2": None, "ch3": None, "ch4": None},
             intermittent_intervals_per_ch={"ch1": [], "ch2": [], "ch3": [], "ch4": []},
@@ -237,7 +251,9 @@ class TestAudioQCFailAggregation:
         fail, failures = self._compute_audio_qc_failures(
             dropout_segments_per_ch={"ch1": None, "ch2": None, "ch3": None, "ch4": None},
             continuous_segments_per_ch={
-                "ch1": None, "ch2": None, "ch3": None,
+                "ch1": None,
+                "ch2": None,
+                "ch3": None,
                 "ch4": [10.0, 12.0],  # overlaps cycle
             },
             intermittent_intervals_per_ch={"ch1": [], "ch2": [], "ch3": [], "ch4": []},
@@ -252,13 +268,22 @@ class TestAudioQCFailAggregation:
         """Failure types should appear in order: dropout, continuous, intermittent, periodic."""
         _, failures = self._compute_audio_qc_failures(
             dropout_segments_per_ch={
-                "ch1": [10.0, 10.2], "ch2": None, "ch3": None, "ch4": None,
+                "ch1": [10.0, 10.2],
+                "ch2": None,
+                "ch3": None,
+                "ch4": None,
             },
             continuous_segments_per_ch={
-                "ch1": None, "ch2": [10.5, 11.0], "ch3": None, "ch4": None,
+                "ch1": None,
+                "ch2": [10.5, 11.0],
+                "ch3": None,
+                "ch4": None,
             },
             intermittent_intervals_per_ch={
-                "ch1": [], "ch2": [], "ch3": [(10.3, 10.5)], "ch4": [],
+                "ch1": [],
+                "ch2": [],
+                "ch3": [(10.3, 10.5)],
+                "ch4": [],
             },
             periodic_noise_detected=True,
             cycle_start=10.0,
@@ -305,7 +330,7 @@ class TestFlattenForDBPersistence:
 
     def test_flatten_empty_yields_empty(self):
         """No intervals on any channel produces empty flat list."""
-        all_intervals: list[tuple[float, float]] = [] + [] + [] + []
+        all_intervals: list[tuple[float, float]] = []
         flat = ManeuverProcessor._flatten_intervals(all_intervals)
         assert flat == []
 

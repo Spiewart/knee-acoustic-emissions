@@ -7,7 +7,9 @@ stomp time calculations and offsets.
 import pytest
 
 
-def test_stomp_offset_calculation(db_session, repository, synchronization_factory, audio_processing_factory, biomechanics_import_factory):
+def test_stomp_offset_calculation(
+    db_session, repository, synchronization_factory, audio_processing_factory, biomechanics_import_factory
+):
     """Test that stomp offset is correctly calculated and stored in DB.
 
     Verifies that audio_sync_time, bio_left_sync_time, and sync_offset
@@ -46,7 +48,9 @@ def test_stomp_offset_calculation(db_session, repository, synchronization_factor
     assert sync_record.bio_right_sync_time == pytest.approx(12.0)
 
 
-def test_aligned_stomp_times(db_session, repository, synchronization_factory, audio_processing_factory, biomechanics_import_factory):
+def test_aligned_stomp_times(
+    db_session, repository, synchronization_factory, audio_processing_factory, biomechanics_import_factory
+):
     """Test that aligned stomp times are correctly stored.
 
     After alignment, audio stomp appears at: audio_stomp + offset
@@ -79,7 +83,9 @@ def test_aligned_stomp_times(db_session, repository, synchronization_factory, au
     assert sync_record.aligned_sync_time == pytest.approx(10.0)
 
 
-def test_aligned_stomp_times_right_knee(db_session, repository, synchronization_factory, audio_processing_factory, biomechanics_import_factory):
+def test_aligned_stomp_times_right_knee(
+    db_session, repository, synchronization_factory, audio_processing_factory, biomechanics_import_factory
+):
     """Test aligned stomp calculation for right knee."""
     # Create and save prerequisite records
     audio_data = audio_processing_factory()
@@ -109,7 +115,9 @@ def test_aligned_stomp_times_right_knee(db_session, repository, synchronization_
     assert sync_record.aligned_sync_time == pytest.approx(8.0)
 
 
-def test_stomp_offset_with_different_methods(db_session, repository, synchronization_factory, audio_processing_factory, biomechanics_import_factory):
+def test_stomp_offset_with_different_methods(
+    db_session, repository, synchronization_factory, audio_processing_factory, biomechanics_import_factory
+):
     """Test that different sync methods store stomp offsets correctly."""
     # Create prerequisite records
     audio_data = audio_processing_factory()

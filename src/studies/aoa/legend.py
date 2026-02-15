@@ -7,10 +7,10 @@ row/column positions, landmark strings, and field locations.
 Other studies may have different legend formats or no Mic Setup sheet at all.
 """
 
+from datetime import datetime
 import logging
 import re
-from datetime import datetime
-from typing import Any, Literal, Optional
+from typing import Any, Literal
 
 import pandas as pd
 
@@ -45,14 +45,9 @@ def _find_mic_setup_knee_data_row(
     else:
         landmark = "Right Knee"
 
-    matches = df.index[
-        df.iloc[:, 0].astype(str).str.strip().str.lower()
-        == landmark.lower()
-    ].tolist()
+    matches = df.index[df.iloc[:, 0].astype(str).str.strip().str.lower() == landmark.lower()].tolist()
     if not matches:
-        raise ValueError(
-            f"Mic Setup sheet: no '{landmark}' landmark found."
-        )
+        raise ValueError(f"Mic Setup sheet: no '{landmark}' landmark found.")
     # Header row is landmark + 1, first data row is landmark + 2
     return matches[0] + 2
 
@@ -100,7 +95,7 @@ def _match_maneuver_row(
     )
 
 
-def _parse_mic_setup_date(header_value: Any) -> Optional[datetime]:
+def _parse_mic_setup_date(header_value: Any) -> datetime | None:
     """Parse date of recording from the Mic Setup header row.
 
     The header cell contains either "Date of Recording: MM/DD/YYYY" or
@@ -115,13 +110,11 @@ def _parse_mic_setup_date(header_value: Any) -> Optional[datetime]:
             try:
                 return datetime.strptime(date_str, "%m/%d/%Y")
             except ValueError:
-                logger.warning(
-                    f"Mic Setup: could not parse date '{date_str}'."
-                )
+                logger.warning(f"Mic Setup: could not parse date '{date_str}'.")
     return None
 
 
-def _parse_mic_setup_study_id(header_value: Any) -> Optional[int]:
+def _parse_mic_setup_study_id(header_value: Any) -> int | None:
     """Parse study ID from the Mic Setup header row.
 
     The header cell contains either "Study ID: 1013" or just "Study ID".
@@ -174,7 +167,7 @@ def parse_aoa_mic_setup_sheet(
 
     # --- Header fields (row 0) ---
     date_of_recording = _parse_mic_setup_date(df.iloc[0, 2])
-    study_id = _parse_mic_setup_study_id(df.iloc[0, 0])
+    _parse_mic_setup_study_id(df.iloc[0, 0])
 
     # --- Microphone positions (rows 3-6, fixed) ---
     if knee == "left":
@@ -205,9 +198,7 @@ def parse_aoa_mic_setup_sheet(
     file_size_mb = float(raw_file_size) if pd.notna(raw_file_size) else None
 
     raw_serial = df.iloc[maneuver_row, 2]
-    serial_number = (
-        str(raw_serial).strip() if pd.notna(raw_serial) else "unknown"
-    )
+    serial_number = str(raw_serial).strip() if pd.notna(raw_serial) else "unknown"
 
     raw_timestamp = df.iloc[maneuver_row, 3]
     timestamp = str(raw_timestamp).strip() if pd.notna(raw_timestamp) else None

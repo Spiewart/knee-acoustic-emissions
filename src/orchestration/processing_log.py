@@ -4,12 +4,11 @@ This module provides metadata tracking for participant processing. All data is s
 in the PostgreSQL database, and reports are generated on-demand by querying the DB.
 """
 
-import logging
-import re
 from dataclasses import dataclass, field
 from datetime import datetime
+import logging
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+import re
 
 import pandas as pd
 from sqlalchemy import select
@@ -36,7 +35,7 @@ def _normalize_knee(knee_side: str) -> str:
     return "left" if knee_side.lower().startswith("l") else "right"
 
 
-def _parse_audio_filename(audio_file_name: str) -> Tuple[Optional[str], Optional[datetime]]:
+def _parse_audio_filename(audio_file_name: str) -> tuple[str | None, datetime | None]:
     """Parse device serial and recording datetime from audio filename.
 
     Expected format: HP_W<hw_rev>-<serial>-<date>_<time>.bin
@@ -48,9 +47,12 @@ def _parse_audio_filename(audio_file_name: str) -> Tuple[Optional[str], Optional
     Returns:
         (device_serial, recording_datetime) tuple. Values may be None if not parseable.
     """
-    import re
 
-    stem = Path(audio_file_name).stem if "/" in audio_file_name or "\\" in audio_file_name else audio_file_name.replace(".bin", "")
+    stem = (
+        Path(audio_file_name).stem
+        if "/" in audio_file_name or "\\" in audio_file_name
+        else audio_file_name.replace(".bin", "")
+    )
 
     device_serial = None
     recording_date = None
@@ -80,8 +82,8 @@ def _parse_audio_filename(audio_file_name: str) -> Tuple[Optional[str], Optional
 
 def _parse_study_and_participant(
     study_id: str | int,
-    study_name: Optional[str] = None,
-) -> Tuple[str, int]:
+    study_name: str | None = None,
+) -> tuple[str, int]:
     """Parse study name and participant number from an ID string or int."""
     if isinstance(study_id, int):
         return study_name or "AOA", study_id
@@ -94,12 +96,13 @@ def _parse_study_and_participant(
             return study_name, 1
 
     # Try each registered study's prefix
-    from src.studies.registry import list_studies, get_study_config
+    from src.studies.registry import get_study_config, list_studies
+
     for name in list_studies():
-        config = get_study_config(name)
+        get_study_config(name)
         prefix = name  # study_name is the prefix (e.g. "AOA", "preOA")
         if study_id_str.startswith(prefix):
-            numeric = study_id_str[len(prefix):]
+            numeric = study_id_str[len(prefix) :]
             return name, int(numeric) if numeric else 1
 
     # Fallback: try parsing as bare number
@@ -160,12 +163,12 @@ class ManeuverProcessingLog:
     maneuver_directory: Path
     log_created: datetime = field(default_factory=datetime.now)
     log_updated: datetime = field(default_factory=datetime.now)
-    study: Optional[str] = None
+    study: str | None = None
 
-    audio_record: Optional[AudioProcessing] = None
-    biomechanics_record: Optional[BiomechanicsImport] = None
-    synchronization_records: List[Synchronization] = field(default_factory=list)
-    movement_cycles_records: List[Synchronization] = field(default_factory=list)
+    audio_record: AudioProcessing | None = None
+    biomechanics_record: BiomechanicsImport | None = None
+    synchronization_records: list[Synchronization] = field(default_factory=list)
+    movement_cycles_records: list[Synchronization] = field(default_factory=list)
 
     @classmethod
     def get_or_create(
@@ -219,10 +222,10 @@ class ManeuverProcessingLog:
 
     def save_to_excel(
         self,
-        output_path: Optional[Path] = None,
+        output_path: Path | None = None,
         session=None,
-        db_url: Optional[str] = None,
-        legend_mismatches: Optional[List] = None,
+        db_url: str | None = None,
+        legend_mismatches: list | None = None,
     ) -> Path:
         """Generate Excel report from database queries.
 
@@ -245,12 +248,8 @@ class ManeuverProcessingLog:
             created_session = True
 
         try:
-            study_name, participant_number = _parse_study_and_participant(
-                self.study_id, self.study
-            )
-            study_db_id = _get_study_db_id(
-                study_name, participant_number, session
-            )
+            study_name, participant_number = _parse_study_and_participant(self.study_id, self.study)
+            study_db_id = _get_study_db_id(study_name, participant_number, session)
             report_gen = ReportGenerator(session)
             knee = _normalize_knee(self.knee_side)
             maneuver = _normalize_maneuver(self.maneuver)
@@ -279,8 +278,8 @@ class KneeProcessingLog:
     knee_directory: Path
     log_created: datetime = field(default_factory=datetime.now)
     log_updated: datetime = field(default_factory=datetime.now)
-    study: Optional[str] = None
-    maneuver_logs: Dict[str, ManeuverProcessingLog] = field(default_factory=dict)
+    study: str | None = None
+    maneuver_logs: dict[str, ManeuverProcessingLog] = field(default_factory=dict)
 
     @classmethod
     def get_or_create(
@@ -316,9 +315,9 @@ class KneeProcessingLog:
 
     def save_to_excel(
         self,
-        output_path: Optional[Path] = None,
+        output_path: Path | None = None,
         session=None,
-        db_url: Optional[str] = None,
+        db_url: str | None = None,
     ) -> Path:
         """Generate knee-level Excel summary from database queries.
 
@@ -332,12 +331,8 @@ class KneeProcessingLog:
             created_session = True
 
         try:
-            study_name, participant_number = _parse_study_and_participant(
-                self.study_id, self.study
-            )
-            study_db_id = _get_study_db_id(
-                study_name, participant_number, session
-            )
+            study_name, participant_number = _parse_study_and_participant(self.study_id, self.study)
+            study_db_id = _get_study_db_id(study_name, participant_number, session)
             knee = _normalize_knee(self.knee_side)
             maneuvers = list(self.maneuver_logs.keys()) or [
                 "walk",
@@ -351,25 +346,31 @@ class KneeProcessingLog:
             report_gen = ReportGenerator(session)
             for maneuver in maneuvers:
                 db_maneuver = _normalize_maneuver(maneuver)
-                summary = report_gen.generate_summary_sheet(
-                    study_db_id, db_maneuver, knee
-                )
+                summary = report_gen.generate_summary_sheet(study_db_id, db_maneuver, knee)
                 if not summary.empty:
-                    summary_rows.append({
-                        "Maneuver": db_maneuver,
-                        "Audio Records": summary.loc[summary["Metric"] == "Audio Records", "Value"].iloc[0],
-                        "Biomechanics Records": summary.loc[summary["Metric"] == "Biomechanics Records", "Value"].iloc[0],
-                        "Synchronization Records": summary.loc[summary["Metric"] == "Synchronization Records", "Value"].iloc[0],
-                        "Movement Cycles": summary.loc[summary["Metric"] == "Movement Cycles", "Value"].iloc[0],
-                    })
+                    summary_rows.append(
+                        {
+                            "Maneuver": db_maneuver,
+                            "Audio Records": summary.loc[summary["Metric"] == "Audio Records", "Value"].iloc[0],
+                            "Biomechanics Records": summary.loc[
+                                summary["Metric"] == "Biomechanics Records", "Value"
+                            ].iloc[0],
+                            "Synchronization Records": summary.loc[
+                                summary["Metric"] == "Synchronization Records", "Value"
+                            ].iloc[0],
+                            "Movement Cycles": summary.loc[summary["Metric"] == "Movement Cycles", "Value"].iloc[0],
+                        }
+                    )
                 else:
-                    summary_rows.append({
-                        "Maneuver": db_maneuver,
-                        "Audio Records": 0,
-                        "Biomechanics Records": 0,
-                        "Synchronization Records": 0,
-                        "Movement Cycles": 0,
-                    })
+                    summary_rows.append(
+                        {
+                            "Maneuver": db_maneuver,
+                            "Audio Records": 0,
+                            "Biomechanics Records": 0,
+                            "Synchronization Records": 0,
+                            "Movement Cycles": 0,
+                        }
+                    )
 
             output_path = output_path or self._default_output_path()
             output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -383,8 +384,9 @@ class KneeProcessingLog:
                 close_db_session(session)
 
 
-def _parse_study_from_file_name(file_name: str) -> Optional[str]:
+def _parse_study_from_file_name(file_name: str) -> str | None:
     from src.studies.registry import list_studies
+
     for prefix in list_studies():
         if file_name.startswith(prefix):
             return prefix
@@ -405,13 +407,13 @@ def _infer_biomechanics_type_from_study(study_id: str | int) -> str:
 def create_audio_record_from_data(
     audio_file_name: str,
     audio_df: pd.DataFrame,
-    audio_bin_path: Optional[Path] = None,
-    audio_pkl_path: Optional[Path] = None,
-    metadata: Optional[Dict] = None,
-    biomechanics_type: Optional[str] = None,
-    qc_data: Optional[Dict] = None,
-    knee: Optional[str] = None,
-    maneuver: Optional[str] = None,
+    audio_bin_path: Path | None = None,
+    audio_pkl_path: Path | None = None,
+    metadata: dict | None = None,
+    biomechanics_type: str | None = None,
+    qc_data: dict | None = None,
+    knee: str | None = None,
+    maneuver: str | None = None,
     **kwargs,
 ) -> AudioProcessing:
     """Create AudioProcessing record from data and metadata."""
@@ -421,7 +423,7 @@ def create_audio_record_from_data(
     knee_value = (knee or metadata.get("knee") or "left").lower()
     maneuver_value = _normalize_maneuver(maneuver or metadata.get("maneuver") or "walk")
 
-    def _parse_datetime_value(value: Optional[object]) -> Optional[datetime]:
+    def _parse_datetime_value(value: object | None) -> datetime | None:
         if isinstance(value, datetime):
             return value
         if isinstance(value, str):
@@ -435,11 +437,7 @@ def create_audio_record_from_data(
     device_serial, recording_dt_parsed = _parse_audio_filename(audio_file_name)
 
     # Firmware version MUST come from file header, not filename (filename has hardware revision)
-    firmware_version = (
-        metadata.get("devFirmwareVersion")
-        or metadata.get("firmware_version")
-        or 0
-    )
+    firmware_version = metadata.get("devFirmwareVersion") or metadata.get("firmware_version") or 0
     # Convert firmware_version to int, handling both float and string inputs
     try:
         if isinstance(firmware_version, str):
@@ -465,14 +463,10 @@ def create_audio_record_from_data(
             # Fall back to parsed value from filename or UNKNOWN
             device_serial = device_serial or "UNKNOWN"
     file_time = _parse_datetime_value(metadata.get("file_time") or metadata.get("fileTime"))
-    recording_date = _parse_datetime_value(
-        metadata.get("recording_date") or metadata.get("recordingDate")
-    )
+    recording_date = _parse_datetime_value(metadata.get("recording_date") or metadata.get("recordingDate"))
     if recording_date is None:
         recording_date = recording_dt_parsed or file_time
-    recording_time = _parse_datetime_value(
-        metadata.get("recording_time") or metadata.get("recordingTime")
-    )
+    recording_time = _parse_datetime_value(metadata.get("recording_time") or metadata.get("recordingTime"))
     if recording_time is None:
         recording_time = file_time or recording_dt_parsed
 
@@ -531,25 +525,24 @@ def create_audio_record_from_data(
             duration_seconds = None
 
     return AudioProcessing(
-        study=study_name,
+        study=study_name,  # type: ignore[arg-type]
         study_id=int(study_id),
         audio_file_name=audio_file_name,
         device_serial=str(device_serial),
         firmware_version=int(firmware_version),
-        file_time=file_time,
+        file_time=file_time,  # type: ignore[arg-type]
         file_size_mb=float(file_size_mb or 0.0),
-        recording_date=recording_date,
-        recording_time=recording_time,
-        knee=knee_value,
-        maneuver=maneuver_value,
+        recording_date=recording_date,  # type: ignore[arg-type]
+        recording_time=recording_time,  # type: ignore[arg-type]
+        knee=knee_value,  # type: ignore[arg-type]
+        maneuver=maneuver_value,  # type: ignore[arg-type]
         num_channels=int(num_channels),
         sample_rate=float(sample_rate),
-        mic_1_position=mic_1_position,
-        mic_2_position=mic_2_position,
-        mic_3_position=mic_3_position,
-        mic_4_position=mic_4_position,
+        mic_1_position=mic_1_position,  # type: ignore[arg-type]
+        mic_2_position=mic_2_position,  # type: ignore[arg-type]
+        mic_3_position=mic_3_position,  # type: ignore[arg-type]
+        mic_4_position=mic_4_position,  # type: ignore[arg-type]
         pkl_file_path=str(audio_pkl_path) if audio_pkl_path else None,
-        audio_qc_fail=bool(qc_data.get("audio_qc_fail", False)),
         qc_fail_segments=qc_data.get("qc_fail_segments", []),
         qc_fail_segments_ch1=qc_data.get("qc_fail_segments_ch1", []),
         qc_fail_segments_ch2=qc_data.get("qc_fail_segments_ch2", []),
@@ -575,16 +568,10 @@ def create_audio_record_from_data(
         qc_continuous_artifact_segments_ch3=qc_data.get("qc_continuous_artifact_segments_ch3", []),
         qc_continuous_artifact_ch4=qc_data.get("qc_continuous_artifact_ch4", False),
         qc_continuous_artifact_segments_ch4=qc_data.get("qc_continuous_artifact_segments_ch4", []),
-        processing_date=metadata.get("processing_date"),
-        processing_status=metadata.get("processing_status"),
+        processing_date=metadata.get("processing_date"),  # type: ignore[arg-type]
+        processing_status=metadata.get("processing_status"),  # type: ignore[arg-type]
         duration_seconds=duration_seconds,
         recording_timezone=recording_timezone,
-        linked_biomechanics=bool(metadata.get("linked_biomechanics", False)),
-        biomechanics_file=metadata.get("biomechanics_file"),
-        biomechanics_type=biomechanics_type or metadata.get("biomechanics_type"),
-        biomechanics_sync_method=metadata.get("biomechanics_sync_method"),
-        biomechanics_sample_rate=metadata.get("biomechanics_sample_rate"),
-        biomechanics_notes=metadata.get("biomechanics_notes"),
         **{k: v for k, v in kwargs.items() if k in AudioProcessing.__dataclass_fields__},
     )
 
@@ -592,14 +579,14 @@ def create_audio_record_from_data(
 def create_biomechanics_record_from_data(
     biomechanics_file: Path,
     recordings: list,
-    sheet_name: Optional[str],
+    sheet_name: str | None,
     maneuver: str,
-    biomechanics_type: Optional[str],
+    biomechanics_type: str | None,
     knee: str,
-    biomechanics_sync_method: Optional[str],
-    biomechanics_sample_rate: Optional[float],
+    biomechanics_sync_method: str | None,
+    biomechanics_sample_rate: float | None,
     study_id: int,
-    study: Optional[str] = None,
+    study: str | None = None,
     **kwargs,
 ) -> BiomechanicsImport:
     """Create BiomechanicsImport record from data and metadata."""
@@ -623,21 +610,21 @@ def create_biomechanics_record_from_data(
         pass
 
     return BiomechanicsImport(
-        study=study_name,
+        study=study_name,  # type: ignore[arg-type]
         study_id=int(study_id),
         biomechanics_file=str(biomechanics_file),
         sheet_name=sheet_name,
-        biomechanics_type=biomechanics_type or "Motion Analysis",
-        knee=knee.lower(),
-        maneuver=_normalize_maneuver(maneuver),
-        biomechanics_sync_method=biomechanics_sync_method or "stomp",
+        biomechanics_type=biomechanics_type or "Motion Analysis",  # type: ignore[arg-type]
+        knee=knee.lower(),  # type: ignore[arg-type]
+        maneuver=_normalize_maneuver(maneuver),  # type: ignore[arg-type]
+        biomechanics_sync_method=biomechanics_sync_method or "stomp",  # type: ignore[arg-type]
         biomechanics_sample_rate=float(biomechanics_sample_rate or 0.0),
         num_sub_recordings=num_sub_recordings,
         duration_seconds=float(duration_seconds),
         num_data_points=int(num_data_points),
         num_passes=int(num_passes),
         processing_date=datetime.now(),
-        processing_status="success",
+        processing_status="success",  # type: ignore[arg-type]
         **{k: v for k, v in kwargs.items() if k in BiomechanicsImport.__dataclass_fields__},
     )
 
@@ -645,18 +632,18 @@ def create_biomechanics_record_from_data(
 def create_sync_record_from_data(
     sync_file_name: str,
     synced_df: pd.DataFrame,
-    audio_stomp_time: Optional[float],
+    audio_stomp_time: float | None,
     knee_side: str,  # Required: "left" or "right"
     maneuver: str = "walk",  # Required: DB maneuver code ("fe", "sts", "walk")
-    bio_left_stomp_time: Optional[float] = None,
-    bio_right_stomp_time: Optional[float] = None,
-    pass_number: Optional[int] = None,
-    speed: Optional[str] = None,
-    detection_results: Optional[Dict] = None,
-    audio_record: Optional[AudioProcessing] = None,
-    metadata: Optional[Dict] = None,
-    study: Optional[str] = None,
-    study_id: Optional[int] = None,
+    bio_left_stomp_time: float | None = None,
+    bio_right_stomp_time: float | None = None,
+    pass_number: int | None = None,
+    speed: str | None = None,
+    detection_results: dict | None = None,
+    audio_record: AudioProcessing | None = None,
+    metadata: dict | None = None,
+    study: str | None = None,
+    study_id: int | None = None,
     **kwargs,
 ) -> Synchronization:
     """Create Synchronization record from sync data and detection results.
@@ -711,21 +698,23 @@ def create_sync_record_from_data(
     )
 
     return Synchronization(
-        study=study_name,
+        study=study_name,  # type: ignore[arg-type]
         study_id=int(participant_number),
         audio_processing_id=int(audio_processing_id),
         biomechanics_import_id=int(biomechanics_import_id),
         pass_number=pass_number,
-        speed=speed_value,
-        knee=knee_side_lower,
-        maneuver=_normalize_maneuver(maneuver),
+        speed=speed_value,  # type: ignore[arg-type]
+        knee=knee_side_lower,  # type: ignore[arg-type]
+        maneuver=_normalize_maneuver(maneuver),  # type: ignore[arg-type]
         # Biomechanics sync times (biomechanics is synced to audio: audio t=0 = sync t=0)
         bio_left_sync_time=_timedelta_to_seconds(bio_left_stomp_time),
         bio_right_sync_time=_timedelta_to_seconds(bio_right_stomp_time),
         bio_sync_offset=bio_sync_offset,
         aligned_sync_time=_timedelta_to_seconds(detection_results.get("consensus_time") or audio_stomp_time),
         # Sync method details
-        sync_method=detection_results.get("selected_stomp_method") if detection_results.get("selected_stomp_method") else ("biomechanics" if detection_results.get("audio_stomp_method") else "consensus"),
+        sync_method=detection_results.get("selected_stomp_method")  # type: ignore[arg-type]
+        if detection_results.get("selected_stomp_method")
+        else ("biomechanics" if detection_results.get("audio_stomp_method") else "consensus"),
         consensus_methods=", ".join(consensus_methods) if consensus_methods else None,
         consensus_time=_timedelta_to_seconds(detection_results.get("consensus_time")),
         rms_time=_timedelta_to_seconds(detection_results.get("rms_time")),
@@ -734,23 +723,34 @@ def create_sync_record_from_data(
         method_agreement_span=method_agreement_span,
         # Detection methods
         stomp_detection_methods=detection_results.get("stomp_detection_methods"),
-        selected_stomp_method=detection_results.get("selected_stomp_method"),
+        selected_stomp_method=detection_results.get("selected_stomp_method"),  # type: ignore[arg-type]
         # Biomechanics-based sync times
-        bio_selected_sync_time=_timedelta_to_seconds(detection_results.get("bio_selected_time") or detection_results.get("selected_time")),
-        contra_bio_selected_sync_time=_timedelta_to_seconds(detection_results.get("contra_bio_selected_time") or detection_results.get("contra_selected_time")),
+        bio_selected_sync_time=_timedelta_to_seconds(
+            detection_results.get("bio_selected_time") or detection_results.get("selected_time")
+        ),
+        contra_bio_selected_sync_time=_timedelta_to_seconds(
+            detection_results.get("contra_bio_selected_time") or detection_results.get("contra_selected_time")
+        ),
         # Audio sync times (optional - mic on to participant stopping)
         audio_sync_time_left=_timedelta_to_seconds(detection_results.get("audio_sync_time_left")),
         audio_sync_time_right=_timedelta_to_seconds(detection_results.get("audio_sync_time_right")),
         audio_sync_offset=_timedelta_to_seconds(detection_results.get("audio_sync_offset")),
         # Audio-based sync times (different from bio-based) - renamed for consistency
-        audio_selected_sync_time=_timedelta_to_seconds(detection_results.get("audio_selected_sync_time") or detection_results.get("selected_audio_sync_time")),
-        contra_audio_selected_sync_time=_timedelta_to_seconds(detection_results.get("contra_audio_selected_sync_time") or detection_results.get("contra_selected_audio_sync_time")),
+        audio_selected_sync_time=_timedelta_to_seconds(
+            detection_results.get("audio_selected_sync_time") or detection_results.get("selected_audio_sync_time")
+        ),
+        contra_audio_selected_sync_time=_timedelta_to_seconds(
+            detection_results.get("contra_audio_selected_sync_time")
+            or detection_results.get("contra_selected_audio_sync_time")
+        ),
         # File and processing
         sync_file_name=sync_file_name,
         sync_file_path=str(kwargs.get("sync_file_path")) if kwargs.get("sync_file_path") else None,
-        sync_duration=_timedelta_to_seconds(synced_df["tt"].iloc[-1]) if "tt" in synced_df.columns and len(synced_df) > 0 else None,
+        sync_duration=_timedelta_to_seconds(synced_df["tt"].iloc[-1])
+        if "tt" in synced_df.columns and len(synced_df) > 0
+        else None,
         processing_date=datetime.now(),
-        processing_status="success",
+        processing_status="success",  # type: ignore[arg-type]
         total_cycles_extracted=0,
         clean_cycles=0,
         outlier_cycles=0,
@@ -763,8 +763,7 @@ def create_sync_record_from_data(
     )
 
 
-
-def _timedelta_to_seconds(value) -> Optional[float]:
+def _timedelta_to_seconds(value) -> float | None:
     """Convert various time formats to seconds (float).
 
     Handles:
@@ -783,7 +782,7 @@ def _timedelta_to_seconds(value) -> Optional[float]:
         return value.total_seconds()
 
     # Also handle standard library timedelta
-    if hasattr(value, 'total_seconds'):
+    if hasattr(value, "total_seconds"):
         return value.total_seconds()
 
     if isinstance(value, (int, float)):

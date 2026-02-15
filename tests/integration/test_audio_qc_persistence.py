@@ -6,10 +6,6 @@ Validates that:
 2. Audio Excel sheet columns include all QC fields with correct values.
 """
 
-from datetime import datetime
-
-import pytest
-
 from src.db.models import AudioProcessingRecord
 from src.db.repository import Repository
 from src.reports.report_generator import ReportGenerator
@@ -19,7 +15,9 @@ class TestAudioQCFieldsDatabasePersistence:
     """Verify audio QC fields round-trip through the database correctly."""
 
     def test_per_channel_fail_segments_persist(
-        self, db_session, audio_processing_factory,
+        self,
+        db_session,
+        audio_processing_factory,
     ):
         """Per-channel qc_fail_segments should persist and round-trip."""
         repo = Repository(db_session)
@@ -48,7 +46,9 @@ class TestAudioQCFieldsDatabasePersistence:
         assert fetched.qc_fail_segments_ch4 is None or len(fetched.qc_fail_segments_ch4) == 0
 
     def test_signal_dropout_fields_persist(
-        self, db_session, audio_processing_factory,
+        self,
+        db_session,
+        audio_processing_factory,
     ):
         """Signal dropout QC flags and segments should persist."""
         repo = Repository(db_session)
@@ -81,7 +81,9 @@ class TestAudioQCFieldsDatabasePersistence:
         assert len(fetched.qc_signal_dropout_segments_ch3) >= 1
 
     def test_continuous_artifact_fields_persist(
-        self, db_session, audio_processing_factory,
+        self,
+        db_session,
+        audio_processing_factory,
     ):
         """Continuous artifact QC flags and segments should persist."""
         repo = Repository(db_session)
@@ -109,7 +111,9 @@ class TestAudioQCFieldsDatabasePersistence:
         assert len(fetched.qc_continuous_artifact_segments_ch2) >= 1
 
     def test_all_qc_fields_false_when_clean(
-        self, db_session, audio_processing_factory,
+        self,
+        db_session,
+        audio_processing_factory,
     ):
         """Clean recording should have all QC bools False and segments empty."""
         repo = Repository(db_session)
@@ -136,7 +140,9 @@ class TestSegmentsRoundTripThroughUnflatten:
     """
 
     def test_dropout_segments_round_trip_to_unflatten(
-        self, db_session, audio_processing_factory,
+        self,
+        db_session,
+        audio_processing_factory,
     ):
         """Segments stored to DB should unflatten correctly for trim_intervals_to_cycle."""
         from src.audio.raw_qc import trim_intervals_to_cycle
@@ -165,7 +171,9 @@ class TestSegmentsRoundTripThroughUnflatten:
         assert len(trimmed) >= 1  # overlaps with both segments
 
     def test_continuous_segments_round_trip_to_unflatten(
-        self, db_session, audio_processing_factory,
+        self,
+        db_session,
+        audio_processing_factory,
     ):
         """Continuous artifact segments should unflatten correctly after DB round-trip."""
         from src.orchestration.participant_processor import ManeuverProcessor
@@ -192,7 +200,9 @@ class TestAudioExcelSheetQCColumns:
     """Verify Audio Excel sheet includes all QC columns with correct values."""
 
     def test_audio_sheet_has_all_qc_columns(
-        self, db_session, audio_processing_factory,
+        self,
+        db_session,
+        audio_processing_factory,
     ):
         """Audio sheet should contain all per-channel QC columns."""
         repo = Repository(db_session)
@@ -250,12 +260,13 @@ class TestAudioExcelSheetQCColumns:
         ]
         for col in expected_columns:
             assert col in sheet.columns, (
-                f"Missing column '{col}' in Audio sheet. "
-                f"Available: {sorted(sheet.columns.tolist())}"
+                f"Missing column '{col}' in Audio sheet. Available: {sorted(sheet.columns.tolist())}"
             )
 
     def test_audio_sheet_qc_values_populated(
-        self, db_session, audio_processing_factory,
+        self,
+        db_session,
+        audio_processing_factory,
     ):
         """Audio sheet QC values should match stored data."""
         repo = Repository(db_session)

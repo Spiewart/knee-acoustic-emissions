@@ -65,12 +65,12 @@ flatline_threshold: 0.000001  (essentially zero variance = stuck/failed sensor)
    - Old defaults: (0.01, 0.001)
    - New defaults: (1.45, 0.000001)
    - Calibrated for knee accelerometer sensors
-   
+
 2. `detect_signal_dropout_per_mic()` - lines 349-376
    - Old defaults: (0.05, 0.01)
    - New defaults: (1.45, 0.000001)
    - Added comprehensive docstring explaining calibration
-   
+
 3. `run_raw_audio_qc()` - lines 277-291
    - Old defaults: (0.01, 0.001)
    - New defaults: (1.45, 0.000001)

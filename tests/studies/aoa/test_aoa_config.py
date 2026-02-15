@@ -5,8 +5,6 @@ directory names, file patterns, sheet names, participant ID parsing,
 UID parsing, and speed code mappings.
 """
 
-from pathlib import Path
-
 import pytest
 
 from src.studies.aoa.config import AOAConfig

@@ -186,7 +186,7 @@ class MovementCycleMetadata:
     periodic_noise_ch2: bool = False
     periodic_noise_ch3: bool = False
     periodic_noise_ch4: bool = False
-    
+
     # Cross-modal sync QC results
     sync_quality_score: Optional[float] = None
     sync_qc_pass: Optional[bool] = None

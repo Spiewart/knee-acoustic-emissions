@@ -9,7 +9,6 @@ metadata columns:
 - Biomechanics Sample Rate (Hz)
 """
 
-from pathlib import Path
 from unittest.mock import patch
 
 import numpy as np
@@ -26,27 +25,27 @@ def mock_audio_reading():
         # Return audio DataFrame that covers biomechanics time windows (12 seconds at 1000 Hz)
         # Biomechanics FE window is 2.0-9.0s, sync at 8.9s/10.15s, so 12s covers everything
         num_samples = 12000
-        mock_read.return_value = pd.DataFrame({
-            "tt": np.linspace(0, 12, num_samples),
-            "ch1": np.random.randn(num_samples) * 100,
-            "ch2": np.random.randn(num_samples) * 100,
-            "ch3": np.random.randn(num_samples) * 100,
-            "ch4": np.random.randn(num_samples) * 100,
-        })
+        mock_read.return_value = pd.DataFrame(
+            {
+                "tt": np.linspace(0, 12, num_samples),
+                "ch1": np.random.randn(num_samples) * 100,
+                "ch2": np.random.randn(num_samples) * 100,
+                "ch3": np.random.randn(num_samples) * 100,
+                "ch4": np.random.randn(num_samples) * 100,
+            }
+        )
         yield mock_read
 
 
-def test_biomechanics_metadata_populated_after_bin_processing(fake_participant_directory, mock_audio_reading, use_test_db):
+def test_biomechanics_metadata_populated_after_bin_processing(
+    fake_participant_directory, mock_audio_reading, use_test_db
+):
     """Test that biomechanics metadata columns are populated after processing from bin."""
     participant_dir = fake_participant_directory["participant_dir"]
 
     # Process from bin entrypoint for flexion-extension
     success = process_participant(
-        participant_dir,
-        entrypoint="bin",
-        knee="left",
-        maneuver="fe",
-        biomechanics_type="Motion Analysis"
+        participant_dir, entrypoint="bin", knee="left", maneuver="fe", biomechanics_type="Motion Analysis"
     )
 
     assert success, "Processing should succeed"
@@ -83,11 +82,7 @@ def test_audio_sheet_mic_positions_from_legend(fake_participant_directory, mock_
     participant_dir = fake_participant_directory["participant_dir"]
 
     success = process_participant(
-        participant_dir,
-        entrypoint="bin",
-        knee="left",
-        maneuver="fe",
-        biomechanics_type="Motion Analysis"
+        participant_dir, entrypoint="bin", knee="left", maneuver="fe", biomechanics_type="Motion Analysis"
     )
 
     assert success, "Processing should succeed"
@@ -108,11 +103,7 @@ def test_biomechanics_sample_rate_calculated_correctly(fake_participant_director
 
     # Process flexion-extension for left knee
     success = process_participant(
-        participant_dir,
-        entrypoint="bin",
-        knee="left",
-        maneuver="fe",
-        biomechanics_type="Motion Analysis"
+        participant_dir, entrypoint="bin", knee="left", maneuver="fe", biomechanics_type="Motion Analysis"
     )
 
     assert success, "Processing should succeed"
@@ -132,11 +123,7 @@ def test_gonio_sync_method_is_flick(fake_participant_directory, mock_audio_readi
     participant_dir = fake_participant_directory["participant_dir"]
 
     success = process_participant(
-        participant_dir,
-        entrypoint="bin",
-        knee="left",
-        maneuver="fe",
-        biomechanics_type="Gonio"
+        participant_dir, entrypoint="bin", knee="left", maneuver="fe", biomechanics_type="Gonio"
     )
 
     assert success, "Processing should succeed"
@@ -155,11 +142,7 @@ def test_imu_sync_method_is_stomp(fake_participant_directory, mock_audio_reading
 
     # Use flexion-extension instead of walk (simpler)
     success = process_participant(
-        participant_dir,
-        entrypoint="bin",
-        knee="right",
-        maneuver="fe",
-        biomechanics_type="IMU"
+        participant_dir, entrypoint="bin", knee="right", maneuver="fe", biomechanics_type="IMU"
     )
 
     assert success, "Processing should succeed"
@@ -178,11 +161,7 @@ def test_log_updated_timestamp_persists_across_reload(fake_participant_directory
 
     # First processing run - use flexion-extension (simpler than sit-stand)
     success = process_participant(
-        participant_dir,
-        entrypoint="bin",
-        knee="left",
-        maneuver="fe",
-        biomechanics_type="Motion Analysis"
+        participant_dir, entrypoint="bin", knee="left", maneuver="fe", biomechanics_type="Motion Analysis"
     )
 
     assert success, "First processing should succeed"
@@ -196,11 +175,7 @@ def test_log_updated_timestamp_persists_across_reload(fake_participant_directory
 
     # Second processing run (sync stage only)
     success = process_participant(
-        participant_dir,
-        entrypoint="sync",
-        knee="left",
-        maneuver="fe",
-        biomechanics_type="Motion Analysis"
+        participant_dir, entrypoint="sync", knee="left", maneuver="fe", biomechanics_type="Motion Analysis"
     )
 
     assert success, "Second processing should succeed"
@@ -217,11 +192,7 @@ def test_biomechanics_metadata_consistent_across_maneuvers(fake_participant_dire
 
     # Process only flexion-extension for left knee (simplest test case)
     success = process_participant(
-        participant_dir,
-        entrypoint="bin",
-        knee="left",
-        maneuver="fe",
-        biomechanics_type="Motion Analysis"
+        participant_dir, entrypoint="bin", knee="left", maneuver="fe", biomechanics_type="Motion Analysis"
     )
 
     assert success, "Processing should succeed"

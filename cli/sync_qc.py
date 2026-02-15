@@ -2,8 +2,8 @@
 """Command-line interface for synchronized data QC."""
 
 import logging
-import sys
 from pathlib import Path
+import sys
 
 from src.synchronization.quality_control import (
     find_synced_files,
@@ -15,13 +15,13 @@ from src.synchronization.quality_control import (
 def main() -> int:
     """Run QC over synced files at `path` and summarize.
 
-        - Accepts a single synced pickle, a `Synced` directory, or a participant
-            directory; finds all synced `.pkl` files under `Synced` folders.
-        - Controls acoustic energy threshold with `--threshold` and plotting
-            via `--no-plots`.
-        - Optional `--maneuver`/`--speed` override inference.
+    - Accepts a single synced pickle, a `Synced` directory, or a participant
+        directory; finds all synced `.pkl` files under `Synced` folders.
+    - Controls acoustic energy threshold with `--threshold` and plotting
+        via `--no-plots`.
+    - Optional `--maneuver`/`--speed` override inference.
 
-        Returns 0 on success, non-zero if path missing or no synced files found.
+    Returns 0 on success, non-zero if path missing or no synced files found.
     """
     import argparse
 
@@ -117,9 +117,9 @@ def main() -> int:
             logger.error(f"✗ Failed to process {synced_file}: {e}", exc_info=args.verbose)
             continue
 
-    logger.info(f"\n{'='*60}")
+    logger.info(f"\n{'=' * 60}")
     logger.info(f"Total: {total_clean} clean cycles, {total_outliers} outliers")
-    logger.info(f"{'='*60}")
+    logger.info(f"{'=' * 60}")
 
     return 0
 

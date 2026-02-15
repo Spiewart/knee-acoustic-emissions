@@ -5,8 +5,8 @@ intermittent and periodic artifact intervals from _CycleResult into
 CycleQCResult fields, and that CycleQCResult enforces no-defaults.
 """
 
-import pytest
 from pydantic import ValidationError
+import pytest
 
 from src.metadata import CycleQCResult
 
@@ -54,33 +54,33 @@ class TestCycleQCResultConstruction:
 
     def _make_result(self, **overrides) -> CycleQCResult:
         """Helper to build a CycleQCResult with sensible defaults."""
-        defaults = dict(
-            cycle_index=0,
-            cycle_file="test_cycle_000.pkl",
-            is_outlier=False,
-            acoustic_energy=1.5,
-            biomechanics_qc_pass=True,
-            sync_qc_pass=True,
-            sync_quality_score=0.95,
-            audio_qc_pass=True,
-            audio_qc_mic_1_pass=True,
-            audio_qc_mic_2_pass=True,
-            audio_qc_mic_3_pass=True,
-            audio_qc_mic_4_pass=True,
-            periodic_noise_detected=False,
-            periodic_noise_ch1=False,
-            periodic_noise_ch2=False,
-            periodic_noise_ch3=False,
-            periodic_noise_ch4=False,
-            intermittent_intervals_ch1=[],
-            intermittent_intervals_ch2=[],
-            intermittent_intervals_ch3=[],
-            intermittent_intervals_ch4=[],
-            periodic_intervals_ch1=[],
-            periodic_intervals_ch2=[],
-            periodic_intervals_ch3=[],
-            periodic_intervals_ch4=[],
-        )
+        defaults = {
+            "cycle_index": 0,
+            "cycle_file": "test_cycle_000.pkl",
+            "is_outlier": False,
+            "acoustic_energy": 1.5,
+            "biomechanics_qc_pass": True,
+            "sync_qc_pass": True,
+            "sync_quality_score": 0.95,
+            "audio_qc_pass": True,
+            "audio_qc_mic_1_pass": True,
+            "audio_qc_mic_2_pass": True,
+            "audio_qc_mic_3_pass": True,
+            "audio_qc_mic_4_pass": True,
+            "periodic_noise_detected": False,
+            "periodic_noise_ch1": False,
+            "periodic_noise_ch2": False,
+            "periodic_noise_ch3": False,
+            "periodic_noise_ch4": False,
+            "intermittent_intervals_ch1": [],
+            "intermittent_intervals_ch2": [],
+            "intermittent_intervals_ch3": [],
+            "intermittent_intervals_ch4": [],
+            "periodic_intervals_ch1": [],
+            "periodic_intervals_ch2": [],
+            "periodic_intervals_ch3": [],
+            "periodic_intervals_ch4": [],
+        }
         defaults.update(overrides)
         return CycleQCResult(**defaults)
 

@@ -6,7 +6,6 @@ unknown studies raise appropriate errors.
 
 import pytest
 
-from src.studies.base import StudyConfig
 from src.studies.registry import get_study_config, list_studies
 
 

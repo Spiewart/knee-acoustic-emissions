@@ -24,9 +24,9 @@ CYCLE_QC_VERSION = 2
 
 def get_audio_qc_version() -> int:
     """Get the current audio QC version.
-    
+
     This version applies to QC performed on audio after processing .bin files.
-    
+
     Returns:
         Current audio QC version number
     """
@@ -35,9 +35,9 @@ def get_audio_qc_version() -> int:
 
 def get_biomech_qc_version() -> int:
     """Get the current biomechanics QC version.
-    
+
     This version applies to QC performed on biomechanics data pre-synchronization.
-    
+
     Returns:
         Current biomechanics QC version number
     """
@@ -46,27 +46,25 @@ def get_biomech_qc_version() -> int:
 
 def get_cycle_qc_version() -> int:
     """Get the current cycle QC version.
-    
+
     This version applies to QC performed on synchronized audio/biomechanics
     after parsing into individual movement cycles.
-    
+
     Returns:
         Current cycle QC version number
     """
     return CYCLE_QC_VERSION
 
 
-def get_qc_version(
-    qc_type: Literal["audio", "biomech", "cycle"]
-) -> int:
+def get_qc_version(qc_type: Literal["audio", "biomech", "cycle"]) -> int:
     """Get the current QC version for a specific QC type.
-    
+
     Args:
         qc_type: Type of QC ("audio", "biomech", or "cycle")
-        
+
     Returns:
         Current QC version number for the specified type
-        
+
     Raises:
         ValueError: If qc_type is not recognized
     """
@@ -77,7 +75,4 @@ def get_qc_version(
     elif qc_type == "cycle":
         return get_cycle_qc_version()
     else:
-        raise ValueError(
-            f"Unknown QC type: {qc_type}. "
-            f"Must be 'audio', 'biomech', or 'cycle'"
-        )
+        raise ValueError(f"Unknown QC type: {qc_type}. Must be 'audio', 'biomech', or 'cycle'")

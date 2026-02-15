@@ -1,8 +1,5 @@
 """Tests for cleanup_outputs utility."""
 
-import shutil
-from pathlib import Path
-
 import pytest
 
 from cli.cleanup_outputs import cleanup_participant_outputs, cleanup_study_directory

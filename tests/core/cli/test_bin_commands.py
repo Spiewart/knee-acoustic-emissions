@@ -2,9 +2,8 @@
 
 import json
 import sys
-import warnings
-from pathlib import Path
 from unittest.mock import patch
+import warnings
 
 import pandas as pd
 import pytest
@@ -39,9 +38,7 @@ def test_ae_read_audio(tmp_path, capsys):
             message="Unrecognized firmware version! Using default number of bits and sample rate",
             category=UserWarning,
         )
-        with patch.object(
-            sys, "argv", ["ae-read-audio", str(bin_file), "--out", str(tmp_path)]
-        ):
+        with patch.object(sys, "argv", ["ae-read-audio", str(bin_file), "--out", str(tmp_path)]):
             read_audio_main()
 
     captured = capsys.readouterr()
@@ -67,9 +64,7 @@ def test_ae_plot_per_channel(dummy_pkl_file, capsys):
 
     captured = capsys.readouterr()
     assert "Saved per-channel waveform" in captured.out
-    assert dummy_pkl_file.with_name(
-        f"{dummy_pkl_file.stem}_waveform_per_channel.png"
-    ).exists()
+    assert dummy_pkl_file.with_name(f"{dummy_pkl_file.stem}_waveform_per_channel.png").exists()
 
 
 def test_ae_add_inst_freq(dummy_pkl_file, capsys):
@@ -79,9 +74,7 @@ def test_ae_add_inst_freq(dummy_pkl_file, capsys):
 
     captured = capsys.readouterr()
     assert "Saving updated pickle to" in captured.out
-    assert dummy_pkl_file.with_name(
-        f"{dummy_pkl_file.stem}_with_freq.pkl"
-    ).exists()
+    assert dummy_pkl_file.with_name(f"{dummy_pkl_file.stem}_with_freq.pkl").exists()
 
 
 def test_ae_add_inst_freq_uses_meta_fs(tmp_path, capsys):
@@ -168,9 +161,7 @@ def test_ae_compute_spectrogram(dummy_pkl_file, capsys):
 
     captured = capsys.readouterr()
     assert "Saved spectrogram arrays" in captured.out
-    assert dummy_pkl_file.with_name(
-        f"{dummy_pkl_file.stem}_spectrogram.npz"
-    ).exists()
+    assert dummy_pkl_file.with_name(f"{dummy_pkl_file.stem}_spectrogram.npz").exists()
 
 
 def test_ae_dump_channels_missing_file(tmp_path):

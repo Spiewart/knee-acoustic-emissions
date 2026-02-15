@@ -2,8 +2,8 @@
 
 import argparse
 import logging
-import pickle
 from pathlib import Path
+import pickle
 
 import pandas as pd
 
@@ -27,9 +27,7 @@ def main() -> None:
     p.add_argument("pkl", help="Path to pickled DataFrame")
     args = p.parse_args()
 
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s"
-    )
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
 
     pkl_path = Path(args.pkl)
     if not pkl_path.exists():
@@ -44,7 +42,7 @@ def main() -> None:
         df = pd.read_pickle(pkl_path)
     except (OSError, EOFError, ValueError, pickle.UnpicklingError) as exc:
         logging.exception("Failed to read pickle: %s", exc)
-        raise SystemExit(3)
+        raise SystemExit(3) from exc
 
     dump_channels_to_csv(df, csv_out, meta_json)
     print(f"Wrote CSV: {csv_out}")

@@ -13,7 +13,7 @@ This structure eliminates data redundancy and enables efficient relational queri
 
 import dataclasses
 from datetime import datetime
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Literal
 
 from pydantic import Field, field_validator, model_validator
 from pydantic.dataclasses import dataclass
@@ -27,6 +27,7 @@ from src.qc_versions import (
 # ============================================================================
 # BASE CLASS - Keep minimal
 # ============================================================================
+
 
 @dataclass(kw_only=True)
 class StudyMetadata:
@@ -51,6 +52,7 @@ class StudyMetadata:
 # STANDALONE MODELS - No inheritance beyond StudyMetadata
 # ============================================================================
 
+
 @dataclass(kw_only=True)
 class AudioProcessing(StudyMetadata):
     """Audio processing metadata.
@@ -63,7 +65,7 @@ class AudioProcessing(StudyMetadata):
     """
 
     # ===== Foreign Key References (optional, from recording time) =====
-    biomechanics_import_id: Optional[int] = None  # Biomechanics recorded with this audio
+    biomechanics_import_id: int | None = None  # Biomechanics recorded with this audio
 
     # ===== File Identification =====
     audio_file_name: str = Field(...)
@@ -92,49 +94,49 @@ class AudioProcessing(StudyMetadata):
     mic_4_position: Literal["IPM", "IPL", "SPM", "SPL"] = Field(...)
 
     # ===== Optional Notes =====
-    mic_1_notes: Optional[str] = None
-    mic_2_notes: Optional[str] = None
-    mic_3_notes: Optional[str] = None
-    mic_4_notes: Optional[str] = None
-    notes: Optional[str] = None
+    mic_1_notes: str | None = None
+    mic_2_notes: str | None = None
+    mic_3_notes: str | None = None
+    mic_4_notes: str | None = None
+    notes: str | None = None
 
     # ===== Pickle File Storage =====
-    pkl_file_path: Optional[str] = None
+    pkl_file_path: str | None = None
 
     # ===== QC Version =====
     audio_qc_version: int = Field(default_factory=get_audio_qc_version)
 
     # ===== QC Fail Segments (overall + per channel) =====
     # No defaults — callers MUST explicitly populate all QC fields
-    qc_fail_segments: List[tuple] = Field(...)
-    qc_fail_segments_ch1: List[tuple] = Field(...)
-    qc_fail_segments_ch2: List[tuple] = Field(...)
-    qc_fail_segments_ch3: List[tuple] = Field(...)
-    qc_fail_segments_ch4: List[tuple] = Field(...)
+    qc_fail_segments: list[tuple] = Field(...)
+    qc_fail_segments_ch1: list[tuple] = Field(...)
+    qc_fail_segments_ch2: list[tuple] = Field(...)
+    qc_fail_segments_ch3: list[tuple] = Field(...)
+    qc_fail_segments_ch4: list[tuple] = Field(...)
 
     # ===== Signal Dropout QC =====
     qc_signal_dropout: bool = Field(...)
-    qc_signal_dropout_segments: List[tuple] = Field(...)
+    qc_signal_dropout_segments: list[tuple] = Field(...)
     qc_signal_dropout_ch1: bool = Field(...)
-    qc_signal_dropout_segments_ch1: List[tuple] = Field(...)
+    qc_signal_dropout_segments_ch1: list[tuple] = Field(...)
     qc_signal_dropout_ch2: bool = Field(...)
-    qc_signal_dropout_segments_ch2: List[tuple] = Field(...)
+    qc_signal_dropout_segments_ch2: list[tuple] = Field(...)
     qc_signal_dropout_ch3: bool = Field(...)
-    qc_signal_dropout_segments_ch3: List[tuple] = Field(...)
+    qc_signal_dropout_segments_ch3: list[tuple] = Field(...)
     qc_signal_dropout_ch4: bool = Field(...)
-    qc_signal_dropout_segments_ch4: List[tuple] = Field(...)
+    qc_signal_dropout_segments_ch4: list[tuple] = Field(...)
 
     # ===== Continuous Artifact QC (detected at audio processing stage) =====
     qc_continuous_artifact: bool = Field(...)
-    qc_continuous_artifact_segments: List[tuple] = Field(...)
+    qc_continuous_artifact_segments: list[tuple] = Field(...)
     qc_continuous_artifact_ch1: bool = Field(...)
-    qc_continuous_artifact_segments_ch1: List[tuple] = Field(...)
+    qc_continuous_artifact_segments_ch1: list[tuple] = Field(...)
     qc_continuous_artifact_ch2: bool = Field(...)
-    qc_continuous_artifact_segments_ch2: List[tuple] = Field(...)
+    qc_continuous_artifact_segments_ch2: list[tuple] = Field(...)
     qc_continuous_artifact_ch3: bool = Field(...)
-    qc_continuous_artifact_segments_ch3: List[tuple] = Field(...)
+    qc_continuous_artifact_segments_ch3: list[tuple] = Field(...)
     qc_continuous_artifact_ch4: bool = Field(...)
-    qc_continuous_artifact_segments_ch4: List[tuple] = Field(...)
+    qc_continuous_artifact_segments_ch4: list[tuple] = Field(...)
 
     # ===== QC Status (auto-populated from segments) =====
     qc_not_passed: bool = False
@@ -146,11 +148,11 @@ class AudioProcessing(StudyMetadata):
     # ===== Processing Metadata =====
     processing_date: datetime = Field(default_factory=datetime.now)
     processing_status: Literal["not_processed", "success", "error"] = "not_processed"
-    error_message: Optional[str] = None
-    duration_seconds: Optional[float] = None
+    error_message: str | None = None
+    duration_seconds: float | None = None
 
     # ===== Log Tracking =====
-    log_updated: Optional[datetime] = None
+    log_updated: datetime | None = None
 
     @model_validator(mode="after")
     def populate_qc_not_passed_fields(self) -> "AudioProcessing":
@@ -164,7 +166,7 @@ class AudioProcessing(StudyMetadata):
 
     @field_validator("biomechanics_import_id")
     @classmethod
-    def validate_biomechanics_import_id(cls, value: Optional[int]) -> Optional[int]:
+    def validate_biomechanics_import_id(cls, value: int | None) -> int | None:
         """Validate biomechanics_import_id is positive if provided."""
         if value is not None and value <= 0:
             raise ValueError("biomechanics_import_id must be positive")
@@ -213,73 +215,75 @@ class AudioProcessing(StudyMetadata):
 
     @field_validator("duration_seconds")
     @classmethod
-    def validate_duration(cls, value: Optional[float]) -> Optional[float]:
+    def validate_duration(cls, value: float | None) -> float | None:
         """Validate duration is non-negative if provided."""
         if value is not None and value < 0:
             raise ValueError("duration_seconds must be non-negative")
         return value
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for export."""
         # Use dataclasses.asdict for Pydantic dataclasses
         result = dataclasses.asdict(self)
         # Add friendly column names for Excel export
-        result.update({
-            "Audio File": self.audio_file_name,
-            "Device Serial": self.device_serial,
-            "Firmware Version": self.firmware_version,
-            "File Time": self.file_time,
-            "File Size (MB)": self.file_size_mb,
-            "Recording Date": self.recording_date,
-            "Recording Time": self.recording_time,
-            "Knee": self.knee,
-            "Maneuver": self.maneuver,
-            "Num Channels": self.num_channels,
-            "Sample Rate (Hz)": self.sample_rate,
-            "Mic 1 Position": self.mic_1_position,
-            "Mic 2 Position": self.mic_2_position,
-            "Mic 3 Position": self.mic_3_position,
-            "Mic 4 Position": self.mic_4_position,
-            "Processing Date": self.processing_date,
-            "Processing Status": self.processing_status,
-            "Error Message": self.error_message,
-            "Duration (s)": self.duration_seconds,
-            "Audio QC Version": self.audio_qc_version,
-            "Audio QC Not Passed": self.qc_not_passed,
-            "Biomechanics Import ID": self.biomechanics_import_id,
-            # Raw field names for backwards compatibility
-            "QC_not_passed": self.qc_not_passed,
-            "QC_not_passed_mic_1": self.qc_not_passed_mic_1,
-            "QC_not_passed_mic_2": self.qc_not_passed_mic_2,
-            "QC_not_passed_mic_3": self.qc_not_passed_mic_3,
-            "QC_not_passed_mic_4": self.qc_not_passed_mic_4,
-            # QC fields
-            "QC Fail Segments": self.qc_fail_segments,
-            "QC Fail Segments Ch1": self.qc_fail_segments_ch1,
-            "QC Fail Segments Ch2": self.qc_fail_segments_ch2,
-            "QC Fail Segments Ch3": self.qc_fail_segments_ch3,
-            "QC Fail Segments Ch4": self.qc_fail_segments_ch4,
-            "QC Signal Dropout": self.qc_signal_dropout,
-            "QC Signal Dropout Segments": self.qc_signal_dropout_segments,
-            "QC Signal Dropout Ch1": self.qc_signal_dropout_ch1,
-            "QC Signal Dropout Segments Ch1": self.qc_signal_dropout_segments_ch1,
-            "QC Signal Dropout Ch2": self.qc_signal_dropout_ch2,
-            "QC Signal Dropout Segments Ch2": self.qc_signal_dropout_segments_ch2,
-            "QC Signal Dropout Ch3": self.qc_signal_dropout_ch3,
-            "QC Signal Dropout Segments Ch3": self.qc_signal_dropout_segments_ch3,
-            "QC Signal Dropout Ch4": self.qc_signal_dropout_ch4,
-            "QC Signal Dropout Segments Ch4": self.qc_signal_dropout_segments_ch4,
-            "QC Continuous Artifact": self.qc_continuous_artifact,
-            "QC Continuous Artifact Segments": self.qc_continuous_artifact_segments,
-            "QC Continuous Artifact Ch1": self.qc_continuous_artifact_ch1,
-            "QC Continuous Artifact Segments Ch1": self.qc_continuous_artifact_segments_ch1,
-            "QC Continuous Artifact Ch2": self.qc_continuous_artifact_ch2,
-            "QC Continuous Artifact Segments Ch2": self.qc_continuous_artifact_segments_ch2,
-            "QC Continuous Artifact Ch3": self.qc_continuous_artifact_ch3,
-            "QC Continuous Artifact Segments Ch3": self.qc_continuous_artifact_segments_ch3,
-            "QC Continuous Artifact Ch4": self.qc_continuous_artifact_ch4,
-            "QC Continuous Artifact Segments Ch4": self.qc_continuous_artifact_segments_ch4,
-        })
+        result.update(
+            {
+                "Audio File": self.audio_file_name,
+                "Device Serial": self.device_serial,
+                "Firmware Version": self.firmware_version,
+                "File Time": self.file_time,
+                "File Size (MB)": self.file_size_mb,
+                "Recording Date": self.recording_date,
+                "Recording Time": self.recording_time,
+                "Knee": self.knee,
+                "Maneuver": self.maneuver,
+                "Num Channels": self.num_channels,
+                "Sample Rate (Hz)": self.sample_rate,
+                "Mic 1 Position": self.mic_1_position,
+                "Mic 2 Position": self.mic_2_position,
+                "Mic 3 Position": self.mic_3_position,
+                "Mic 4 Position": self.mic_4_position,
+                "Processing Date": self.processing_date,
+                "Processing Status": self.processing_status,
+                "Error Message": self.error_message,
+                "Duration (s)": self.duration_seconds,
+                "Audio QC Version": self.audio_qc_version,
+                "Audio QC Not Passed": self.qc_not_passed,
+                "Biomechanics Import ID": self.biomechanics_import_id,
+                # Raw field names for backwards compatibility
+                "QC_not_passed": self.qc_not_passed,
+                "QC_not_passed_mic_1": self.qc_not_passed_mic_1,
+                "QC_not_passed_mic_2": self.qc_not_passed_mic_2,
+                "QC_not_passed_mic_3": self.qc_not_passed_mic_3,
+                "QC_not_passed_mic_4": self.qc_not_passed_mic_4,
+                # QC fields
+                "QC Fail Segments": self.qc_fail_segments,
+                "QC Fail Segments Ch1": self.qc_fail_segments_ch1,
+                "QC Fail Segments Ch2": self.qc_fail_segments_ch2,
+                "QC Fail Segments Ch3": self.qc_fail_segments_ch3,
+                "QC Fail Segments Ch4": self.qc_fail_segments_ch4,
+                "QC Signal Dropout": self.qc_signal_dropout,
+                "QC Signal Dropout Segments": self.qc_signal_dropout_segments,
+                "QC Signal Dropout Ch1": self.qc_signal_dropout_ch1,
+                "QC Signal Dropout Segments Ch1": self.qc_signal_dropout_segments_ch1,
+                "QC Signal Dropout Ch2": self.qc_signal_dropout_ch2,
+                "QC Signal Dropout Segments Ch2": self.qc_signal_dropout_segments_ch2,
+                "QC Signal Dropout Ch3": self.qc_signal_dropout_ch3,
+                "QC Signal Dropout Segments Ch3": self.qc_signal_dropout_segments_ch3,
+                "QC Signal Dropout Ch4": self.qc_signal_dropout_ch4,
+                "QC Signal Dropout Segments Ch4": self.qc_signal_dropout_segments_ch4,
+                "QC Continuous Artifact": self.qc_continuous_artifact,
+                "QC Continuous Artifact Segments": self.qc_continuous_artifact_segments,
+                "QC Continuous Artifact Ch1": self.qc_continuous_artifact_ch1,
+                "QC Continuous Artifact Segments Ch1": self.qc_continuous_artifact_segments_ch1,
+                "QC Continuous Artifact Ch2": self.qc_continuous_artifact_ch2,
+                "QC Continuous Artifact Segments Ch2": self.qc_continuous_artifact_segments_ch2,
+                "QC Continuous Artifact Ch3": self.qc_continuous_artifact_ch3,
+                "QC Continuous Artifact Segments Ch3": self.qc_continuous_artifact_segments_ch3,
+                "QC Continuous Artifact Ch4": self.qc_continuous_artifact_ch4,
+                "QC Continuous Artifact Segments Ch4": self.qc_continuous_artifact_segments_ch4,
+            }
+        )
         return result
 
 
@@ -295,11 +299,11 @@ class BiomechanicsImport(StudyMetadata):
     """
 
     # ===== Foreign Key References (optional, from recording time) =====
-    audio_processing_id: Optional[int] = None  # Audio recorded with this biomechanics
+    audio_processing_id: int | None = None  # Audio recorded with this biomechanics
 
     # ===== File Identification =====
     biomechanics_file: str = Field(...)
-    sheet_name: Optional[str] = None
+    sheet_name: str | None = None
     biomechanics_type: Literal["Gonio", "IMU", "Motion Analysis"] = Field(...)
 
     # ===== Maneuver Identification =====
@@ -307,13 +311,13 @@ class BiomechanicsImport(StudyMetadata):
     maneuver: Literal["fe", "sts", "walk"] = Field(...)
 
     # ===== Walk-Specific Metadata (optional, required for walk) =====
-    pass_number: Optional[int] = None
-    speed: Optional[Literal["slow", "fast", "medium", "comfortable"]] = None
+    pass_number: int | None = None
+    speed: Literal["slow", "fast", "medium", "comfortable"] | None = None
 
     # ===== Biomechanics Characteristics =====
     biomechanics_sync_method: Literal["flick", "stomp"] = Field(...)
     biomechanics_sample_rate: float = Field(...)
-    biomechanics_notes: Optional[str] = None
+    biomechanics_notes: str | None = None
 
     # ===== Import Statistics =====
     num_sub_recordings: int = Field(...)
@@ -323,7 +327,7 @@ class BiomechanicsImport(StudyMetadata):
 
     @field_validator("audio_processing_id")
     @classmethod
-    def validate_audio_processing_id(cls, value: Optional[int]) -> Optional[int]:
+    def validate_audio_processing_id(cls, value: int | None) -> int | None:
         """Validate audio_processing_id is positive if provided."""
         if value is not None and value <= 0:
             raise ValueError("audio_processing_id must be positive")
@@ -332,11 +336,11 @@ class BiomechanicsImport(StudyMetadata):
     # ===== Processing Metadata =====
     processing_date: datetime = Field(...)
     processing_status: Literal["not_processed", "success", "error"] = "not_processed"
-    error_message: Optional[str] = None
+    error_message: str | None = None
 
     @field_validator("pass_number")
     @classmethod
-    def validate_pass_number(cls, value: Optional[int], info) -> Optional[int]:
+    def validate_pass_number(cls, value: int | None, info) -> int | None:
         """Validate pass number: required and positive for walk, must be None for non-walk."""
         maneuver = info.data.get("maneuver")
         if maneuver == "walk":
@@ -351,7 +355,7 @@ class BiomechanicsImport(StudyMetadata):
 
     @field_validator("speed")
     @classmethod
-    def validate_speed(cls, value: Optional[str], info) -> Optional[str]:
+    def validate_speed(cls, value: str | None, info) -> str | None:
         """Validate speed: required for walk, must be None for non-walk."""
         maneuver = info.data.get("maneuver")
         if maneuver == "walk":
@@ -404,63 +408,63 @@ class Synchronization(StudyMetadata):
     maneuver: Literal["fe", "sts", "walk"] = Field(...)
 
     # ===== Walk-Specific Metadata =====
-    pass_number: Optional[int] = None
-    speed: Optional[Literal["slow", "fast", "medium", "comfortable"]] = None
+    pass_number: int | None = None
+    speed: Literal["slow", "fast", "medium", "comfortable"] | None = None
 
     # ===== Stomp Time Data (Core Synchronization Results) =====
     # Note: Biomechanics is synchronized to audio data (audio time 0 = sync time 0)
-    bio_left_sync_time: Optional[float] = None
-    bio_right_sync_time: Optional[float] = None
-    bio_sync_offset: Optional[float] = None  # Biomechanics sync offset between legs
-    aligned_sync_time: Optional[float] = None  # Unified aligned sync time on merged dataframes
+    bio_left_sync_time: float | None = None
+    bio_right_sync_time: float | None = None
+    bio_sync_offset: float | None = None  # Biomechanics sync offset between legs
+    aligned_sync_time: float | None = None  # Unified aligned sync time on merged dataframes
 
     # ===== Sync Method Details =====
-    sync_method: Optional[Literal["consensus", "biomechanics"]] = None
-    consensus_methods: Optional[str] = None
-    consensus_time: Optional[float] = None
-    rms_time: Optional[float] = None
-    onset_time: Optional[float] = None
-    freq_time: Optional[float] = None
+    sync_method: Literal["consensus", "biomechanics"] | None = None
+    consensus_methods: str | None = None
+    consensus_time: float | None = None
+    rms_time: float | None = None
+    onset_time: float | None = None
+    freq_time: float | None = None
 
     # ===== Biomechanics-Guided Detection (Optional) =====
-    bio_selected_sync_time: Optional[float] = None  # Renamed from audio_selected_sync_time
-    contra_bio_selected_sync_time: Optional[float] = None  # Renamed from contra_audio_selected_sync_time
+    bio_selected_sync_time: float | None = None  # Renamed from audio_selected_sync_time
+    contra_bio_selected_sync_time: float | None = None  # Renamed from contra_audio_selected_sync_time
 
     # ===== Audio-Visual Sync (Optional) =====
-    audio_visual_sync_time: Optional[float] = None
-    audio_visual_sync_time_contralateral: Optional[float] = None
+    audio_visual_sync_time: float | None = None
+    audio_visual_sync_time_contralateral: float | None = None
 
     # ===== Audio Sync Times (Optional) =====
     # Time between turning microphones on and participant stopping for each leg
-    audio_sync_time_left: Optional[float] = None
-    audio_sync_time_right: Optional[float] = None
-    audio_sync_offset: Optional[float] = None  # Required if both left and right are present
+    audio_sync_time_left: float | None = None
+    audio_sync_time_right: float | None = None
+    audio_sync_offset: float | None = None  # Required if both left and right are present
 
     # ===== Audio-Based Sync Fields (Optional) =====
     # Different from bio-based sync - required if 'audio' in stomp_detection_methods
-    audio_selected_sync_time: Optional[float] = None
-    contra_audio_selected_sync_time: Optional[float] = None
+    audio_selected_sync_time: float | None = None
+    contra_audio_selected_sync_time: float | None = None
 
     # ===== Detection Method Details =====
-    stomp_detection_methods: Optional[List[Literal["audio", "consensus", "biomechanics"]]] = None
-    selected_stomp_method: Optional[Literal["audio", "consensus", "biomechanics"]] = None
+    stomp_detection_methods: list[Literal["audio", "consensus", "biomechanics"]] | None = None
+    selected_stomp_method: Literal["audio", "consensus", "biomechanics"] | None = None
 
     # ===== Pickle File Storage =====
     sync_file_name: str = Field(...)
-    sync_file_path: Optional[str] = None
+    sync_file_path: str | None = None
 
     # ===== Duration & Aggregate Statistics =====
-    sync_duration: Optional[float] = None
+    sync_duration: float | None = None
     total_cycles_extracted: int = 0
     clean_cycles: int = 0
     outlier_cycles: int = 0
 
     # ===== Cycle Duration Statistics =====
-    mean_cycle_duration_s: Optional[float] = None
-    median_cycle_duration_s: Optional[float] = None
-    min_cycle_duration_s: Optional[float] = None
-    max_cycle_duration_s: Optional[float] = None
-    method_agreement_span: Optional[float] = None
+    mean_cycle_duration_s: float | None = None
+    median_cycle_duration_s: float | None = None
+    min_cycle_duration_s: float | None = None
+    max_cycle_duration_s: float | None = None
+    method_agreement_span: float | None = None
 
     # ===== Periodic Artifact Detection (sync-level, on full exercise portion) =====
     periodic_artifact_detected: bool = False
@@ -468,16 +472,16 @@ class Synchronization(StudyMetadata):
     periodic_artifact_detected_ch2: bool = False
     periodic_artifact_detected_ch3: bool = False
     periodic_artifact_detected_ch4: bool = False
-    periodic_artifact_segments: Optional[List[tuple]] = None
-    periodic_artifact_segments_ch1: Optional[List[tuple]] = None
-    periodic_artifact_segments_ch2: Optional[List[tuple]] = None
-    periodic_artifact_segments_ch3: Optional[List[tuple]] = None
-    periodic_artifact_segments_ch4: Optional[List[tuple]] = None
+    periodic_artifact_segments: list[tuple] | None = None
+    periodic_artifact_segments_ch1: list[tuple] | None = None
+    periodic_artifact_segments_ch2: list[tuple] | None = None
+    periodic_artifact_segments_ch3: list[tuple] | None = None
+    periodic_artifact_segments_ch4: list[tuple] | None = None
 
     # ===== Processing Metadata =====
     processing_date: datetime = Field(default_factory=datetime.now)
     processing_status: Literal["not_processed", "success", "error"] = "not_processed"
-    error_message: Optional[str] = None
+    error_message: str | None = None
 
     @field_validator("audio_processing_id", "biomechanics_import_id")
     @classmethod
@@ -505,22 +509,18 @@ class Synchronization(StudyMetadata):
         - audio_sync_offset required if both audio_sync_time_left and audio_sync_time_right are present
         """
         # Check biomechanics detection method requirements
-        if self.stomp_detection_methods and 'biomechanics' in self.stomp_detection_methods:
+        if self.stomp_detection_methods and "biomechanics" in self.stomp_detection_methods:
             if self.bio_selected_sync_time is None:
-                raise ValueError(
-                    "bio_selected_sync_time is required when 'biomechanics' is in stomp_detection_methods"
-                )
+                raise ValueError("bio_selected_sync_time is required when 'biomechanics' is in stomp_detection_methods")
             if self.contra_bio_selected_sync_time is None:
                 raise ValueError(
                     "contra_bio_selected_sync_time is required when 'biomechanics' is in stomp_detection_methods"
                 )
 
         # Check audio detection method requirements
-        if self.stomp_detection_methods and 'audio' in self.stomp_detection_methods:
+        if self.stomp_detection_methods and "audio" in self.stomp_detection_methods:
             if self.audio_selected_sync_time is None:
-                raise ValueError(
-                    "audio_selected_sync_time is required when 'audio' is in stomp_detection_methods"
-                )
+                raise ValueError("audio_selected_sync_time is required when 'audio' is in stomp_detection_methods")
             if self.contra_audio_selected_sync_time is None:
                 raise ValueError(
                     "contra_audio_selected_sync_time is required when 'audio' is in stomp_detection_methods"
@@ -550,16 +550,16 @@ class MovementCycle(StudyMetadata):
 
     # ===== Foreign Key References =====
     audio_processing_id: int = Field(...)  # ID of related AudioProcessing record
-    biomechanics_import_id: Optional[int] = None  # ID of related BiomechanicsImport (optional)
-    synchronization_id: Optional[int] = None  # ID of related Synchronization (optional)
+    biomechanics_import_id: int | None = None  # ID of related BiomechanicsImport (optional)
+    synchronization_id: int | None = None  # ID of related Synchronization (optional)
 
     # ===== Maneuver Metadata =====
     knee: Literal["right", "left"] = Field(...)
     maneuver: Literal["fe", "sts", "walk"] = Field(...)
 
     # ===== Walk-Specific Metadata =====
-    pass_number: Optional[int] = None
-    speed: Optional[Literal["slow", "fast", "medium", "comfortable"]] = None
+    pass_number: int | None = None
+    speed: Literal["slow", "fast", "medium", "comfortable"] | None = None
 
     # ===== Cycle Identification =====
     cycle_file: str = Field(...)
@@ -581,17 +581,17 @@ class MovementCycle(StudyMetadata):
     audio_qc_fail: bool = Field(...)
 
     # ===== Audio QC Details =====
-    audio_qc_failures: Optional[List[Literal["dropout", "continuous", "intermittent", "periodic"]]] = None
+    audio_qc_failures: list[Literal["dropout", "continuous", "intermittent", "periodic"]] | None = None
     audio_artifact_intermittent_fail: bool = Field(...)
     audio_artifact_intermittent_fail_ch1: bool = Field(...)
     audio_artifact_intermittent_fail_ch2: bool = Field(...)
     audio_artifact_intermittent_fail_ch3: bool = Field(...)
     audio_artifact_intermittent_fail_ch4: bool = Field(...)
-    audio_artifact_timestamps: Optional[List[float]] = None
-    audio_artifact_timestamps_ch1: Optional[List[float]] = None
-    audio_artifact_timestamps_ch2: Optional[List[float]] = None
-    audio_artifact_timestamps_ch3: Optional[List[float]] = None
-    audio_artifact_timestamps_ch4: Optional[List[float]] = None
+    audio_artifact_timestamps: list[float] | None = None
+    audio_artifact_timestamps_ch1: list[float] | None = None
+    audio_artifact_timestamps_ch2: list[float] | None = None
+    audio_artifact_timestamps_ch3: list[float] | None = None
+    audio_artifact_timestamps_ch4: list[float] | None = None
 
     # ===== Audio-Stage Dropout Artifacts (trimmed to cycle boundaries) =====
     audio_artifact_dropout_fail: bool = Field(...)
@@ -599,11 +599,11 @@ class MovementCycle(StudyMetadata):
     audio_artifact_dropout_fail_ch2: bool = Field(...)
     audio_artifact_dropout_fail_ch3: bool = Field(...)
     audio_artifact_dropout_fail_ch4: bool = Field(...)
-    audio_artifact_dropout_timestamps: Optional[List[float]] = None
-    audio_artifact_dropout_timestamps_ch1: Optional[List[float]] = None
-    audio_artifact_dropout_timestamps_ch2: Optional[List[float]] = None
-    audio_artifact_dropout_timestamps_ch3: Optional[List[float]] = None
-    audio_artifact_dropout_timestamps_ch4: Optional[List[float]] = None
+    audio_artifact_dropout_timestamps: list[float] | None = None
+    audio_artifact_dropout_timestamps_ch1: list[float] | None = None
+    audio_artifact_dropout_timestamps_ch2: list[float] | None = None
+    audio_artifact_dropout_timestamps_ch3: list[float] | None = None
+    audio_artifact_dropout_timestamps_ch4: list[float] | None = None
 
     # ===== Audio-Stage Continuous Artifacts (trimmed to cycle boundaries) =====
     audio_artifact_continuous_fail: bool = Field(...)
@@ -611,11 +611,11 @@ class MovementCycle(StudyMetadata):
     audio_artifact_continuous_fail_ch2: bool = Field(...)
     audio_artifact_continuous_fail_ch3: bool = Field(...)
     audio_artifact_continuous_fail_ch4: bool = Field(...)
-    audio_artifact_continuous_timestamps: Optional[List[float]] = None
-    audio_artifact_continuous_timestamps_ch1: Optional[List[float]] = None
-    audio_artifact_continuous_timestamps_ch2: Optional[List[float]] = None
-    audio_artifact_continuous_timestamps_ch3: Optional[List[float]] = None
-    audio_artifact_continuous_timestamps_ch4: Optional[List[float]] = None
+    audio_artifact_continuous_timestamps: list[float] | None = None
+    audio_artifact_continuous_timestamps_ch1: list[float] | None = None
+    audio_artifact_continuous_timestamps_ch2: list[float] | None = None
+    audio_artifact_continuous_timestamps_ch3: list[float] | None = None
+    audio_artifact_continuous_timestamps_ch4: list[float] | None = None
 
     # ===== Periodic Artifact QC (propagated from sync-level, trimmed to cycle) =====
     audio_artifact_periodic_fail: bool = Field(...)
@@ -623,11 +623,11 @@ class MovementCycle(StudyMetadata):
     audio_artifact_periodic_fail_ch2: bool = Field(...)
     audio_artifact_periodic_fail_ch3: bool = Field(...)
     audio_artifact_periodic_fail_ch4: bool = Field(...)
-    audio_artifact_periodic_timestamps: Optional[List[float]] = None
-    audio_artifact_periodic_timestamps_ch1: Optional[List[float]] = None
-    audio_artifact_periodic_timestamps_ch2: Optional[List[float]] = None
-    audio_artifact_periodic_timestamps_ch3: Optional[List[float]] = None
-    audio_artifact_periodic_timestamps_ch4: Optional[List[float]] = None
+    audio_artifact_periodic_timestamps: list[float] | None = None
+    audio_artifact_periodic_timestamps_ch1: list[float] | None = None
+    audio_artifact_periodic_timestamps_ch2: list[float] | None = None
+    audio_artifact_periodic_timestamps_ch3: list[float] | None = None
+    audio_artifact_periodic_timestamps_ch4: list[float] | None = None
 
     # ===== QC Version Tracking =====
     biomechanics_qc_version: int = Field(default_factory=get_biomech_qc_version)
@@ -643,7 +643,7 @@ class MovementCycle(StudyMetadata):
 
     @field_validator("biomechanics_import_id")
     @classmethod
-    def validate_biomechanics_import_id(cls, value: Optional[int]) -> Optional[int]:
+    def validate_biomechanics_import_id(cls, value: int | None) -> int | None:
         """Validate biomechanics_import_id is positive if provided."""
         if value is not None and value <= 0:
             raise ValueError("biomechanics_import_id must be positive")
@@ -651,7 +651,7 @@ class MovementCycle(StudyMetadata):
 
     @field_validator("synchronization_id")
     @classmethod
-    def validate_synchronization_id(cls, value: Optional[int]) -> Optional[int]:
+    def validate_synchronization_id(cls, value: int | None) -> int | None:
         """Validate synchronization_id is positive if provided."""
         if value is not None and value <= 0:
             raise ValueError("synchronization_id must be positive")
@@ -688,6 +688,7 @@ class MovementCycle(StudyMetadata):
 # ============================================================================
 # INTER-STAGE DATA TRANSFER - Replaces JSON round-trip
 # ============================================================================
+
 
 @dataclass(kw_only=True)
 class CycleQCResult:
@@ -734,5 +735,5 @@ class CycleQCResult:
     periodic_intervals_ch4: list[tuple[float, float]]
 
     # ===== Walk-Specific Metadata =====
-    pass_number: Optional[int] = None
-    speed: Optional[Literal["slow", "fast", "medium", "comfortable"]] = None
+    pass_number: int | None = None
+    speed: Literal["slow", "fast", "medium", "comfortable"] | None = None

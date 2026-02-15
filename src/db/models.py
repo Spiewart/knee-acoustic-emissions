@@ -17,8 +17,7 @@ features like ARRAY types. Run tests against PostgreSQL, not SQLite.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from typing import List, Optional
+from datetime import UTC, datetime
 
 from sqlalchemy import (
     ARRAY,
@@ -37,12 +36,13 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 class Base(DeclarativeBase):
     """Base class for all ORM models."""
+
     pass
 
 
 def utcnow() -> datetime:
     """Return timezone-aware UTC timestamp."""
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class ParticipantRecord(Base):
@@ -52,13 +52,14 @@ class ParticipantRecord(Base):
     survives cleanup / re-processing cycles.  All mutable data lives in
     StudyRecord and downstream tables.
     """
+
     __tablename__ = "participants"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
 
     # Relationships
-    studies: Mapped[List["StudyRecord"]] = relationship(
+    studies: Mapped[list[StudyRecord]] = relationship(
         "StudyRecord", back_populates="participant", cascade="all, delete-orphan"
     )
 
@@ -71,6 +72,7 @@ class StudyRecord(Base):
     The ``id`` of this table is the FK used by all downstream
     processing tables.
     """
+
     __tablename__ = "studies"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -80,17 +82,17 @@ class StudyRecord(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
 
     # Relationships
-    participant: Mapped["ParticipantRecord"] = relationship("ParticipantRecord", back_populates="studies")
-    audio_processing: Mapped[List["AudioProcessingRecord"]] = relationship(
+    participant: Mapped[ParticipantRecord] = relationship("ParticipantRecord", back_populates="studies")
+    audio_processing: Mapped[list[AudioProcessingRecord]] = relationship(
         "AudioProcessingRecord", back_populates="study", cascade="all, delete-orphan"
     )
-    biomechanics_imports: Mapped[List["BiomechanicsImportRecord"]] = relationship(
+    biomechanics_imports: Mapped[list[BiomechanicsImportRecord]] = relationship(
         "BiomechanicsImportRecord", back_populates="study", cascade="all, delete-orphan"
     )
-    synchronizations: Mapped[List["SynchronizationRecord"]] = relationship(
+    synchronizations: Mapped[list[SynchronizationRecord]] = relationship(
         "SynchronizationRecord", back_populates="study", cascade="all, delete-orphan"
     )
-    movement_cycles: Mapped[List["MovementCycleRecord"]] = relationship(
+    movement_cycles: Mapped[list[MovementCycleRecord]] = relationship(
         "MovementCycleRecord", back_populates="study", cascade="all, delete-orphan"
     )
 
@@ -106,6 +108,7 @@ class AudioProcessingRecord(Base):
     Standalone table for audio file metadata and QC results.
     Does NOT contain biomechanics information - that's in BiomechanicsImportRecord.
     """
+
     __tablename__ = "audio_processing"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -213,16 +216,14 @@ class AudioProcessingRecord(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
 
     # Relationships
-    study: Mapped["StudyRecord"] = relationship("StudyRecord", back_populates="audio_processing")
-    biomechanics_import: Mapped[Optional["BiomechanicsImportRecord"]] = relationship(
-        "BiomechanicsImportRecord",
-        foreign_keys=[biomechanics_import_id],
-        uselist=False
+    study: Mapped[StudyRecord] = relationship("StudyRecord", back_populates="audio_processing")
+    biomechanics_import: Mapped[BiomechanicsImportRecord | None] = relationship(
+        "BiomechanicsImportRecord", foreign_keys=[biomechanics_import_id], uselist=False
     )
-    synchronizations: Mapped[List["SynchronizationRecord"]] = relationship(
+    synchronizations: Mapped[list[SynchronizationRecord]] = relationship(
         "SynchronizationRecord", back_populates="audio_processing", cascade="all, delete-orphan"
     )
-    movement_cycles: Mapped[List["MovementCycleRecord"]] = relationship(
+    movement_cycles: Mapped[list[MovementCycleRecord]] = relationship(
         "MovementCycleRecord", back_populates="audio_processing", cascade="all, delete-orphan"
     )
 
@@ -240,6 +241,7 @@ class BiomechanicsImportRecord(Base):
     Standalone table for biomechanics file import and QC results.
     Does NOT contain audio information - that's in AudioProcessingRecord.
     """
+
     __tablename__ = "biomechanics_imports"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -293,16 +295,14 @@ class BiomechanicsImportRecord(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
 
     # Relationships
-    study: Mapped["StudyRecord"] = relationship("StudyRecord", back_populates="biomechanics_imports")
-    audio_processing: Mapped[Optional["AudioProcessingRecord"]] = relationship(
-        "AudioProcessingRecord",
-        foreign_keys=[audio_processing_id],
-        uselist=False
+    study: Mapped[StudyRecord] = relationship("StudyRecord", back_populates="biomechanics_imports")
+    audio_processing: Mapped[AudioProcessingRecord | None] = relationship(
+        "AudioProcessingRecord", foreign_keys=[audio_processing_id], uselist=False
     )
-    synchronizations: Mapped[List["SynchronizationRecord"]] = relationship(
+    synchronizations: Mapped[list[SynchronizationRecord]] = relationship(
         "SynchronizationRecord", back_populates="biomechanics_import", cascade="all, delete-orphan"
     )
-    movement_cycles: Mapped[List["MovementCycleRecord"]] = relationship(
+    movement_cycles: Mapped[list[MovementCycleRecord]] = relationship(
         "MovementCycleRecord", back_populates="biomechanics_import"
     )
 
@@ -320,6 +320,7 @@ class SynchronizationRecord(Base):
     Tracks audio-biomechanics synchronization results.
     References AudioProcessingRecord and BiomechanicsImportRecord via foreign keys.
     """
+
     __tablename__ = "synchronizations"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -365,11 +366,17 @@ class SynchronizationRecord(Base):
 
     # Audio-based sync fields (new - different from bio-based)
     audio_selected_sync_time = mapped_column(Float, nullable=True)  # Required if 'audio' in stomp_detection_methods
-    contra_audio_selected_sync_time = mapped_column(Float, nullable=True)  # Required if 'audio' in stomp_detection_methods
+    contra_audio_selected_sync_time = mapped_column(
+        Float, nullable=True
+    )  # Required if 'audio' in stomp_detection_methods
 
     # Detection method fields
-    stomp_detection_methods = mapped_column(ARRAY(String), nullable=True)  # List of methods used: ['audio', 'consensus', 'biomechanics']
-    selected_stomp_method = mapped_column(String(50), nullable=True)  # Single selected method (replaces audio_stomp_method)
+    stomp_detection_methods = mapped_column(
+        ARRAY(String), nullable=True
+    )  # List of methods used: ['audio', 'consensus', 'biomechanics']
+    selected_stomp_method = mapped_column(
+        String(50), nullable=True
+    )  # Single selected method (replaces audio_stomp_method)
 
     # Pickle file storage (sync results)
     sync_file_name = mapped_column(String(255), nullable=True)
@@ -415,10 +422,14 @@ class SynchronizationRecord(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
 
     # Relationships
-    study: Mapped["StudyRecord"] = relationship("StudyRecord", back_populates="synchronizations")
-    audio_processing: Mapped["AudioProcessingRecord"] = relationship("AudioProcessingRecord", back_populates="synchronizations")
-    biomechanics_import: Mapped["BiomechanicsImportRecord"] = relationship("BiomechanicsImportRecord", back_populates="synchronizations")
-    movement_cycles: Mapped[List["MovementCycleRecord"]] = relationship(
+    study: Mapped[StudyRecord] = relationship("StudyRecord", back_populates="synchronizations")
+    audio_processing: Mapped[AudioProcessingRecord] = relationship(
+        "AudioProcessingRecord", back_populates="synchronizations"
+    )
+    biomechanics_import: Mapped[BiomechanicsImportRecord] = relationship(
+        "BiomechanicsImportRecord", back_populates="synchronizations"
+    )
+    movement_cycles: Mapped[list[MovementCycleRecord]] = relationship(
         "MovementCycleRecord", back_populates="synchronization", cascade="all, delete-orphan"
     )
 
@@ -427,8 +438,7 @@ class SynchronizationRecord(Base):
         CheckConstraint("maneuver IN ('fe', 'sts', 'walk')", name="sync_valid_maneuver"),
         CheckConstraint("processing_status IN ('not_processed', 'success', 'error')", name="sync_valid_status"),
         # Semantic uniqueness: one sync record per (study, knee, maneuver, pass, speed)
-        UniqueConstraint("study_id", "knee", "maneuver", "pass_number", "speed",
-                         name="uq_synchronization"),
+        UniqueConstraint("study_id", "knee", "maneuver", "pass_number", "speed", name="uq_synchronization"),
     )
 
 
@@ -440,6 +450,7 @@ class MovementCycleRecord(Base):
     - Biomechanics import (optional)
     - Synchronization (optional, only if biomechanics present)
     """
+
     __tablename__ = "movement_cycles"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -545,15 +556,22 @@ class MovementCycleRecord(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
 
     # Relationships
-    study: Mapped["StudyRecord"] = relationship("StudyRecord", back_populates="movement_cycles")
-    audio_processing: Mapped["AudioProcessingRecord"] = relationship("AudioProcessingRecord", back_populates="movement_cycles")
-    biomechanics_import: Mapped["BiomechanicsImportRecord"] = relationship("BiomechanicsImportRecord", back_populates="movement_cycles")
-    synchronization: Mapped["SynchronizationRecord"] = relationship("SynchronizationRecord", back_populates="movement_cycles")
+    study: Mapped[StudyRecord] = relationship("StudyRecord", back_populates="movement_cycles")
+    audio_processing: Mapped[AudioProcessingRecord] = relationship(
+        "AudioProcessingRecord", back_populates="movement_cycles"
+    )
+    biomechanics_import: Mapped[BiomechanicsImportRecord] = relationship(
+        "BiomechanicsImportRecord", back_populates="movement_cycles"
+    )
+    synchronization: Mapped[SynchronizationRecord] = relationship(
+        "SynchronizationRecord", back_populates="movement_cycles"
+    )
 
     __table_args__ = (
         CheckConstraint("knee IN ('left', 'right')", name="cycle_valid_knee"),
         CheckConstraint("maneuver IN ('fe', 'sts', 'walk')", name="cycle_valid_maneuver"),
         # Semantic uniqueness: one cycle per (study, knee, maneuver, pass, speed, cycle_index)
-        UniqueConstraint("study_id", "knee", "maneuver", "pass_number", "speed",
-                         "cycle_index", name="uq_movement_cycle"),
+        UniqueConstraint(
+            "study_id", "knee", "maneuver", "pass_number", "speed", "cycle_index", name="uq_movement_cycle"
+        ),
     )

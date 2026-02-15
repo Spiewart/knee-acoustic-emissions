@@ -1,7 +1,5 @@
 """DB-backed report generation tests."""
 
-from pathlib import Path
-
 import pandas as pd
 
 from src.orchestration.processing_log import KneeProcessingLog, ManeuverProcessingLog
@@ -178,18 +176,24 @@ def test_knee_processing_log_generates_summary(
         knee_side="Left",
         knee_directory=tmp_path,
     )
-    knee_log.update_maneuver_summary("walk", ManeuverProcessingLog(
-        study_id="AOA1013",
-        knee_side="Left",
-        maneuver="walk",
-        maneuver_directory=tmp_path,
-    ))
-    knee_log.update_maneuver_summary("fe", ManeuverProcessingLog(
-        study_id="AOA1013",
-        knee_side="Left",
-        maneuver="fe",
-        maneuver_directory=tmp_path,
-    ))
+    knee_log.update_maneuver_summary(
+        "walk",
+        ManeuverProcessingLog(
+            study_id="AOA1013",
+            knee_side="Left",
+            maneuver="walk",
+            maneuver_directory=tmp_path,
+        ),
+    )
+    knee_log.update_maneuver_summary(
+        "fe",
+        ManeuverProcessingLog(
+            study_id="AOA1013",
+            knee_side="Left",
+            maneuver="fe",
+            maneuver_directory=tmp_path,
+        ),
+    )
 
     output_path = knee_log.save_to_excel(session=db_session)
     assert output_path.exists()

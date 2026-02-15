@@ -1,6 +1,6 @@
 import importlib.util
-import sys
 from pathlib import Path
+import sys
 
 import numpy as np
 import pandas as pd
@@ -86,9 +86,7 @@ def test_end_to_end_smoke(tmp_path: Path):
     # but if data exists it should contain channels ch1..ch4.
     if len(df) > 0:
         cols = [c.lower() for c in df.columns]
-        assert (
-            "ch1" in cols or "ch2" in cols
-        ), "Expected channel columns in DataFrame when data present"
+        assert "ch1" in cols or "ch2" in cols, "Expected channel columns in DataFrame when data present"
 
     # Load CSV exporter module and run its main() with adjusted argv
     old_argv = sys.argv[:]
@@ -102,6 +100,4 @@ def test_end_to_end_smoke(tmp_path: Path):
     assert csv.exists(), "Channels CSV not created"
     out_df = pd.read_csv(csv)
     # CSV should include the timestamp column and the 4 channel columns (may be NaN/empty)
-    assert set(["tt", "ch1", "ch2", "ch3", "ch4"]).issubset(
-        set(out_df.columns)
-    ), "CSV missing expected columns"
+    assert {"tt", "ch1", "ch2", "ch3", "ch4"}.issubset(set(out_df.columns)), "CSV missing expected columns"

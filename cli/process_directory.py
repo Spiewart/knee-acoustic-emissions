@@ -36,8 +36,7 @@ def main() -> None:
     """
     parser = argparse.ArgumentParser(
         description=(
-            "Process all participant directories in a folder. "
-            "Each directory should be named with format '#<study_id>'."
+            "Process all participant directories in a folder. Each directory should be named with format '#<study_id>'."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
@@ -54,8 +53,7 @@ def main() -> None:
         "path",
         nargs="?",
         help=(
-            "Path to directory containing participant folders "
-            "(e.g., #1011, #2024), or to audio file with --sync-single"
+            "Path to directory containing participant folders (e.g., #1011, #2024), or to audio file with --sync-single"
         ),
     )
     parser.add_argument(
@@ -143,9 +141,7 @@ def main() -> None:
     # Handle single-file sync
     if args.sync_single:
         if not args.path:
-            logging.error(
-                "--sync-single requires PATH argument (audio file path)"
-            )
+            logging.error("--sync-single requires PATH argument (audio file path)")
             return
         success = sync_single_audio_file(args.path)
         if not success:
@@ -194,16 +190,14 @@ def main() -> None:
             logging.info("Database persistence enabled: %s", db_url)
         else:
             logging.warning(
-                "Database persistence requested but no database URL available. "
-                "Set AE_DATABASE_URL or use --db-url."
+                "Database persistence requested but no database URL available. Set AE_DATABASE_URL or use --db-url."
             )
 
     # Find participant directories
     participants = find_participant_directories(path)
     if not participants:
         logging.warning(
-            "No participant directories found in %s "
-            "(looking for folders named #<study_id>)",
+            "No participant directories found in %s (looking for folders named #<study_id>)",
             path,
         )
         return
@@ -224,9 +218,7 @@ def main() -> None:
     if args.limit > 0:
         participants = participants[: args.limit]
 
-    logging.info(
-        "Found %d participant directory(ies) to process", len(participants)
-    )
+    logging.info("Found %d participant directory(ies) to process", len(participants))
 
     # Process each participant with optional database persistence
     success_count = 0

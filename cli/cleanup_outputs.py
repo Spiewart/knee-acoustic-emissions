@@ -24,9 +24,8 @@ from __future__ import annotations
 
 import argparse
 import logging
-import shutil
 from pathlib import Path
-from typing import Optional
+import shutil
 
 logger = logging.getLogger(__name__)
 
@@ -84,7 +83,7 @@ def cleanup_study_directory(
     study_dir: Path,
     *,
     dry_run: bool = False,
-    limit: Optional[int] = None,
+    limit: int | None = None,
 ) -> None:
     """Clean up all participant directories in a study directory.
 
@@ -97,10 +96,7 @@ def cleanup_study_directory(
         raise FileNotFoundError(f"Study directory not found: {study_dir}")
 
     # Find all participant directories (starting with #)
-    participant_dirs = sorted([
-        d for d in study_dir.iterdir()
-        if d.is_dir() and d.name.startswith("#")
-    ])
+    participant_dirs = sorted([d for d in study_dir.iterdir() if d.is_dir() and d.name.startswith("#")])
 
     if not participant_dirs:
         logging.warning(f"No participant directories found in {study_dir}")
@@ -123,7 +119,8 @@ def cleanup_study_directory(
         logging.info(f"\nCleaning participant: {participant_dir.name}")
         try:
             stats = cleanup_participant_outputs(
-                participant_dir, dry_run=dry_run,
+                participant_dir,
+                dry_run=dry_run,
             )
             total_stats["outputs_dirs"] += stats["outputs_dirs"]
             total_stats["synced_dirs"] += stats["synced_dirs"]
@@ -263,15 +260,13 @@ def _format_bytes(bytes_count: int) -> str:
     for unit in ["B", "KB", "MB", "GB"]:
         if bytes_count < 1024.0:
             return f"{bytes_count:.1f} {unit}"
-        bytes_count /= 1024.0
+        bytes_count = int(bytes_count / 1024)
     return f"{bytes_count:.1f} TB"
 
 
 def main() -> None:
     """Command-line interface for cleanup utility."""
-    parser = argparse.ArgumentParser(
-        description="Clean up processing outputs from participant directories"
-    )
+    parser = argparse.ArgumentParser(description="Clean up processing outputs from participant directories")
     parser.add_argument(
         "path",
         type=Path,
@@ -309,7 +304,8 @@ def main() -> None:
         # Single participant directory
         logging.info(f"Cleaning single participant: {path.name}")
         stats = cleanup_participant_outputs(
-            path, dry_run=args.dry_run,
+            path,
+            dry_run=args.dry_run,
         )
         mode = "[DRY RUN] " if args.dry_run else ""
         logging.info(f"\n{mode}Cleanup Summary:")
@@ -322,7 +318,9 @@ def main() -> None:
         # Study directory with multiple participants
         logging.info(f"Cleaning study directory: {path}")
         cleanup_study_directory(
-            path, dry_run=args.dry_run, limit=args.limit,
+            path,
+            dry_run=args.dry_run,
+            limit=args.limit,
         )
 
 

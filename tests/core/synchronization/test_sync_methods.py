@@ -8,7 +8,6 @@ from src.synchronization.sync import (
     get_audio_stomp_time,
     get_bio_end_time,
     get_bio_start_time,
-    get_right_stomp_time,
     get_stomp_time,
     load_audio_data,
     sync_audio_with_biomechanics,
@@ -26,16 +25,14 @@ def test_get_stomp_time(fake_participant_directory):
     left_stomp_time = get_stomp_time(bio_meta, foot="left")
     expected_left_time = pd.to_timedelta(12.00, unit="s").to_pytimedelta()
     assert left_stomp_time == expected_left_time, (
-        f"Left stomp time mismatch: expected {expected_left_time}, "
-        f"got {left_stomp_time}"
+        f"Left stomp time mismatch: expected {expected_left_time}, got {left_stomp_time}"
     )
 
     # Test right foot stomp time
     right_stomp_time = get_stomp_time(bio_meta, foot="right")
     expected_right_time = pd.to_timedelta(13.00, unit="s").to_pytimedelta()
     assert right_stomp_time == expected_right_time, (
-        f"Right stomp time mismatch: expected {expected_right_time}, "
-        f"got {right_stomp_time}"
+        f"Right stomp time mismatch: expected {expected_right_time}, got {right_stomp_time}"
     )
 
 
@@ -94,10 +91,7 @@ def events_by_sheet(fake_participant_directory):
     """Cache biomechanics event sheets to avoid repeated Excel reads."""
     excel_path = fake_participant_directory["biomechanics"]["excel_path"]
     sheets = fake_participant_directory["biomechanics"]["events_sheets"]
-    return {
-        key: pd.read_excel(excel_path, sheet_name=sheet_name)
-        for key, sheet_name in sheets.items()
-    }
+    return {key: pd.read_excel(excel_path, sheet_name=sheet_name) for key, sheet_name in sheets.items()}
 
 
 def test_get_audio_stomp_time_requires_both_bio_stomps_when_knee_provided():
@@ -137,15 +131,15 @@ def test_get_audio_stomp_time_dual_knee_selection():
     )
     # Energy ratio fails → falls back to consensus; ensure consensus is used
     assert right_details["selected_stomp_method"] == "consensus"
-    assert abs(right_detected.total_seconds() - right_details["consensus_time"]) < 0.05, \
-        (
-            "Right detection should match consensus when energy ratio fails; "
-            f"got detected={right_detected.total_seconds():.6f}, "
-            f"consensus={right_details['consensus_time']:.6f}"
-        )
+    assert abs(right_detected.total_seconds() - right_details["consensus_time"]) < 0.05, (
+        "Right detection should match consensus when energy ratio fails; "
+        f"got detected={right_detected.total_seconds():.6f}, "
+        f"consensus={right_details['consensus_time']:.6f}"
+    )
     # Consensus is dominated by the louder stomp (~2.2s)
-    assert abs(right_detected.total_seconds() - 2.2) < 0.15, \
+    assert abs(right_detected.total_seconds() - 2.2) < 0.15, (
         f"Right detected {right_detected.total_seconds()} not close to consensus peak ~2.2"
+    )
 
     # For left knee, ratio = 6000/5000 = 1.2, which passes validation
     left_detected = get_audio_stomp_time(
@@ -154,8 +148,9 @@ def test_get_audio_stomp_time_dual_knee_selection():
         right_stomp_time=right_bio,
         left_stomp_time=left_bio,
     )
-    assert abs(left_detected.total_seconds() - 2.2) < 0.1, \
+    assert abs(left_detected.total_seconds() - 2.2) < 0.1, (
         f"Left detected {left_detected.total_seconds()} not close to 2.2"
+    )
 
 
 def test_sync_audio_with_biomechanics():
@@ -166,10 +161,12 @@ def test_sync_audio_with_biomechanics():
 
     # Synthetic biomechanics TIME series with one biomechanics channel
     bio_times = pd.to_timedelta(np.linspace(0, 2, 200), unit="s")
-    bio_df = pd.DataFrame({
-        "TIME": bio_times,
-        "Knee Angle Z": np.linspace(0, 10, len(bio_times)),
-    })
+    bio_df = pd.DataFrame(
+        {
+            "TIME": bio_times,
+            "Knee Angle Z": np.linspace(0, 10, len(bio_times)),
+        }
+    )
     bio_right_stomp_time = pd.to_timedelta(0.5, unit="s").to_pytimedelta()
 
     synchronized_df = sync_audio_with_biomechanics(

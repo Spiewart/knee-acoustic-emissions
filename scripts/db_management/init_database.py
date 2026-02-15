@@ -24,10 +24,10 @@ Usage:
 """
 
 import argparse
-import os
-import sys
 from datetime import datetime
+import os
 from pathlib import Path
+import sys
 
 # Add repo root to path
 repo_root = Path(__file__).resolve().parents[2]
@@ -67,9 +67,7 @@ def get_database_url(use_test_db: bool = False):
         # Production database
         prod_url = os.getenv("AE_DATABASE_URL")
         if not prod_url:
-            raise RuntimeError(
-                "AE_DATABASE_URL not set. Please configure in .env.local"
-            )
+            raise RuntimeError("AE_DATABASE_URL not set. Please configure in .env.local")
         return prod_url
 
 
@@ -85,6 +83,7 @@ def init_database(use_test_db: bool = False):
         # Override engine URL if using test database
         if use_test_db:
             from sqlalchemy import create_engine as _create_engine
+
             engine = _create_engine(db_url)
 
         init_db(engine)
@@ -110,7 +109,7 @@ def test_connection():
             participant_count = session.query(ParticipantRecord).count()
             audio_count = session.query(AudioProcessingRecord).count()
 
-            print(f"   Current records:")
+            print("   Current records:")
             print(f"     • Studies: {study_count}")
             print(f"     • Participants: {participant_count}")
             print(f"     • Audio files: {audio_count}")
@@ -204,34 +203,14 @@ Examples:
 
   # Create sample data in test database
   python scripts/init_database.py --sample --test
-        """
+        """,
     )
 
-    parser.add_argument(
-        "--init",
-        action="store_true",
-        help="Initialize database (create all tables)"
-    )
-    parser.add_argument(
-        "--test-connection",
-        action="store_true",
-        help="Test database connection"
-    )
-    parser.add_argument(
-        "--sample",
-        action="store_true",
-        help="Create sample data for testing"
-    )
-    parser.add_argument(
-        "--drop",
-        action="store_true",
-        help="Drop all tables (DANGER!)"
-    )
-    parser.add_argument(
-        "--test",
-        action="store_true",
-        help="Target test database instead of production"
-    )
+    parser.add_argument("--init", action="store_true", help="Initialize database (create all tables)")
+    parser.add_argument("--test-connection", action="store_true", help="Test database connection")
+    parser.add_argument("--sample", action="store_true", help="Create sample data for testing")
+    parser.add_argument("--drop", action="store_true", help="Drop all tables (DANGER!)")
+    parser.add_argument("--test", action="store_true", help="Target test database instead of production")
 
     args = parser.parse_args()
 

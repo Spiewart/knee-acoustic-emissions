@@ -1,8 +1,8 @@
 """Database upsert tests replacing local reference IDs."""
 
+from datetime import datetime
 import hashlib
 import json
-from datetime import datetime
 from typing import Any, Dict, Optional
 
 
@@ -207,7 +207,8 @@ class LocalReferenceRegistry:
     def find_audio_files_for_participant(self, participant_id: int) -> list:
         """Find all audio files for a participant."""
         return [
-            rec for rec in self._global_registry.values()
+            rec
+            for rec in self._global_registry.values()
             if rec.participant_id == participant_id and rec.record_type == "audio"
         ]
 
@@ -225,7 +226,8 @@ class LocalReferenceRegistry:
     def find_cycles_for_audio(self, audio_id: int) -> list:
         """Find all movement cycles associated with an audio ID."""
         cycles = [
-            rec for rec in self._global_registry.values()
+            rec
+            for rec in self._global_registry.values()
             if rec.record_type == "cycle" and rec.related_ids.get("audio_id") == audio_id
         ]
         return sorted(cycles, key=lambda rec: rec.pass_number or 0)
@@ -309,7 +311,9 @@ def test_audio_upsert_preserves_primary_key(repository, audio_processing_factory
     assert second.firmware_version == 2
 
 
-def test_sync_upsert_preserves_primary_key(repository, synchronization_factory, audio_processing_factory, biomechanics_import_factory):
+def test_sync_upsert_preserves_primary_key(
+    repository, synchronization_factory, audio_processing_factory, biomechanics_import_factory
+):
     audio = audio_processing_factory(study="AOA", study_id=6002, audio_file_name="AOA6002_walk_audio")
     audio_record = repository.save_audio_processing(audio)
 
@@ -323,7 +327,9 @@ def test_sync_upsert_preserves_primary_key(repository, synchronization_factory, 
         biomechanics_import_id=biomech_record.id,
         sync_file_name="AOA6002_walk_sync_slow_1",
     )
-    first = repository.save_synchronization(sync, audio_processing_id=audio_record.id, biomechanics_import_id=biomech_record.id)
+    first = repository.save_synchronization(
+        sync, audio_processing_id=audio_record.id, biomechanics_import_id=biomech_record.id
+    )
 
     updated = synchronization_factory(
         study="AOA",
@@ -333,7 +339,9 @@ def test_sync_upsert_preserves_primary_key(repository, synchronization_factory, 
         sync_file_name="AOA6002_walk_sync_slow_1",
         sync_duration=200.0,
     )
-    second = repository.save_synchronization(updated, audio_processing_id=audio_record.id, biomechanics_import_id=biomech_record.id)
+    second = repository.save_synchronization(
+        updated, audio_processing_id=audio_record.id, biomechanics_import_id=biomech_record.id
+    )
 
     assert first.id == second.id
     assert second.sync_duration == 200.0

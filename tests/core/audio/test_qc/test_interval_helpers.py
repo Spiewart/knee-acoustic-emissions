@@ -56,9 +56,7 @@ class TestFlattenIntervals:
         assert result == [1.0, 3.0]
 
     def test_multiple_intervals(self):
-        result = ManeuverProcessor._flatten_intervals(
-            [(1.0, 3.0), (5.0, 7.0), (10.0, 12.0)]
-        )
+        result = ManeuverProcessor._flatten_intervals([(1.0, 3.0), (5.0, 7.0), (10.0, 12.0)])
         assert result == [1.0, 3.0, 5.0, 7.0, 10.0, 12.0]
 
     def test_preserves_float_precision(self):

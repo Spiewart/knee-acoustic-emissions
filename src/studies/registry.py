@@ -4,8 +4,6 @@ Provides a simple registry for looking up study configurations by name.
 Studies auto-register themselves when their module is imported.
 """
 
-from typing import Optional
-
 from src.studies.base import StudyConfig
 
 _registry: dict[str, StudyConfig] = {}
@@ -40,9 +38,7 @@ def get_study_config(study_name: str) -> StudyConfig:
 
     if study_name not in _registry:
         available = ", ".join(sorted(_registry.keys())) or "(none)"
-        raise ValueError(
-            f"Unknown study '{study_name}'. Available: {available}"
-        )
+        raise ValueError(f"Unknown study '{study_name}'. Available: {available}")
 
     return _registry[study_name]
 

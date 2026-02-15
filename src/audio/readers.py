@@ -13,19 +13,18 @@ Notes:
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 import json
 import logging
 import math
 import os
 import warnings
-from datetime import datetime, timedelta, timezone
-from typing import Dict, Optional, Tuple
 
 import numpy as np
 import pandas as pd
 
 
-def read_audio_board_file(fname: str, output_folder: Optional[str] = None) -> pd.DataFrame:
+def read_audio_board_file(fname: str, output_folder: str | None = None) -> pd.DataFrame:
     """Read binary file produced by the audio board and save a .mat file.
 
     Parameters
@@ -64,23 +63,23 @@ def read_audio_board_file(fname: str, output_folder: Optional[str] = None) -> pd
     header_arr = np.frombuffer(header, dtype=np.uint8)
 
     # Parse header fields (MATLAB indices are 1-based)
-    deviceSerial = np.frombuffer(header_arr[0:16].tobytes(), dtype="<u4")
-    projectNum = np.frombuffer(header_arr[16:18].tobytes(), dtype="<u2")
-    hwRevMajor = np.frombuffer(header_arr[18:20].tobytes(), dtype="<u2")
-    hwRevMinor = np.frombuffer(header_arr[20:22].tobytes(), dtype="<u2")
-    HP_Serial = np.frombuffer(header_arr[22:24].tobytes(), dtype="<u2")
-    devFirmwareVersion = np.frombuffer(header_arr[24:28].tobytes(), dtype="<u4")
-    numSDBlocks = np.frombuffer(header_arr[61:65].tobytes(), dtype="<u4")
+    deviceSerial: np.ndarray = np.frombuffer(header_arr[0:16].tobytes(), dtype="<u4")
+    projectNum_arr = np.frombuffer(header_arr[16:18].tobytes(), dtype="<u2")
+    hwRevMajor_arr = np.frombuffer(header_arr[18:20].tobytes(), dtype="<u2")
+    hwRevMinor_arr = np.frombuffer(header_arr[20:22].tobytes(), dtype="<u2")
+    HP_Serial_arr = np.frombuffer(header_arr[22:24].tobytes(), dtype="<u2")
+    devFirmwareVersion_arr = np.frombuffer(header_arr[24:28].tobytes(), dtype="<u4")
+    numSDBlocks_arr = np.frombuffer(header_arr[61:65].tobytes(), dtype="<u4")
     fileTime_bytes = header_arr[65:73].copy()
 
     # Convert arrays to Python numeric types where appropriate
     deviceSerial = deviceSerial.astype(np.uint64)
-    projectNum = int(projectNum[0]) if projectNum.size > 0 else 0
-    hwRevMajor = int(hwRevMajor[0]) if hwRevMajor.size > 0 else 0
-    hwRevMinor = int(hwRevMinor[0]) if hwRevMinor.size > 0 else 0
-    HP_Serial = int(HP_Serial[0]) if HP_Serial.size > 0 else 0
-    devFirmwareVersion = int(devFirmwareVersion[0]) if devFirmwareVersion.size > 0 else 0
-    numSDBlocks = int(numSDBlocks[0]) if numSDBlocks.size > 0 else 0
+    projectNum = int(projectNum_arr[0]) if projectNum_arr.size > 0 else 0
+    hwRevMajor = int(hwRevMajor_arr[0]) if hwRevMajor_arr.size > 0 else 0
+    hwRevMinor = int(hwRevMinor_arr[0]) if hwRevMinor_arr.size > 0 else 0
+    HP_Serial = int(HP_Serial_arr[0]) if HP_Serial_arr.size > 0 else 0
+    devFirmwareVersion = int(devFirmwareVersion_arr[0]) if devFirmwareVersion_arr.size > 0 else 0
+    numSDBlocks = int(numSDBlocks_arr[0]) if numSDBlocks_arr.size > 0 else 0
 
     # Convert the filetime following the MATLAB logic
     # The MATLAB code flips the byte order first
@@ -88,12 +87,12 @@ def read_audio_board_file(fname: str, output_folder: Optional[str] = None) -> pd
 
     # Constants (from MATLAB code)
     numTicks_1601_01_01_to_1900_01_01 = 94354848000000000
-    fileTime_1900 = fileTime_uint64 - numTicks_1601_01_01_to_1900_01_01
+    fileTime_1900: float = float(fileTime_uint64 - numTicks_1601_01_01_to_1900_01_01)
 
     # Timezone offset in hours (matching MATLAB approach using Java Date)
     # Use local timezone offset in hours
     try:
-        utco = datetime.now(timezone.utc).astimezone().utcoffset()
+        utco = datetime.now(UTC).astimezone().utcoffset()
         tz_offset_hours = (utco.total_seconds() / 3600.0) if utco is not None else 0.0
     except (OSError, ValueError, OverflowError) as e:
         # Rare environment/timezone errors; log and fall back to zero offset
@@ -112,7 +111,7 @@ def read_audio_board_file(fname: str, output_folder: Optional[str] = None) -> pd
     fileTime_dt = excel_base + timedelta(days=float(excelTime))
 
     # Build the output structure (dict)
-    file_audio: Dict = {}
+    file_audio: dict = {}
     file_audio["deviceSerial"] = deviceSerial.tolist()
     file_audio["projectNum"] = projectNum
     file_audio["hwRevMajor"] = hwRevMajor
@@ -125,14 +124,11 @@ def read_audio_board_file(fname: str, output_folder: Optional[str] = None) -> pd
     file_audio["fs_ast"] = 4096
 
     # Firmware-dependent constants
-    if devFirmwareVersion == 1:
-        num_bits_audio = 16
-        fs_audio = 46.875e3
-    elif devFirmwareVersion == 2:
+    if devFirmwareVersion == 1 or devFirmwareVersion == 2:
         num_bits_audio = 16
         fs_audio = 46.875e3
     else:
-        warnings.warn("Unrecognized firmware version! Using default number of bits and sample rate")
+        warnings.warn("Unrecognized firmware version! Using default number of bits and sample rate", stacklevel=2)
         num_bits_audio = 16
         fs_audio = 46.875e3
 
@@ -216,7 +212,7 @@ def read_audio_board_file(fname: str, output_folder: Optional[str] = None) -> pd
     return df
 
 
-def get_audio_board_file_helper(fname: str, fs: float, numBits: int) -> Optional[Dict]:
+def get_audio_board_file_helper(fname: str, fs: float, numBits: int) -> dict | None:
     """Helper to read the body of the audio file and parse audio channels."""
     B_DEBUG_PLOT = False
 
@@ -259,7 +255,7 @@ def get_audio_board_file_helper(fname: str, fs: float, numBits: int) -> Optional
     buffTime = numSamps / fs
     totTime = buffTime + delay_time
 
-    file_audio: Dict = {}
+    file_audio: dict = {}
     file_audio["startTime"] = startAST / fs_ast
     file_audio["stopTime"] = stopAST / fs_ast
     file_audio["firstSampTime"] = firstBuff / fs_ast - totTime
@@ -321,7 +317,7 @@ def get_audio_board_file_helper(fname: str, fs: float, numBits: int) -> Optional
 
 def convert_sd_raw_audio_to_decimal_helper(
     raw: np.ndarray, numBits: int
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Convert packed uint32 raw values into four channel integer arrays."""
     # For the common 16-bit case, data is packed as two 16-bit words per uint32
     if numBits == 24:

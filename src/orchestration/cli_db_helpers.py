@@ -6,7 +6,6 @@ variables and command-line arguments.
 
 import logging
 import os
-from typing import Optional
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
@@ -14,7 +13,7 @@ from sqlalchemy.orm import Session, sessionmaker
 logger = logging.getLogger(__name__)
 
 
-def get_database_url(explicit_url: Optional[str] = None) -> Optional[str]:
+def get_database_url(explicit_url: str | None = None) -> str | None:
     """Get database URL from explicit argument or environment variable.
 
     Args:
@@ -32,7 +31,7 @@ def get_database_url(explicit_url: Optional[str] = None) -> Optional[str]:
     return url
 
 
-def create_db_session(db_url: Optional[str] = None, echo: bool = False) -> Optional[Session]:
+def create_db_session(db_url: str | None = None, echo: bool = False) -> Session | None:
     """Create a database session.
 
     Args:
@@ -50,7 +49,7 @@ def create_db_session(db_url: Optional[str] = None, echo: bool = False) -> Optio
     try:
         engine = create_engine(url, echo=echo)
         # Test connection
-        with engine.connect() as conn:
+        with engine.connect():
             pass
         SessionLocal = sessionmaker(bind=engine)
         session = SessionLocal()
@@ -61,7 +60,7 @@ def create_db_session(db_url: Optional[str] = None, echo: bool = False) -> Optio
         return None
 
 
-def close_db_session(session: Optional[Session]) -> None:
+def close_db_session(session: Session | None) -> None:
     """Close a database session.
 
     Args:

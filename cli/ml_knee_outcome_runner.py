@@ -4,7 +4,6 @@
 import argparse
 import logging
 from pathlib import Path
-from typing import Optional
 
 from src.analysis.ml_cli_helpers import (
     SCRIPTED_MANEUVERS,
@@ -20,7 +19,12 @@ DEFAULT_OUTCOME_FILE = "cohort_chars_PRELIM_12_22_2025.xlsx"
 def build_parser(command_help: str) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=command_help)
     parser.add_argument("project_data", type=Path, help="Path to project directory containing participant folders")
-    parser.add_argument("--outcome-file", type=Path, default=Path(DEFAULT_PROJECT_DATA) / DEFAULT_OUTCOME_FILE, help=f"Path to Excel with knee-level outcomes (default: {DEFAULT_PROJECT_DATA}/{DEFAULT_OUTCOME_FILE})")
+    parser.add_argument(
+        "--outcome-file",
+        type=Path,
+        default=Path(DEFAULT_PROJECT_DATA) / DEFAULT_OUTCOME_FILE,
+        help=f"Path to Excel with knee-level outcomes (default: {DEFAULT_PROJECT_DATA}/{DEFAULT_OUTCOME_FILE})",
+    )
     parser.add_argument("--sheet", help="Sheet name when both knees are in one sheet")
     parser.add_argument("--left-sheet", help="Sheet name for left knee outcomes (separate sheets mode)")
     parser.add_argument("--right-sheet", help="Sheet name for right knee outcomes (separate sheets mode)")
@@ -28,15 +32,21 @@ def build_parser(command_help: str) -> argparse.ArgumentParser:
     parser.add_argument("--maneuvers", nargs="+", help="Optional maneuver filter (e.g., walk sit_to_stand)")
     parser.add_argument("--cycle-type", choices=["clean", "outliers"], default="clean")
     # Aggregation is fixed to per_cycle; option removed to simplify usage
-    parser.add_argument("--allow-partial-knees", action="store_true", help="Include participants with only one processed knee")
-    parser.add_argument("--no-contralateral-exclusion", action="store_true", help="Disable exclusion of contralateral knees from training")
+    parser.add_argument(
+        "--allow-partial-knees", action="store_true", help="Include participants with only one processed knee"
+    )
+    parser.add_argument(
+        "--no-contralateral-exclusion",
+        action="store_true",
+        help="Disable exclusion of contralateral knees from training",
+    )
     return parser
 
 
 def run_knee_outcome_cli(
     outcome_column: str,
-    default_sheet: Optional[str],
-    argv: Optional[list[str]] = None,
+    default_sheet: str | None,
+    argv: list[str] | None = None,
 ) -> None:
     parser = build_parser(f"Run knee-level ML for {outcome_column}")
     args = parser.parse_args(argv)

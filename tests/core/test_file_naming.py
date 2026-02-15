@@ -4,8 +4,6 @@ Verifies that generate_sync_filename and generate_cycle_filename produce
 correct, lowercase, human-readable filenames for all maneuver types.
 """
 
-import pytest
-
 from src.studies.file_naming import generate_cycle_filename, generate_sync_filename
 
 

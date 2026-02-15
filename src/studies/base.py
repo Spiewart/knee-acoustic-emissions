@@ -14,7 +14,7 @@ Methods are organized by processing stage:
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal, Optional, Protocol
+from typing import TYPE_CHECKING, Literal, Protocol
 
 if TYPE_CHECKING:
     from src.audio.parsers import MicSetupData
@@ -86,7 +86,7 @@ class StudyConfig(Protocol):
     def get_maneuver_from_directory(
         self,
         directory_name: str,
-    ) -> Optional[Literal["walk", "sit_to_stand", "flexion_extension"]]:
+    ) -> Literal["walk", "sit_to_stand", "flexion_extension"] | None:
         """Reverse map: folder name -> internal maneuver key.
 
         Args:
@@ -125,7 +125,7 @@ class StudyConfig(Protocol):
         self,
         directory: Path,
         filename_pattern: str,
-    ) -> Optional[Path]:
+    ) -> Path | None:
         """Find an Excel file (.xlsx or .xlsm) matching the pattern.
 
         Generic utility -- searches for both .xlsx and .xlsm extensions.
@@ -162,7 +162,7 @@ class StudyConfig(Protocol):
         metadata_file_path: str,
         scripted_maneuver: Literal["walk", "sit_to_stand", "flexion_extension"],
         knee: Literal["left", "right"],
-    ) -> Optional[MicSetupData]:
+    ) -> MicSetupData | None:
         """Parse fallback legend data from a study-specific secondary sheet.
 
         Returns None if the study doesn't support a fallback sheet.
@@ -203,7 +203,7 @@ class StudyConfig(Protocol):
         self,
         study_id: str,
         maneuver: Literal["walk", "sit_to_stand", "flexion_extension"],
-        speed: Optional[str] = None,
+        speed: str | None = None,
     ) -> dict[str, str]:
         """Construct biomechanics Excel sheet names for a given maneuver.
 
@@ -268,7 +268,8 @@ class StudyConfig(Protocol):
     # ── Synchronization (Event Names & Columns) ──────────────────
 
     def get_stomp_event_name(
-        self, foot: Literal["left", "right"],
+        self,
+        foot: Literal["left", "right"],
     ) -> str:
         """Sync stomp event label in biomechanics data.
 
@@ -283,7 +284,7 @@ class StudyConfig(Protocol):
     def get_movement_start_event(
         self,
         maneuver: Literal["walk", "sit_to_stand", "flexion_extension"],
-        speed: Optional[str] = None,
+        speed: str | None = None,
         pass_number: int = 1,
     ) -> str:
         """Movement start event name from biomechanics.
@@ -301,7 +302,7 @@ class StudyConfig(Protocol):
     def get_movement_end_event(
         self,
         maneuver: Literal["walk", "sit_to_stand", "flexion_extension"],
-        speed: Optional[str] = None,
+        speed: str | None = None,
         pass_number: int = 1,
     ) -> str:
         """Movement end event name from biomechanics.

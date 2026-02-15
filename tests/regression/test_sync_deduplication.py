@@ -10,8 +10,6 @@ The fix uses:
 3. Short, normalized filenames from generate_sync_filename()
 """
 
-import pytest
-
 from src.studies.file_naming import generate_sync_filename
 
 
@@ -50,8 +48,11 @@ class TestSyncUniqueConstraintPreventsDoubles:
     """
 
     def test_same_semantic_key_upserts(
-        self, db_session, synchronization_factory,
-        audio_processing_factory, biomechanics_import_factory,
+        self,
+        db_session,
+        synchronization_factory,
+        audio_processing_factory,
+        biomechanics_import_factory,
     ):
         """Two sync records with same (participant, knee, maneuver, pass, speed) should upsert."""
         from src.db.repository import Repository
@@ -68,11 +69,14 @@ class TestSyncUniqueConstraintPreventsDoubles:
 
         # Save first sync record
         sync1 = synchronization_factory(
-            study="AOA", study_id=9001,
+            study="AOA",
+            study_id=9001,
             audio_processing_id=audio_record.id,
             biomechanics_import_id=biomech_record.id,
-            knee="left", maneuver="walk",
-            pass_number=1, speed="medium",
+            knee="left",
+            maneuver="walk",
+            pass_number=1,
+            speed="medium",
             sync_file_name="left_walk_p1_medium.pkl",
         )
         record1 = repo.save_synchronization(
@@ -84,11 +88,14 @@ class TestSyncUniqueConstraintPreventsDoubles:
 
         # Save second sync record with same semantic key
         sync2 = synchronization_factory(
-            study="AOA", study_id=9001,
+            study="AOA",
+            study_id=9001,
             audio_processing_id=audio_record.id,
             biomechanics_import_id=biomech_record.id,
-            knee="left", maneuver="walk",
-            pass_number=1, speed="medium",
+            knee="left",
+            maneuver="walk",
+            pass_number=1,
+            speed="medium",
             sync_file_name="left_walk_p1_medium.pkl",
             aligned_sync_time=99.0,  # Different value to verify upsert
         )
@@ -105,8 +112,11 @@ class TestSyncUniqueConstraintPreventsDoubles:
         )
 
     def test_one_sync_record_per_walking_pass(
-        self, db_session, synchronization_factory,
-        audio_processing_factory, biomechanics_import_factory,
+        self,
+        db_session,
+        synchronization_factory,
+        audio_processing_factory,
+        biomechanics_import_factory,
     ):
         """Each walking pass should produce exactly one sync record."""
         from src.db.models import SynchronizationRecord
@@ -125,11 +135,14 @@ class TestSyncUniqueConstraintPreventsDoubles:
         # Simulate processing 10 walking passes
         for pass_num in range(1, 11):
             sync = synchronization_factory(
-                study="AOA", study_id=9002,
+                study="AOA",
+                study_id=9002,
                 audio_processing_id=audio_record.id,
                 biomechanics_import_id=biomech_record.id,
-                knee="left", maneuver="walk",
-                pass_number=pass_num, speed="medium",
+                knee="left",
+                maneuver="walk",
+                pass_number=pass_num,
+                speed="medium",
                 sync_file_name=f"left_walk_p{pass_num}_medium.pkl",
             )
             repo.save_synchronization(
@@ -140,13 +153,14 @@ class TestSyncUniqueConstraintPreventsDoubles:
         db_session.flush()
 
         # Count sync records for this participant
-        count = db_session.query(SynchronizationRecord).filter(
-            SynchronizationRecord.study_id == audio_record.study_id,
-            SynchronizationRecord.knee == "left",
-            SynchronizationRecord.maneuver == "walk",
-        ).count()
-
-        assert count == 10, (
-            f"Expected 10 sync records (one per pass), but got {count}. "
-            "Possible double-counting bug."
+        count = (
+            db_session.query(SynchronizationRecord)
+            .filter(
+                SynchronizationRecord.study_id == audio_record.study_id,
+                SynchronizationRecord.knee == "left",
+                SynchronizationRecord.maneuver == "walk",
+            )
+            .count()
         )
+
+        assert count == 10, f"Expected 10 sync records (one per pass), but got {count}. Possible double-counting bug."

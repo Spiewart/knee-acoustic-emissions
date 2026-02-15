@@ -6,10 +6,6 @@ Validates that:
 2. Cycles Excel sheet columns include all audio QC fields with correct values.
 """
 
-from datetime import datetime
-
-import pytest
-
 from src.db.models import MovementCycleRecord
 from src.db.repository import Repository
 from src.reports.report_generator import ReportGenerator
@@ -19,8 +15,12 @@ class TestCycleAudioQCDatabasePersistence:
     """Verify cycle-level audio QC fields persist through DB layer."""
 
     def test_aggregate_audio_qc_fail_persists_true(
-        self, db_session, audio_processing_factory, biomechanics_import_factory,
-        synchronization_factory, movement_cycle_factory,
+        self,
+        db_session,
+        audio_processing_factory,
+        biomechanics_import_factory,
+        synchronization_factory,
+        movement_cycle_factory,
     ):
         """audio_qc_fail=True and audio_qc_failures list should persist."""
         repo = Repository(db_session)
@@ -56,8 +56,12 @@ class TestCycleAudioQCDatabasePersistence:
         assert "intermittent" in fetched.audio_qc_failures
 
     def test_aggregate_audio_qc_fail_persists_false(
-        self, db_session, audio_processing_factory, biomechanics_import_factory,
-        synchronization_factory, movement_cycle_factory,
+        self,
+        db_session,
+        audio_processing_factory,
+        biomechanics_import_factory,
+        synchronization_factory,
+        movement_cycle_factory,
     ):
         """Clean cycle should have audio_qc_fail=False and no failures."""
         repo = Repository(db_session)
@@ -91,8 +95,12 @@ class TestCycleAudioQCDatabasePersistence:
         assert fetched.audio_qc_failures is None
 
     def test_intermittent_fail_flags_persist(
-        self, db_session, audio_processing_factory, biomechanics_import_factory,
-        synchronization_factory, movement_cycle_factory,
+        self,
+        db_session,
+        audio_processing_factory,
+        biomechanics_import_factory,
+        synchronization_factory,
+        movement_cycle_factory,
     ):
         """Per-channel intermittent fail flags and timestamps should persist."""
         repo = Repository(db_session)
@@ -141,8 +149,12 @@ class TestCycleAudioQCDatabasePersistence:
         assert fetched.audio_artifact_timestamps_ch4 == [0.3, 0.6]
 
     def test_periodic_fail_flags_and_timestamps_persist(
-        self, db_session, audio_processing_factory, biomechanics_import_factory,
-        synchronization_factory, movement_cycle_factory,
+        self,
+        db_session,
+        audio_processing_factory,
+        biomechanics_import_factory,
+        synchronization_factory,
+        movement_cycle_factory,
     ):
         """Per-channel periodic fail flags and timestamps should persist."""
         repo = Repository(db_session)
@@ -191,8 +203,12 @@ class TestCycleAudioQCDatabasePersistence:
         assert fetched.audio_artifact_periodic_timestamps_ch3 == [0.2, 0.9]
 
     def test_all_four_failure_types_persist(
-        self, db_session, audio_processing_factory, biomechanics_import_factory,
-        synchronization_factory, movement_cycle_factory,
+        self,
+        db_session,
+        audio_processing_factory,
+        biomechanics_import_factory,
+        synchronization_factory,
+        movement_cycle_factory,
     ):
         """Cycle with all four audio QC failure types should persist all fields."""
         repo = Repository(db_session)
@@ -231,9 +247,7 @@ class TestCycleAudioQCDatabasePersistence:
 
         fetched = db_session.get(MovementCycleRecord, cycle_record.id)
         assert fetched.audio_qc_fail is True
-        assert set(fetched.audio_qc_failures) == {
-            "dropout", "continuous", "intermittent", "periodic"
-        }
+        assert set(fetched.audio_qc_failures) == {"dropout", "continuous", "intermittent", "periodic"}
         assert fetched.audio_artifact_intermittent_fail is True
         assert fetched.audio_artifact_periodic_fail is True
 
@@ -242,8 +256,13 @@ class TestCyclesExcelSheetQCColumns:
     """Verify Cycles Excel sheet includes all audio QC columns with correct values."""
 
     def _create_cycle_with_qc(
-        self, db_session, audio_processing_factory, biomechanics_import_factory,
-        synchronization_factory, movement_cycle_factory, **cycle_overrides,
+        self,
+        db_session,
+        audio_processing_factory,
+        biomechanics_import_factory,
+        synchronization_factory,
+        movement_cycle_factory,
+        **cycle_overrides,
     ):
         """Helper to create a full DB chain and return (cycle_record, audio_record)."""
         repo = Repository(db_session)
@@ -257,11 +276,11 @@ class TestCyclesExcelSheetQCColumns:
             biomechanics_import_id=biomech_record.id,
         )
 
-        defaults = dict(
-            audio_processing_id=audio_record.id,
-            biomechanics_import_id=biomech_record.id,
-            synchronization_id=sync_record.id,
-        )
+        defaults = {
+            "audio_processing_id": audio_record.id,
+            "biomechanics_import_id": biomech_record.id,
+            "synchronization_id": sync_record.id,
+        }
         defaults.update(cycle_overrides)
         cycle = movement_cycle_factory(**defaults)
         cycle_record = repo.save_movement_cycle(
@@ -274,13 +293,20 @@ class TestCyclesExcelSheetQCColumns:
         return cycle_record, audio_record
 
     def test_cycles_sheet_has_all_audio_qc_columns(
-        self, db_session, audio_processing_factory, biomechanics_import_factory,
-        synchronization_factory, movement_cycle_factory,
+        self,
+        db_session,
+        audio_processing_factory,
+        biomechanics_import_factory,
+        synchronization_factory,
+        movement_cycle_factory,
     ):
         """Cycles sheet should contain aggregate + per-source audio QC columns."""
         cycle_record, audio_record = self._create_cycle_with_qc(
-            db_session, audio_processing_factory, biomechanics_import_factory,
-            synchronization_factory, movement_cycle_factory,
+            db_session,
+            audio_processing_factory,
+            biomechanics_import_factory,
+            synchronization_factory,
+            movement_cycle_factory,
         )
 
         generator = ReportGenerator(db_session)
@@ -343,18 +369,24 @@ class TestCyclesExcelSheetQCColumns:
         ]
         for col in expected_columns:
             assert col in sheet.columns, (
-                f"Missing column '{col}' in Cycles sheet. "
-                f"Available: {sorted(sheet.columns.tolist())}"
+                f"Missing column '{col}' in Cycles sheet. Available: {sorted(sheet.columns.tolist())}"
             )
 
     def test_cycles_sheet_aggregate_values_populated(
-        self, db_session, audio_processing_factory, biomechanics_import_factory,
-        synchronization_factory, movement_cycle_factory,
+        self,
+        db_session,
+        audio_processing_factory,
+        biomechanics_import_factory,
+        synchronization_factory,
+        movement_cycle_factory,
     ):
         """Cycles sheet should show audio_qc_fail=True with failure list."""
         cycle_record, audio_record = self._create_cycle_with_qc(
-            db_session, audio_processing_factory, biomechanics_import_factory,
-            synchronization_factory, movement_cycle_factory,
+            db_session,
+            audio_processing_factory,
+            biomechanics_import_factory,
+            synchronization_factory,
+            movement_cycle_factory,
             audio_qc_fail=True,
             audio_qc_failures=["dropout", "periodic"],
         )
@@ -375,13 +407,20 @@ class TestCyclesExcelSheetQCColumns:
         assert "periodic" in str(failures_str)
 
     def test_cycles_sheet_intermittent_values_populated(
-        self, db_session, audio_processing_factory, biomechanics_import_factory,
-        synchronization_factory, movement_cycle_factory,
+        self,
+        db_session,
+        audio_processing_factory,
+        biomechanics_import_factory,
+        synchronization_factory,
+        movement_cycle_factory,
     ):
         """Cycles sheet should show intermittent fail flags and timestamps."""
         cycle_record, audio_record = self._create_cycle_with_qc(
-            db_session, audio_processing_factory, biomechanics_import_factory,
-            synchronization_factory, movement_cycle_factory,
+            db_session,
+            audio_processing_factory,
+            biomechanics_import_factory,
+            synchronization_factory,
+            movement_cycle_factory,
             audio_qc_fail=True,
             audio_qc_failures=["intermittent"],
             audio_artifact_intermittent_fail=True,
@@ -408,13 +447,20 @@ class TestCyclesExcelSheetQCColumns:
         assert timestamps_ch2 is not None
 
     def test_cycles_sheet_periodic_values_populated(
-        self, db_session, audio_processing_factory, biomechanics_import_factory,
-        synchronization_factory, movement_cycle_factory,
+        self,
+        db_session,
+        audio_processing_factory,
+        biomechanics_import_factory,
+        synchronization_factory,
+        movement_cycle_factory,
     ):
         """Cycles sheet should show periodic fail flags and timestamps."""
         cycle_record, audio_record = self._create_cycle_with_qc(
-            db_session, audio_processing_factory, biomechanics_import_factory,
-            synchronization_factory, movement_cycle_factory,
+            db_session,
+            audio_processing_factory,
+            biomechanics_import_factory,
+            synchronization_factory,
+            movement_cycle_factory,
             audio_qc_fail=True,
             audio_qc_failures=["periodic"],
             audio_artifact_periodic_fail=True,
@@ -445,13 +491,20 @@ class TestCyclesExcelSheetQCColumns:
         assert timestamps_ch3 is not None
 
     def test_clean_cycle_all_qc_false(
-        self, db_session, audio_processing_factory, biomechanics_import_factory,
-        synchronization_factory, movement_cycle_factory,
+        self,
+        db_session,
+        audio_processing_factory,
+        biomechanics_import_factory,
+        synchronization_factory,
+        movement_cycle_factory,
     ):
         """Clean cycle should show all audio QC fields as False/empty in Excel."""
         cycle_record, audio_record = self._create_cycle_with_qc(
-            db_session, audio_processing_factory, biomechanics_import_factory,
-            synchronization_factory, movement_cycle_factory,
+            db_session,
+            audio_processing_factory,
+            biomechanics_import_factory,
+            synchronization_factory,
+            movement_cycle_factory,
             audio_qc_fail=False,
             audio_qc_failures=None,
         )

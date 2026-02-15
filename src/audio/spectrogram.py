@@ -14,7 +14,6 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -22,7 +21,7 @@ import pandas as pd
 from scipy.signal import stft
 
 
-def get_fs_from_df_or_meta(df: pd.DataFrame, meta_json: Optional[Path] = None) -> float:
+def get_fs_from_df_or_meta(df: pd.DataFrame, meta_json: Path | None = None) -> float:
     """Infer sampling frequency from DataFrame `tt` or a meta JSON.
 
     Args:
@@ -43,7 +42,7 @@ def get_fs_from_df_or_meta(df: pd.DataFrame, meta_json: Optional[Path] = None) -
         return 1.0 / dt
     if meta_json and meta_json.exists():
         try:
-            with open(meta_json, "r", encoding="utf-8") as f:
+            with open(meta_json, encoding="utf-8") as f:
                 meta = json.load(f)
             fs = float(meta.get("fs", np.nan))
             if not np.isnan(fs):
@@ -58,7 +57,7 @@ def _save_spectrogram_png(
     t: np.ndarray,
     Sxx_db: np.ndarray,
     out_png: Path,
-    fmax: Optional[float] = None,
+    fmax: float | None = None,
 ) -> None:
     """Save a spectrogram PNG.
 
@@ -85,7 +84,7 @@ def _save_spectrogram_png(
 
 
 # Type alias for spectrogram array mapping
-SpecsMap = Dict[str, np.ndarray]
+SpecsMap = dict[str, np.ndarray]
 
 
 def compute_spectrogram_arrays(
@@ -93,7 +92,7 @@ def compute_spectrogram_arrays(
     fs: float,
     nperseg: int,
     noverlap: int,
-) -> Tuple[np.ndarray, np.ndarray, SpecsMap]:
+) -> tuple[np.ndarray, np.ndarray, SpecsMap]:
     """Compute STFT spectrogram arrays for available channels.
 
     Args:
@@ -110,9 +109,9 @@ def compute_spectrogram_arrays(
         empty mapping for `specs`.
     """
     channels = ["ch1", "ch2", "ch3", "ch4"]
-    specs: Dict[str, np.ndarray] = {}
-    f_ref: Optional[np.ndarray] = None
-    t_ref: Optional[np.ndarray] = None
+    specs: dict[str, np.ndarray] = {}
+    f_ref: np.ndarray | None = None
+    t_ref: np.ndarray | None = None
 
     for ch in channels:
         if ch not in df.columns or not df[ch].notna().any():
@@ -140,7 +139,7 @@ def compute_spectrogram_from_pickle(
     nperseg: int = 2048,
     noverlap: int = 1536,
     fmax: float = 5000.0,
-) -> Tuple[Path, List[Path]]:
+) -> tuple[Path, list[Path]]:
     """Load a DataFrame from a pickle and compute spectrograms.
 
     Args:
@@ -170,7 +169,7 @@ def compute_spectrogram_from_pickle(
     logging.info("Using sampling frequency: %.3f Hz", fs)
     f, t, specs = compute_spectrogram_arrays(df, fs=fs, nperseg=nperseg, noverlap=noverlap)
 
-    png_paths: List[Path] = []
+    png_paths: list[Path] = []
     for key, Sxx_db in specs.items():
         ch = key.replace("spec_", "")
         png_out = dirpath / f"{base}_spec_{ch}.png"
@@ -182,6 +181,6 @@ def compute_spectrogram_from_pickle(
     save_dict = {"f": f.astype(np.float32), "t": t.astype(np.float32)}
     for key, arr in specs.items():
         save_dict[key] = arr.astype(np.float32)
-    np.savez_compressed(npz_out, **save_dict)
+    np.savez_compressed(npz_out, **save_dict)  # type: ignore[arg-type]
 
     return npz_out, png_paths

@@ -7,10 +7,12 @@ from src.reports.report_generator import ReportGenerator
 
 
 def test_create_sync_record_normalizes_speed():
-    synced_df = pd.DataFrame({
-        "tt": pd.to_timedelta([0, 1, 2], unit="s"),
-        "ch1": [0.1, 0.2, 0.3],
-    })
+    synced_df = pd.DataFrame(
+        {
+            "tt": pd.to_timedelta([0, 1, 2], unit="s"),
+            "ch1": [0.1, 0.2, 0.3],
+        }
+    )
     record = create_sync_record_from_data(
         sync_file_name="test_sync.pkl",
         synced_df=synced_df,

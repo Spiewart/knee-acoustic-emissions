@@ -14,7 +14,6 @@ from datetime import timedelta
 
 import numpy as np
 import pandas as pd
-import pytest
 
 from src.synchronization.sync import get_audio_stomp_time
 
@@ -36,23 +35,25 @@ def create_synthetic_audio_with_two_stomps(
 
     # Add first stomp (Gaussian pulse)
     stomp1_width = 0.05  # 50ms wide
-    stomp1_pulse = stomp1_amplitude * np.exp(-((tt - stomp1_time) ** 2) / (2 * stomp1_width ** 2))
+    stomp1_pulse = stomp1_amplitude * np.exp(-((tt - stomp1_time) ** 2) / (2 * stomp1_width**2))
 
     # Add second stomp
     stomp2_width = 0.05
-    stomp2_pulse = stomp2_amplitude * np.exp(-((tt - stomp2_time) ** 2) / (2 * stomp2_width ** 2))
+    stomp2_pulse = stomp2_amplitude * np.exp(-((tt - stomp2_time) ** 2) / (2 * stomp2_width**2))
 
     # Add stomps to all channels
     for ch in range(4):
         audio[:, ch] += stomp1_pulse + stomp2_pulse
 
-    df = pd.DataFrame({
-        'tt': tt,
-        'ch1': audio[:, 0],
-        'ch2': audio[:, 1],
-        'ch3': audio[:, 2],
-        'ch4': audio[:, 3],
-    })
+    df = pd.DataFrame(
+        {
+            "tt": tt,
+            "ch1": audio[:, 0],
+            "ch2": audio[:, 1],
+            "ch3": audio[:, 2],
+            "ch4": audio[:, 3],
+        }
+    )
     return df
 
 
@@ -70,7 +71,7 @@ class TestEnergyRatioValidation:
             stomp1_time=1.0,
             stomp1_amplitude=1000.0,  # Right stomp (louder)
             stomp2_time=2.5,
-            stomp2_amplitude=750.0,   # Left stomp (quieter)
+            stomp2_amplitude=750.0,  # Left stomp (quieter)
         )
 
         # Biomechanics data: right at 1.0s, left at 2.5s
@@ -86,11 +87,10 @@ class TestEnergyRatioValidation:
         )
 
         # Should accept and use biomechanics method
-        assert results['selected_stomp_method'] == 'biomechanics'
-        assert results['bio_selected_time'] is not None
-        assert results['energy_ratio'] is not None
-        assert results['energy_ratio'] >= 1.2, \
-            f"Energy ratio {results['energy_ratio']} should be >= 1.2"
+        assert results["selected_stomp_method"] == "biomechanics"
+        assert results["bio_selected_time"] is not None
+        assert results["energy_ratio"] is not None
+        assert results["energy_ratio"] >= 1.2, f"Energy ratio {results['energy_ratio']} should be >= 1.2"
 
     def test_energy_ratio_fails_when_contralateral_louder(self):
         """Test that peak pair is rejected when contralateral is louder than recorded knee.
@@ -102,7 +102,7 @@ class TestEnergyRatioValidation:
         # Create audio with left stomp LOUDER than right (microphone misplacement?)
         audio_df = create_synthetic_audio_with_two_stomps(
             stomp1_time=1.0,
-            stomp1_amplitude=700.0,   # Right stomp (quieter - suspicious!)
+            stomp1_amplitude=700.0,  # Right stomp (quieter - suspicious!)
             stomp2_time=2.5,
             stomp2_amplitude=1000.0,  # Left stomp (louder - shouldn't be louder than right)
         )
@@ -120,10 +120,8 @@ class TestEnergyRatioValidation:
         )
 
         # Should reject energy ratio and fall back to consensus
-        assert results['selected_stomp_method'] == 'consensus', \
-            "Should fall back to consensus when energy ratio < 1.2"
-        assert results['energy_ratio'] is None, \
-            "energy_ratio should not be set if biomechanics method was not used"
+        assert results["selected_stomp_method"] == "consensus", "Should fall back to consensus when energy ratio < 1.2"
+        assert results["energy_ratio"] is None, "energy_ratio should not be set if biomechanics method was not used"
 
     def test_energy_ratio_at_minimum_threshold(self):
         """Test boundary condition: energy ratio exactly at minimum (1.2).
@@ -154,10 +152,11 @@ class TestEnergyRatioValidation:
         )
 
         # Should accept (>= 1.2 includes 1.2)
-        assert results['selected_stomp_method'] == 'biomechanics'
-        assert results['energy_ratio'] is not None
-        assert abs(results['energy_ratio'] - expected_ratio) < 0.05, \
+        assert results["selected_stomp_method"] == "biomechanics"
+        assert results["energy_ratio"] is not None
+        assert abs(results["energy_ratio"] - expected_ratio) < 0.05, (
             f"Expected ratio ~{expected_ratio}, got {results['energy_ratio']}"
+        )
 
     def test_energy_ratio_just_below_threshold(self):
         """Test boundary condition: energy ratio just below minimum (1.19).
@@ -166,7 +165,7 @@ class TestEnergyRatioValidation:
         """
         stomp1_amplitude = 1190.0
         stomp2_amplitude = 1000.0
-        expected_ratio = stomp1_amplitude / stomp2_amplitude  # Should be ~1.19
+        stomp1_amplitude / stomp2_amplitude  # Should be ~1.19
 
         audio_df = create_synthetic_audio_with_two_stomps(
             stomp1_time=1.0,
@@ -187,8 +186,8 @@ class TestEnergyRatioValidation:
         )
 
         # Should reject (< 1.2)
-        assert results['selected_stomp_method'] == 'consensus'
-        assert results['energy_ratio'] is None
+        assert results["selected_stomp_method"] == "consensus"
+        assert results["energy_ratio"] is None
 
     def test_energy_ratio_with_left_knee_recorded(self):
         """Test energy ratio validation when left knee is recorded.
@@ -201,7 +200,7 @@ class TestEnergyRatioValidation:
             stomp1_time=1.0,
             stomp1_amplitude=1000.0,  # Left stomp (louder - recorded leg)
             stomp2_time=2.5,
-            stomp2_amplitude=700.0,   # Right stomp (quieter - contralateral)
+            stomp2_amplitude=700.0,  # Right stomp (quieter - contralateral)
         )
 
         left_stomp = timedelta(seconds=1.0)
@@ -216,9 +215,9 @@ class TestEnergyRatioValidation:
         )
 
         # Should accept biomechanics method
-        assert results['selected_stomp_method'] == 'biomechanics'
-        assert results['energy_ratio'] is not None
-        assert results['energy_ratio'] >= 1.2
+        assert results["selected_stomp_method"] == "biomechanics"
+        assert results["energy_ratio"] is not None
+        assert results["energy_ratio"] >= 1.2
 
     def test_energy_ratio_comprehensive_logging(self):
         """Test that energy ratio validation includes comprehensive logging info.
@@ -247,14 +246,14 @@ class TestEnergyRatioValidation:
         )
 
         # Verify all expected fields are populated
-        assert results['selected_stomp_method'] == 'biomechanics'
-        assert 'energy_ratio' in results
-        assert 'bio_selected_time' in results
-        assert 'contra_bio_selected_time' in results
-        assert results['energy_ratio'] is not None
-        assert results['bio_selected_time'] is not None
-        assert results['contra_bio_selected_time'] is not None
-        assert results['energy_ratio'] > 0  # Must be positive
+        assert results["selected_stomp_method"] == "biomechanics"
+        assert "energy_ratio" in results
+        assert "bio_selected_time" in results
+        assert "contra_bio_selected_time" in results
+        assert results["energy_ratio"] is not None
+        assert results["bio_selected_time"] is not None
+        assert results["contra_bio_selected_time"] is not None
+        assert results["energy_ratio"] > 0  # Must be positive
 
     def test_energy_ratio_fallback_preserves_consensus_fields(self):
         """Test that fallback to consensus preserves all consensus detection fields.
@@ -268,7 +267,7 @@ class TestEnergyRatioValidation:
         # Create audio where contralateral is louder (will fail energy ratio)
         audio_df = create_synthetic_audio_with_two_stomps(
             stomp1_time=1.0,
-            stomp1_amplitude=600.0,   # Right stomp (quiet)
+            stomp1_amplitude=600.0,  # Right stomp (quiet)
             stomp2_time=2.5,
             stomp2_amplitude=1200.0,  # Left stomp (loud - wrong!)
         )
@@ -285,19 +284,19 @@ class TestEnergyRatioValidation:
         )
 
         # Verify consensus fields still present
-        assert 'consensus_time' in results
-        assert 'rms_time' in results
-        assert 'rms_energy' in results
-        assert 'onset_time' in results
-        assert 'onset_magnitude' in results
-        assert 'freq_time' in results
-        assert 'freq_energy' in results
+        assert "consensus_time" in results
+        assert "rms_time" in results
+        assert "rms_energy" in results
+        assert "onset_time" in results
+        assert "onset_magnitude" in results
+        assert "freq_time" in results
+        assert "freq_energy" in results
 
         # Verify values are reasonable
-        assert results['consensus_time'] > 0
-        assert results['rms_energy'] > 0
-        assert results['onset_magnitude'] > 0
-        assert results['freq_energy'] > 0
+        assert results["consensus_time"] > 0
+        assert results["rms_energy"] > 0
+        assert results["onset_magnitude"] > 0
+        assert results["freq_energy"] > 0
 
     def test_energy_ratio_handles_zero_contralateral_energy(self):
         """Test that energy ratio gracefully handles zero contralateral energy edge case.
@@ -310,18 +309,20 @@ class TestEnergyRatioValidation:
         tt = np.linspace(0, 20.0, n_samples)
 
         # Only one stomp at 1.0s
-        stomp_pulse = 1000.0 * np.exp(-((tt - 1.0) ** 2) / (2 * 0.05 ** 2))
+        stomp_pulse = 1000.0 * np.exp(-((tt - 1.0) ** 2) / (2 * 0.05**2))
         audio = np.random.randn(n_samples, 4) * 10
         for ch in range(4):
             audio[:, ch] += stomp_pulse
 
-        audio_df = pd.DataFrame({
-            'tt': tt,
-            'ch1': audio[:, 0],
-            'ch2': audio[:, 1],
-            'ch3': audio[:, 2],
-            'ch4': audio[:, 3],
-        })
+        audio_df = pd.DataFrame(
+            {
+                "tt": tt,
+                "ch1": audio[:, 0],
+                "ch2": audio[:, 1],
+                "ch3": audio[:, 2],
+                "ch4": audio[:, 3],
+            }
+        )
 
         right_stomp = timedelta(seconds=1.0)
         left_stomp = timedelta(seconds=2.5)  # No actual peak here
@@ -336,9 +337,9 @@ class TestEnergyRatioValidation:
 
         # May fall back to consensus due to peak finding limitations,
         # but if it does find a pair, energy_ratio should be finite and >= 1.2
-        if results['selected_stomp_method'] == 'biomechanics':
-            assert np.isfinite(results['energy_ratio'])
-            assert results['energy_ratio'] >= 1.2
+        if results["selected_stomp_method"] == "biomechanics":
+            assert np.isfinite(results["energy_ratio"])
+            assert results["energy_ratio"] >= 1.2
 
     def test_energy_ratio_with_multiple_peak_candidates(self):
         """Test energy ratio validation with multiple noise peaks to choose from.
@@ -358,24 +359,26 @@ class TestEnergyRatioValidation:
 
         # Add multiple peaks
         peaks = [
-            (0.5, 500.0),    # Noise
-            (1.0, 1000.0),   # Right stomp (should pair with left)
-            (2.5, 750.0),    # Left stomp
-            (3.0, 600.0),    # Noise
+            (0.5, 500.0),  # Noise
+            (1.0, 1000.0),  # Right stomp (should pair with left)
+            (2.5, 750.0),  # Left stomp
+            (3.0, 600.0),  # Noise
         ]
 
         for peak_time, amplitude in peaks:
-            pulse = amplitude * np.exp(-((tt - peak_time) ** 2) / (2 * 0.05 ** 2))
+            pulse = amplitude * np.exp(-((tt - peak_time) ** 2) / (2 * 0.05**2))
             for ch in range(4):
                 audio[:, ch] += pulse
 
-        audio_df = pd.DataFrame({
-            'tt': tt,
-            'ch1': audio[:, 0],
-            'ch2': audio[:, 1],
-            'ch3': audio[:, 2],
-            'ch4': audio[:, 3],
-        })
+        audio_df = pd.DataFrame(
+            {
+                "tt": tt,
+                "ch1": audio[:, 0],
+                "ch2": audio[:, 1],
+                "ch3": audio[:, 2],
+                "ch4": audio[:, 3],
+            }
+        )
 
         right_stomp = timedelta(seconds=1.0)
         left_stomp = timedelta(seconds=2.5)
@@ -389,9 +392,9 @@ class TestEnergyRatioValidation:
         )
 
         # Should find the correct pair despite noise peaks
-        if results['selected_stomp_method'] == 'biomechanics':
-            assert results['energy_ratio'] >= 1.2
+        if results["selected_stomp_method"] == "biomechanics":
+            assert results["energy_ratio"] >= 1.2
             # Selected time should be close to right stomp (1.0s)
-            assert abs(results['bio_selected_time'] - 1.0) < 0.2
+            assert abs(results["bio_selected_time"] - 1.0) < 0.2
             # Contra time should be close to left stomp (2.5s)
-            assert abs(results['contra_bio_selected_time'] - 2.5) < 0.2
+            assert abs(results["contra_bio_selected_time"] - 2.5) < 0.2

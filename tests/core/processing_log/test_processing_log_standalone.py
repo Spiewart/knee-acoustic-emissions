@@ -1,7 +1,6 @@
 """Standalone-style DB report test."""
 
 import pandas as pd
-import pytest
 
 from src.reports.report_generator import ReportGenerator
 

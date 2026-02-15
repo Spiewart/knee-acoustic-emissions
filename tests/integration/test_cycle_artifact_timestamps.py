@@ -6,8 +6,6 @@ processing stage are correctly trimmed to cycle boundaries and persisted to:
 2. Cycles Excel sheet columns via ReportGenerator
 """
 
-from datetime import datetime
-
 import pytest
 
 from src.db.models import MovementCycleRecord
@@ -39,11 +37,11 @@ class TestDropoutTimestampsDatabasePersistence:
             biomechanics_import_id=biomech_record.id,
         )
 
-        defaults = dict(
-            audio_processing_id=audio_record.id,
-            biomechanics_import_id=biomech_record.id,
-            synchronization_id=sync_record.id,
-        )
+        defaults = {
+            "audio_processing_id": audio_record.id,
+            "biomechanics_import_id": biomech_record.id,
+            "synchronization_id": sync_record.id,
+        }
         defaults.update(cycle_overrides)
         cycle = movement_cycle_factory(**defaults)
         cycle_record = repo.save_movement_cycle(
@@ -56,13 +54,20 @@ class TestDropoutTimestampsDatabasePersistence:
         return cycle_record, audio_record
 
     def test_dropout_fail_flags_persist(
-        self, db_session, audio_processing_factory, biomechanics_import_factory,
-        synchronization_factory, movement_cycle_factory,
+        self,
+        db_session,
+        audio_processing_factory,
+        biomechanics_import_factory,
+        synchronization_factory,
+        movement_cycle_factory,
     ):
         """Dropout fail booleans (aggregate + per-channel) should round-trip through DB."""
         cycle_record, _ = self._create_full_chain(
-            db_session, audio_processing_factory, biomechanics_import_factory,
-            synchronization_factory, movement_cycle_factory,
+            db_session,
+            audio_processing_factory,
+            biomechanics_import_factory,
+            synchronization_factory,
+            movement_cycle_factory,
             audio_qc_fail=True,
             audio_qc_failures=["dropout"],
             audio_artifact_dropout_fail=True,
@@ -80,13 +85,20 @@ class TestDropoutTimestampsDatabasePersistence:
         assert fetched.audio_artifact_dropout_fail_ch4 is False
 
     def test_dropout_timestamps_persist(
-        self, db_session, audio_processing_factory, biomechanics_import_factory,
-        synchronization_factory, movement_cycle_factory,
+        self,
+        db_session,
+        audio_processing_factory,
+        biomechanics_import_factory,
+        synchronization_factory,
+        movement_cycle_factory,
     ):
         """Dropout timestamp arrays (aggregate + per-channel) should round-trip."""
         cycle_record, _ = self._create_full_chain(
-            db_session, audio_processing_factory, biomechanics_import_factory,
-            synchronization_factory, movement_cycle_factory,
+            db_session,
+            audio_processing_factory,
+            biomechanics_import_factory,
+            synchronization_factory,
+            movement_cycle_factory,
             audio_qc_fail=True,
             audio_qc_failures=["dropout"],
             audio_artifact_dropout_fail=True,
@@ -106,13 +118,20 @@ class TestDropoutTimestampsDatabasePersistence:
         assert fetched.audio_artifact_dropout_timestamps_ch4 is None
 
     def test_no_dropout_all_none(
-        self, db_session, audio_processing_factory, biomechanics_import_factory,
-        synchronization_factory, movement_cycle_factory,
+        self,
+        db_session,
+        audio_processing_factory,
+        biomechanics_import_factory,
+        synchronization_factory,
+        movement_cycle_factory,
     ):
         """Clean cycle should have dropout fail=False and timestamps=None."""
         cycle_record, _ = self._create_full_chain(
-            db_session, audio_processing_factory, biomechanics_import_factory,
-            synchronization_factory, movement_cycle_factory,
+            db_session,
+            audio_processing_factory,
+            biomechanics_import_factory,
+            synchronization_factory,
+            movement_cycle_factory,
             audio_artifact_dropout_fail=False,
             audio_artifact_dropout_fail_ch1=False,
             audio_artifact_dropout_fail_ch2=False,
@@ -157,11 +176,11 @@ class TestContinuousTimestampsDatabasePersistence:
             biomechanics_import_id=biomech_record.id,
         )
 
-        defaults = dict(
-            audio_processing_id=audio_record.id,
-            biomechanics_import_id=biomech_record.id,
-            synchronization_id=sync_record.id,
-        )
+        defaults = {
+            "audio_processing_id": audio_record.id,
+            "biomechanics_import_id": biomech_record.id,
+            "synchronization_id": sync_record.id,
+        }
         defaults.update(cycle_overrides)
         cycle = movement_cycle_factory(**defaults)
         cycle_record = repo.save_movement_cycle(
@@ -174,13 +193,20 @@ class TestContinuousTimestampsDatabasePersistence:
         return cycle_record, audio_record
 
     def test_continuous_fail_flags_persist(
-        self, db_session, audio_processing_factory, biomechanics_import_factory,
-        synchronization_factory, movement_cycle_factory,
+        self,
+        db_session,
+        audio_processing_factory,
+        biomechanics_import_factory,
+        synchronization_factory,
+        movement_cycle_factory,
     ):
         """Continuous fail booleans should round-trip through DB."""
         cycle_record, _ = self._create_full_chain(
-            db_session, audio_processing_factory, biomechanics_import_factory,
-            synchronization_factory, movement_cycle_factory,
+            db_session,
+            audio_processing_factory,
+            biomechanics_import_factory,
+            synchronization_factory,
+            movement_cycle_factory,
             audio_qc_fail=True,
             audio_qc_failures=["continuous"],
             audio_artifact_continuous_fail=True,
@@ -198,13 +224,20 @@ class TestContinuousTimestampsDatabasePersistence:
         assert fetched.audio_artifact_continuous_fail_ch4 is True
 
     def test_continuous_timestamps_persist(
-        self, db_session, audio_processing_factory, biomechanics_import_factory,
-        synchronization_factory, movement_cycle_factory,
+        self,
+        db_session,
+        audio_processing_factory,
+        biomechanics_import_factory,
+        synchronization_factory,
+        movement_cycle_factory,
     ):
         """Continuous timestamp arrays should round-trip."""
         cycle_record, _ = self._create_full_chain(
-            db_session, audio_processing_factory, biomechanics_import_factory,
-            synchronization_factory, movement_cycle_factory,
+            db_session,
+            audio_processing_factory,
+            biomechanics_import_factory,
+            synchronization_factory,
+            movement_cycle_factory,
             audio_qc_fail=True,
             audio_qc_failures=["continuous"],
             audio_artifact_continuous_fail=True,
@@ -223,13 +256,20 @@ class TestContinuousTimestampsDatabasePersistence:
         assert fetched.audio_artifact_continuous_timestamps_ch4 == [3.0, 4.0]
 
     def test_no_continuous_all_none(
-        self, db_session, audio_processing_factory, biomechanics_import_factory,
-        synchronization_factory, movement_cycle_factory,
+        self,
+        db_session,
+        audio_processing_factory,
+        biomechanics_import_factory,
+        synchronization_factory,
+        movement_cycle_factory,
     ):
         """Clean cycle should have continuous fail=False and timestamps=None."""
         cycle_record, _ = self._create_full_chain(
-            db_session, audio_processing_factory, biomechanics_import_factory,
-            synchronization_factory, movement_cycle_factory,
+            db_session,
+            audio_processing_factory,
+            biomechanics_import_factory,
+            synchronization_factory,
+            movement_cycle_factory,
             audio_artifact_continuous_fail=False,
             audio_artifact_continuous_fail_ch1=False,
             audio_artifact_continuous_fail_ch2=False,
@@ -274,11 +314,11 @@ class TestCyclesExcelDropoutContinuousColumns:
             biomechanics_import_id=biomech_record.id,
         )
 
-        defaults = dict(
-            audio_processing_id=audio_record.id,
-            biomechanics_import_id=biomech_record.id,
-            synchronization_id=sync_record.id,
-        )
+        defaults = {
+            "audio_processing_id": audio_record.id,
+            "biomechanics_import_id": biomech_record.id,
+            "synchronization_id": sync_record.id,
+        }
         defaults.update(cycle_overrides)
         cycle = movement_cycle_factory(**defaults)
         cycle_record = repo.save_movement_cycle(
@@ -291,13 +331,20 @@ class TestCyclesExcelDropoutContinuousColumns:
         return cycle_record, audio_record
 
     def test_cycles_sheet_has_dropout_and_continuous_columns(
-        self, db_session, audio_processing_factory, biomechanics_import_factory,
-        synchronization_factory, movement_cycle_factory,
+        self,
+        db_session,
+        audio_processing_factory,
+        biomechanics_import_factory,
+        synchronization_factory,
+        movement_cycle_factory,
     ):
         """Cycles sheet should contain all dropout + continuous audio QC columns."""
         cycle_record, audio_record = self._create_full_chain(
-            db_session, audio_processing_factory, biomechanics_import_factory,
-            synchronization_factory, movement_cycle_factory,
+            db_session,
+            audio_processing_factory,
+            biomechanics_import_factory,
+            synchronization_factory,
+            movement_cycle_factory,
         )
 
         generator = ReportGenerator(db_session)
@@ -334,18 +381,24 @@ class TestCyclesExcelDropoutContinuousColumns:
         ]
         for col in expected_columns:
             assert col in sheet.columns, (
-                f"Missing column '{col}' in Cycles sheet. "
-                f"Available: {sorted(sheet.columns.tolist())}"
+                f"Missing column '{col}' in Cycles sheet. Available: {sorted(sheet.columns.tolist())}"
             )
 
     def test_cycles_sheet_dropout_values_populated(
-        self, db_session, audio_processing_factory, biomechanics_import_factory,
-        synchronization_factory, movement_cycle_factory,
+        self,
+        db_session,
+        audio_processing_factory,
+        biomechanics_import_factory,
+        synchronization_factory,
+        movement_cycle_factory,
     ):
         """Cycles sheet should show dropout fail flags and timestamps."""
         cycle_record, audio_record = self._create_full_chain(
-            db_session, audio_processing_factory, biomechanics_import_factory,
-            synchronization_factory, movement_cycle_factory,
+            db_session,
+            audio_processing_factory,
+            biomechanics_import_factory,
+            synchronization_factory,
+            movement_cycle_factory,
             audio_qc_fail=True,
             audio_qc_failures=["dropout"],
             audio_artifact_dropout_fail=True,
@@ -374,13 +427,20 @@ class TestCyclesExcelDropoutContinuousColumns:
         assert row["Audio Artifact Dropout Timestamps Ch1"] is not None
 
     def test_cycles_sheet_continuous_values_populated(
-        self, db_session, audio_processing_factory, biomechanics_import_factory,
-        synchronization_factory, movement_cycle_factory,
+        self,
+        db_session,
+        audio_processing_factory,
+        biomechanics_import_factory,
+        synchronization_factory,
+        movement_cycle_factory,
     ):
         """Cycles sheet should show continuous fail flags and timestamps."""
         cycle_record, audio_record = self._create_full_chain(
-            db_session, audio_processing_factory, biomechanics_import_factory,
-            synchronization_factory, movement_cycle_factory,
+            db_session,
+            audio_processing_factory,
+            biomechanics_import_factory,
+            synchronization_factory,
+            movement_cycle_factory,
             audio_qc_fail=True,
             audio_qc_failures=["continuous"],
             audio_artifact_continuous_fail=True,
@@ -404,13 +464,20 @@ class TestCyclesExcelDropoutContinuousColumns:
         assert row["Audio Artifact Continuous Timestamps Ch2"] is not None
 
     def test_clean_cycle_dropout_continuous_false(
-        self, db_session, audio_processing_factory, biomechanics_import_factory,
-        synchronization_factory, movement_cycle_factory,
+        self,
+        db_session,
+        audio_processing_factory,
+        biomechanics_import_factory,
+        synchronization_factory,
+        movement_cycle_factory,
     ):
         """Clean cycle should show all dropout/continuous QC as False/empty."""
         cycle_record, audio_record = self._create_full_chain(
-            db_session, audio_processing_factory, biomechanics_import_factory,
-            synchronization_factory, movement_cycle_factory,
+            db_session,
+            audio_processing_factory,
+            biomechanics_import_factory,
+            synchronization_factory,
+            movement_cycle_factory,
         )
 
         generator = ReportGenerator(db_session)
@@ -468,11 +535,11 @@ class TestTrimIntervalsLogic:
         from src.audio.raw_qc import trim_intervals_to_cycle
 
         intervals = [
-            (0.0, 0.5),   # before cycle — discarded
-            (0.8, 1.5),   # overlaps start — trimmed
-            (1.2, 1.8),   # fully within — unchanged
-            (1.9, 3.5),   # overlaps end — trimmed
-            (4.0, 5.0),   # after cycle — discarded
+            (0.0, 0.5),  # before cycle — discarded
+            (0.8, 1.5),  # overlaps start — trimmed
+            (1.2, 1.8),  # fully within — unchanged
+            (1.9, 3.5),  # overlaps end — trimmed
+            (4.0, 5.0),  # after cycle — discarded
         ]
         result = trim_intervals_to_cycle(intervals, 1.0, 2.0)
         assert len(result) == 3

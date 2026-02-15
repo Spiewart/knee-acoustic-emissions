@@ -1,7 +1,6 @@
 """Feature extraction from movement cycle data."""
 
 import logging
-from typing import Dict, List
 
 import numpy as np
 import pandas as pd
@@ -9,7 +8,7 @@ import pandas as pd
 logger = logging.getLogger(__name__)
 
 
-def extract_channel_features(channel_data: np.ndarray) -> Dict[str, float]:
+def extract_channel_features(channel_data: np.ndarray) -> dict[str, float]:
     """Extract statistical features from a single audio channel.
 
     Args:
@@ -21,10 +20,10 @@ def extract_channel_features(channel_data: np.ndarray) -> Dict[str, float]:
     features = {
         "mean": float(np.mean(channel_data)),
         "std": float(np.std(channel_data)),
-        "rms": float(np.sqrt(np.mean(channel_data ** 2))),
+        "rms": float(np.sqrt(np.mean(channel_data**2))),
         "peak": float(np.max(np.abs(channel_data))),
         "peak_to_peak": float(np.ptp(channel_data)),
-        "energy": float(np.sum(channel_data ** 2)),
+        "energy": float(np.sum(channel_data**2)),
         "kurtosis": float(pd.Series(channel_data).kurtosis()),
         "skewness": float(pd.Series(channel_data).skew()),
     }
@@ -33,19 +32,17 @@ def extract_channel_features(channel_data: np.ndarray) -> Dict[str, float]:
     fft = np.fft.rfft(channel_data)
     magnitude = np.abs(fft)
 
-    features["spectral_centroid"] = float(
-        np.sum(np.arange(len(magnitude)) * magnitude) / (np.sum(magnitude) + 1e-10)
-    )
+    features["spectral_centroid"] = float(np.sum(np.arange(len(magnitude)) * magnitude) / (np.sum(magnitude) + 1e-10))
     features["spectral_spread"] = float(np.std(magnitude))
-    features["spectral_energy"] = float(np.sum(magnitude ** 2))
+    features["spectral_energy"] = float(np.sum(magnitude**2))
 
     return features
 
 
 def extract_cycle_features(
     cycle_df: pd.DataFrame,
-    channels: List[str] = None,
-) -> Dict[str, float]:
+    channels: list[str] | None = None,
+) -> dict[str, float]:
     """Extract features from a movement cycle DataFrame.
 
     Args:
@@ -87,7 +84,7 @@ def extract_cycle_features(
 
         # Channel correlations
         for i, ch1 in enumerate(channels):
-            for ch2 in channels[i+1:]:
+            for ch2 in channels[i + 1 :]:
                 corr = np.corrcoef(cycle_df[ch1], cycle_df[ch2])[0, 1]
                 features[f"corr_{ch1}_{ch2}"] = float(corr)
 
@@ -109,7 +106,7 @@ def extract_cycle_features(
             duration = time_delta.total_seconds()
         elif isinstance(time_delta, np.timedelta64):
             # Convert to seconds
-            duration = float(time_delta / np.timedelta64(1, 's'))
+            duration = float(time_delta / np.timedelta64(1, "s"))
         elif hasattr(time_delta, "total_seconds"):
             duration = time_delta.total_seconds()
         else:

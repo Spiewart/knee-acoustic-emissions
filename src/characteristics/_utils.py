@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-import re
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Iterable, List
+import re
+from typing import Any
 
 import pandas as pd
 
@@ -23,7 +24,7 @@ def normalize_study_id(value: Any) -> int:
 
     for prefix in sorted(list_studies(), key=len, reverse=True):
         if text.startswith(prefix.upper()):
-            text = text[len(prefix):]
+            text = text[len(prefix) :]
             break
 
     if not re.fullmatch(r"\d{4}", text):
@@ -32,14 +33,14 @@ def normalize_study_id(value: Any) -> int:
     return int(text)
 
 
-def normalize_id_sequence(ids: Any) -> List[int]:
+def normalize_id_sequence(ids: Any) -> list[int]:
     """Normalize a single id or an iterable of ids to a list of ints."""
     if isinstance(ids, (str, int)):
         ids_iterable: Iterable[Any] = [ids]
     else:
         ids_iterable = ids
 
-    normalized: List[int] = []
+    normalized: list[int] = []
     for item in ids_iterable:
         normalized.append(normalize_study_id(item))
     return normalized

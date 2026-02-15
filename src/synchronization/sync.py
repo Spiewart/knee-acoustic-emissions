@@ -3,22 +3,24 @@ Uses foot stomp events (Sync Left and Sync Right) to align the two datasets.
 Stomp events are identified by the first peak in the audio channels exceeding
 a threshold defined by the overall signal statistics."""
 
-import logging
 from datetime import timedelta
+import logging
 from pathlib import Path
-from typing import Literal, Optional, Union
+from typing import Literal, Union
 
 import numpy as np
 import pandas as pd
 
 try:
     from scipy.signal import find_peaks
+
     SCIPY_AVAILABLE = True
 except ImportError:
     SCIPY_AVAILABLE = False
 
 try:
     import matplotlib.pyplot as plt
+
     MATPLOTLIB_AVAILABLE = True
 except ImportError:
     MATPLOTLIB_AVAILABLE = False
@@ -28,30 +30,26 @@ except ImportError:
 def get_biomechanics_metadata(
     directory: Path,
     sheet_name: str,
-    biomechanics_type: Optional[str] = None,
-    study_name: Optional[str] = None,
+    biomechanics_type: str | None = None,
+    study_name: str | None = None,
 ) -> pd.DataFrame:
     """Load biomechanics metadata from a pickled DataFrame in the given directory."""
 
     # Find the file that contains the term 'biomechanics' in its name
-    bio_file = next((
-        (f for f in directory.iterdir() if "biomechanics" in f.name.lower()),
-    ), None)
+    bio_file = next((f for f in directory.iterdir() if "biomechanics" in f.name.lower()), None)
     if not bio_file or not bio_file.is_file():
         raise FileNotFoundError(f"BiomechanicsRecording data file not found: {bio_file}")
 
     # Load the biomechanics metadata, which will be in an Excel
     # file with the specified sheet name.
-    return pd.read_excel(
-        bio_file,
-        sheet_name=sheet_name if sheet_name else "metadata")
+    return pd.read_excel(bio_file, sheet_name=sheet_name if sheet_name else "metadata")
 
 
 def get_event_metadata(
     bio_meta: pd.DataFrame,
     event_name: str,
-    biomechanics_type: Optional[str] = None,
-    study_name: Optional[str] = None,
+    biomechanics_type: str | None = None,
+    study_name: str | None = None,
 ) -> pd.DataFrame:
     """Extract event metadata for a specific event from biomechanics metadata.
 
@@ -64,9 +62,7 @@ def get_event_metadata(
     event_col = study_config.get_biomechanics_event_column()
 
     event_name_stripped = event_name.strip()
-    event_metadata = bio_meta.loc[
-        bio_meta[event_col].str.strip() == event_name_stripped
-    ]
+    event_metadata = bio_meta.loc[bio_meta[event_col].str.strip() == event_name_stripped]
     if event_metadata.empty:
         raise ValueError(f"No events found for: {event_name_stripped}")
 
@@ -76,15 +72,16 @@ def get_event_metadata(
 def get_stomp_time(
     bio_meta: pd.DataFrame,
     foot: str,
-    biomechanics_type: Optional[str] = None,
-    study_name: Optional[str] = None,
+    biomechanics_type: str | None = None,
+    study_name: str | None = None,
 ) -> timedelta:
     """Extract the timestamp of the foot stomp event from biomechanics metadata.
     foot: 'left' or 'right'"""
     from src.studies import get_study_config
 
     study_config = get_study_config(study_name or "AOA")
-    event_name = study_config.get_stomp_event_name(foot.lower())
+    foot_literal: Literal["left", "right"] = "left" if foot.lower() == "left" else "right"
+    event_name = study_config.get_stomp_event_name(foot_literal)
 
     event_meta_data = get_event_metadata(bio_meta, event_name, study_name=study_name)
 
@@ -94,13 +91,13 @@ def get_stomp_time(
         raise ValueError(f"No {foot} foot stomp events found in biomechanics metadata.")
 
     # Return the first stomp time as a timedelta object
-    return pd.to_timedelta(stomp_times[0], unit='s').to_pytimedelta()
+    return pd.to_timedelta(stomp_times[0], unit="s").to_pytimedelta()
 
 
 def get_right_stomp_time(
     bio_meta: pd.DataFrame,
-    biomechanics_type: Optional[str] = None,
-    study_name: Optional[str] = None,
+    biomechanics_type: str | None = None,
+    study_name: str | None = None,
 ) -> timedelta:
     """Extract the timestamp of the right foot stomp event from biomechanics metadata.
     Sync Right is a item in the first row Event Info. The second column Time (sec)
@@ -111,8 +108,8 @@ def get_right_stomp_time(
 
 def get_left_stomp_time(
     bio_meta: pd.DataFrame,
-    biomechanics_type: Optional[str] = None,
-    study_name: Optional[str] = None,
+    biomechanics_type: str | None = None,
+    study_name: str | None = None,
 ) -> timedelta:
     """Extract the timestamp of the left foot stomp event from biomechanics metadata."""
 
@@ -266,11 +263,7 @@ def _detect_stomp_by_impact_onset(
 
     # Apply smoothing to reduce noise
     if len(energy) > window_samples:
-        smoothed_energy = np.convolve(
-            energy,
-            np.ones(window_samples) / window_samples,
-            mode='same'
-        )
+        smoothed_energy = np.convolve(energy, np.ones(window_samples) / window_samples, mode="same")
     else:
         smoothed_energy = energy
 
@@ -342,12 +335,7 @@ def _detect_stomp_by_frequency_content(
         noverlap = max(0, min(window_samples - hop_samples, nperseg - 1))
 
         frequencies, times, Sxx = scipy_signal.spectrogram(
-            combined_signal,
-            sr,
-            window='hamming',
-            nperseg=nperseg,
-            noverlap=noverlap,
-            scaling='spectrum'
+            combined_signal, sr, window="hamming", nperseg=nperseg, noverlap=noverlap, scaling="spectrum"
         )
     except Exception as e:
         logging.warning(f"STFT computation failed: {e}")
@@ -365,8 +353,7 @@ def _detect_stomp_by_frequency_content(
     if len(band_energy) > 0:
         peak_idx = int(np.argmax(band_energy))
         # Map back to time in original recording
-        peak_time = search_tt[min(peak_idx * hop_samples + window_samples // 2,
-                                   len(search_tt) - 1)]
+        peak_time = search_tt[min(peak_idx * hop_samples + window_samples // 2, len(search_tt) - 1)]
         return peak_time, band_energy[peak_idx]
 
     return float(search_tt[0]), 0.0
@@ -374,12 +361,12 @@ def _detect_stomp_by_frequency_content(
 
 def get_audio_stomp_time(
     audio_df: pd.DataFrame,
-    recorded_knee: Optional[Literal["left", "right"]] = None,
-    right_stomp_time: Optional[timedelta] = None,
-    left_stomp_time: Optional[timedelta] = None,
+    recorded_knee: Literal["left", "right"] | None = None,
+    right_stomp_time: timedelta | None = None,
+    left_stomp_time: timedelta | None = None,
     return_details: bool = False,
-    biomechanics_type: Optional[str] = None,
-    study_name: Optional[str] = None,
+    biomechanics_type: str | None = None,
+    study_name: str | None = None,
 ) -> Union[timedelta, tuple[timedelta, dict]]:
     """Detect the audio stomp time using multi-method approach with optional biomechanics refinement.
 
@@ -476,18 +463,15 @@ def get_audio_stomp_time(
         ...     recorded_knee="right",
         ...     right_stomp_time=timedelta(seconds=2.5),
         ...     left_stomp_time=timedelta(seconds=4.0),
-        ...     return_details=True
+        ...     return_details=True,
         ... )
-        >>> if results['selected_stomp_method'] == 'biomechanics':
+        >>> if results["selected_stomp_method"] == "biomechanics":
         ...     print(f"Energy ratio: {results['energy_ratio']:.2f}")
         ...     print(f"Contralateral peak at: {results['contra_bio_selected_time']:.3f}s")
     """
     # Validate parameters for biomechanics-guided detection
-    if recorded_knee is not None:
-        if right_stomp_time is None or left_stomp_time is None:
-            raise ValueError(
-                "When recorded_knee is specified, both right_stomp_time and left_stomp_time must be provided"
-            )
+    if recorded_knee is not None and (right_stomp_time is None or left_stomp_time is None):
+        raise ValueError("When recorded_knee is specified, both right_stomp_time and left_stomp_time must be provided")
 
     # Gather audio channels - prefer filtered channels (f_ch) if available, fall back to raw (ch)
     filtered_channels = ["f_ch1", "f_ch2", "f_ch3", "f_ch4"]
@@ -511,17 +495,21 @@ def get_audio_stomp_time(
     freq_time, freq_energy = _detect_stomp_by_frequency_content(audio_channels, tt_seconds, sr)
 
     logging.debug(
-        "Stomp detection methods: RMS (t=%.3fs, E=%.2f), "
-        "Onset (t=%.3fs, M=%.2f), Frequency (t=%.3fs, E=%.2f)",
-        rms_time, rms_energy, onset_time, onset_mag, freq_time, freq_energy
+        "Stomp detection methods: RMS (t=%.3fs, E=%.2f), Onset (t=%.3fs, M=%.2f), Frequency (t=%.3fs, E=%.2f)",
+        rms_time,
+        rms_energy,
+        onset_time,
+        onset_mag,
+        freq_time,
+        freq_energy,
     )
 
     # Consensus approach: cluster methods within 0.5s, use mean if >1, else single value
     # This avoids sampling bias of blind median and ensures only methods that agree contribute
     method_times = {
-        'rms': rms_time,
-        'onset': onset_time,
-        'freq': freq_time,
+        "rms": rms_time,
+        "onset": onset_time,
+        "freq": freq_time,
     }
 
     # Find clusters of methods within 0.5s tolerance
@@ -529,11 +517,11 @@ def get_audio_stomp_time(
     used_methods = set()
 
     # Start with RMS (primary method), find all methods within tolerance
-    primary = method_times['rms']
-    cluster = [('rms', rms_time)]
-    used_methods.add('rms')
+    primary = method_times["rms"]
+    cluster = [("rms", rms_time)]
+    used_methods.add("rms")
 
-    for name, time_val in [('onset', onset_time), ('freq', freq_time)]:
+    for name, time_val in [("onset", onset_time), ("freq", freq_time)]:
         if abs(time_val - primary) <= tolerance:
             cluster.append((name, time_val))
             used_methods.add(name)
@@ -546,28 +534,32 @@ def get_audio_stomp_time(
     else:
         # Only RMS agrees with itself: use RMS time
         consensus_time = rms_time
-        consensus_method_names = ['rms']
+        consensus_method_names = ["rms"]
 
     logging.debug(
         "Consensus stomp time: %.3fs (from methods: %s; RMS: %.3fs, Onset: %.3fs, Freq: %.3fs)",
-        consensus_time, ', '.join(consensus_method_names), rms_time, onset_time, freq_time
+        consensus_time,
+        ", ".join(consensus_method_names),
+        rms_time,
+        onset_time,
+        freq_time,
     )
 
     # Store detection results for visualization and logging
     detection_results = {
-        'consensus_time': consensus_time,
-        'consensus_methods': consensus_method_names,  # Methods that contributed to consensus
-        'rms_time': rms_time,
-        'rms_energy': float(rms_energy),
-        'onset_time': onset_time,
-        'onset_magnitude': float(onset_mag),
-        'freq_time': freq_time,
-        'freq_energy': float(freq_energy),
-        'stomp_detection_methods': ['consensus'],  # Will be updated if biomechanics-guided succeeds
-        'selected_stomp_method': 'consensus',  # The selected method for synchronization
-        'bio_selected_time': None,  # Populated when biomechanics-guided method used
-        'contra_bio_selected_time': None,  # Contralateral peak time when biomechanics-guided
-        'energy_ratio': None,  # Populated when biomechanics-guided method used
+        "consensus_time": consensus_time,
+        "consensus_methods": consensus_method_names,  # Methods that contributed to consensus
+        "rms_time": rms_time,
+        "rms_energy": float(rms_energy),
+        "onset_time": onset_time,
+        "onset_magnitude": float(onset_mag),
+        "freq_time": freq_time,
+        "freq_energy": float(freq_energy),
+        "stomp_detection_methods": ["consensus"],  # Will be updated if biomechanics-guided succeeds
+        "selected_stomp_method": "consensus",  # The selected method for synchronization
+        "bio_selected_time": None,  # Populated when biomechanics-guided method used
+        "contra_bio_selected_time": None,  # Contralateral peak time when biomechanics-guided
+        "energy_ratio": None,  # Populated when biomechanics-guided method used
     }
 
     # If we have biomechanics stomp metadata, use it to refine detection
@@ -619,7 +611,7 @@ def get_audio_stomp_time(
                 peaks, peak_props = find_peaks(
                     rolling_energies,
                     height=np.max(rolling_energies) * 0.3,  # At least 30% of max energy
-                    distance=min_peak_distance  # At least 0.5s apart
+                    distance=min_peak_distance,  # At least 0.5s apart
                 )
             except Exception as e:
                 logging.debug("find_peaks failed: %s; using fallback", e)
@@ -637,7 +629,9 @@ def get_audio_stomp_time(
 
             logging.debug(
                 "Detected %d peaks in RMS energy: times=%s, energies=%s",
-                len(peaks), [f"{t:.3f}" for t in peak_times], [f"{e:.2f}" for e in peak_rms_energies]
+                len(peaks),
+                [f"{t:.3f}" for t in peak_times],
+                [f"{e:.2f}" for e in peak_rms_energies],
             )
 
             # Compute expected time separation between stomps from biomechanics
@@ -663,8 +657,7 @@ def get_audio_stomp_time(
                     _, _, i_best, j_best = candidates[0]
                     selected_pair = (i_best, j_best)
                     logging.debug(
-                        "Found peak pair within Δt tolerance %.2fs: peaks at indices %d, %d",
-                        tol, i_best, j_best
+                        "Found peak pair within Δt tolerance %.2fs: peaks at indices %d, %d", tol, i_best, j_best
                     )
                     break
 
@@ -701,32 +694,34 @@ def get_audio_stomp_time(
                 recorded_knee_energy = right_peak_energy if recorded_knee == "right" else left_peak_energy
                 contra_knee_energy = left_peak_energy if recorded_knee == "right" else right_peak_energy
                 min_energy_ratio = 1.2  # 20% threshold for recorded knee superiority
-                energy_ratio = (
-                    recorded_knee_energy / contra_knee_energy
-                    if contra_knee_energy > 0
-                    else float('inf')
-                )
+                energy_ratio = recorded_knee_energy / contra_knee_energy if contra_knee_energy > 0 else float("inf")
 
                 if energy_ratio >= min_energy_ratio:
                     selected_time = right_peak_time if recorded_knee == "right" else left_peak_time
                     contra_time = left_peak_time if recorded_knee == "right" else right_peak_time
 
                     # Update detection_results with biomechanics-guided method info
-                    detection_results['stomp_detection_methods'] = ['consensus', 'biomechanics']
-                    detection_results['selected_stomp_method'] = 'biomechanics'
-                    detection_results['bio_selected_time'] = selected_time
-                    detection_results['contra_bio_selected_time'] = contra_time
-                    detection_results['energy_ratio'] = float(energy_ratio)
+                    detection_results["stomp_detection_methods"] = ["consensus", "biomechanics"]
+                    detection_results["selected_stomp_method"] = "biomechanics"
+                    detection_results["bio_selected_time"] = selected_time
+                    detection_results["contra_bio_selected_time"] = contra_time
+                    detection_results["energy_ratio"] = float(energy_ratio)
 
                     logging.debug(
                         "Biomech-guided peak pair found: Δt_expected=%.3fs, tolerance=[%.2f,%.2f]s, "
                         "right=%.3fs (RMS=%.2f), left=%.3fs (RMS=%.2f), energy_ratio=%.2f, "
                         "selected=%s=%.3fs, contra=%.3fs",
-                        expected_delta, delta_tolerances[0], delta_tolerances[-1],
-                        right_peak_time, right_peak_energy,
-                        left_peak_time, left_peak_energy,
+                        expected_delta,
+                        delta_tolerances[0],
+                        delta_tolerances[-1],
+                        right_peak_time,
+                        right_peak_energy,
+                        left_peak_time,
+                        left_peak_energy,
                         energy_ratio,
-                        recorded_knee, selected_time, contra_time
+                        recorded_knee,
+                        selected_time,
+                        contra_time,
                     )
                 else:
                     # Peak pair fails energy validation: contralateral is too loud relative to recorded knee.
@@ -737,16 +732,23 @@ def get_audio_stomp_time(
                         "sufficiently louder than contralateral (%.2f). Energy ratio=%.2f (min "
                         "required=%.2f). Expected recorded knee to be ≥%.0f%% louder. Falling back "
                         "to consensus=%.3fs",
-                        recorded_knee, recorded_knee_energy, contra_knee_energy, energy_ratio,
-                        min_energy_ratio, (min_energy_ratio - 1.0) * 100, consensus_time
+                        recorded_knee,
+                        recorded_knee_energy,
+                        contra_knee_energy,
+                        energy_ratio,
+                        min_energy_ratio,
+                        (min_energy_ratio - 1.0) * 100,
+                        consensus_time,
                     )
             else:
                 # Fallback to consensus if no valid pair within tolerance
                 selected_time = consensus_time
                 logging.debug(
-                    "No peak pair within Δt tolerance (expected %.3fs ± [%.2f,%.2f]s); "
-                    "falling back to consensus=%.3fs",
-                    expected_delta, delta_tolerances[0], delta_tolerances[-1], consensus_time
+                    "No peak pair within Δt tolerance (expected %.3fs ± [%.2f,%.2f]s); falling back to consensus=%.3fs",
+                    expected_delta,
+                    delta_tolerances[0],
+                    delta_tolerances[-1],
+                    consensus_time,
                 )
         else:
             # No peaks found; use consensus detection
@@ -766,12 +768,12 @@ def sync_audio_with_biomechanics(
     bio_stomp_time: timedelta,
     audio_df: "pd.DataFrame",
     bio_df: "pd.DataFrame",
-    bio_start_time: Optional[timedelta] = None,
-    bio_end_time: Optional[timedelta] = None,
-    maneuver_key: Optional[str] = None,
-    knee_side: Optional[str] = None,
-    pass_number: Optional[int] = None,
-    speed: Optional[str] = None,
+    bio_start_time: timedelta | None = None,
+    bio_end_time: timedelta | None = None,
+    maneuver_key: str | None = None,
+    knee_side: str | None = None,
+    pass_number: int | None = None,
+    speed: str | None = None,
 ) -> "pd.DataFrame":
     """Synchronize audio with biomechanics using stomp times.
 
@@ -810,19 +812,18 @@ def sync_audio_with_biomechanics(
     time_difference = bio_stomp_time - audio_stomp_time
     # Convert the audio_df 'tt' column to timedelta (copy to avoid modifying original)
     audio_df = audio_df.copy()
-    audio_df['tt'] = pd.to_timedelta(audio_df['tt'], unit='s')
+    audio_df["tt"] = pd.to_timedelta(audio_df["tt"], unit="s")
 
     # Warn if audio coverage is shorter than biomechanics time span
-    audio_duration = audio_df['tt'].max() - audio_df['tt'].min()
-    bio_duration = bio_df['TIME'].max() - bio_df['TIME'].min()
+    audio_duration = audio_df["tt"].max() - audio_df["tt"].min()
+    bio_duration = bio_df["TIME"].max() - bio_df["TIME"].min()
     if bio_duration > audio_duration:
         print(
-            "Warning: biomechanics duration exceeds audio coverage; "
-            "synced output will be truncated to audio range.",
+            "Warning: biomechanics duration exceeds audio coverage; synced output will be truncated to audio range.",
         )
 
     # Drop any trailing NaT values in the biomechanics TIME column
-    bio_df = bio_df.dropna(subset=['TIME']).reset_index(drop=True)
+    bio_df = bio_df.dropna(subset=["TIME"]).reset_index(drop=True)
 
     # Note: We will clip biomechanics AFTER adjusting audio timestamps
     # to ensure the clipped ranges are in the same time coordinate system
@@ -836,14 +837,14 @@ def sync_audio_with_biomechanics(
 
         # Get the actual TIME range from clipped biomechanics
         # (accounting for the time shift between audio and bio)
-        time_diff_td = pd.to_timedelta(time_difference, unit='s')
+        time_diff_td = pd.to_timedelta(time_difference, unit="s")
         # Clipped bio TIME range in audio time coordinates:
         audio_match_start = bio_clip_start - time_diff_td
         audio_match_end = bio_clip_end - time_diff_td
 
         # QC: Validate that biomechanics window overlaps with audio recording
-        audio_start = audio_df['tt'].min()
-        audio_end = audio_df['tt'].max()
+        audio_start = audio_df["tt"].min()
+        audio_end = audio_df["tt"].max()
 
         if audio_match_end < audio_start or audio_match_start > audio_end:
             audio_start_bio_coords = audio_start + time_diff_td
@@ -876,10 +877,9 @@ def sync_audio_with_biomechanics(
             )
 
         # Clip audio to ensure all kept rows will have matching biomechanics
-        audio_df = audio_df[
-            (audio_df['tt'] >= audio_match_start) &
-            (audio_df['tt'] <= audio_match_end)
-        ].reset_index(drop=True)
+        audio_df = audio_df[(audio_df["tt"] >= audio_match_start) & (audio_df["tt"] <= audio_match_end)].reset_index(
+            drop=True
+        )
 
         # QC: Verify audio clipping didn't remove all data
         if audio_df.empty:
@@ -889,9 +889,7 @@ def sync_audio_with_biomechanics(
                 f"may be completely outside audio recording range."
             )
     # Adjust audio timestamps by the time difference (after clipping)
-    audio_df['tt'] = (
-        audio_df['tt'] + pd.to_timedelta(time_difference, unit='s')
-    )
+    audio_df["tt"] = audio_df["tt"] + pd.to_timedelta(time_difference, unit="s")
 
     # NOW clip biomechanics to match the adjusted audio range
     # (both are now in biomechanics time coordinates)
@@ -901,18 +899,15 @@ def sync_audio_with_biomechanics(
         bio_clip_end = bio_end_time + margin
 
         # Get actual audio time range after adjustment
-        audio_start_adjusted = audio_df['tt'].min()
-        audio_end_adjusted = audio_df['tt'].max()
+        audio_start_adjusted = audio_df["tt"].min()
+        audio_end_adjusted = audio_df["tt"].max()
 
         # Clip biomechanics to the overlap region
         # Use the intersection of requested biomechanics window and actual audio range
         effective_start = max(bio_clip_start, audio_start_adjusted)
         effective_end = min(bio_clip_end, audio_end_adjusted)
 
-        bio_df = bio_df[
-            (bio_df['TIME'] >= effective_start) &
-            (bio_df['TIME'] <= effective_end)
-        ].reset_index(drop=True)
+        bio_df = bio_df[(bio_df["TIME"] >= effective_start) & (bio_df["TIME"] <= effective_end)].reset_index(drop=True)
 
         # QC: Verify biomechanics clipping didn't remove all data
         if bio_df.empty:
@@ -940,25 +935,23 @@ def sync_audio_with_biomechanics(
     # Use tolerance based on biomechanics sampling interval (defaults to 20 ms)
     tolerance = pd.Timedelta(milliseconds=20)
     if len(bio_df) > 1:
-        median_step = bio_df['TIME'].diff().median()
+        median_step = bio_df["TIME"].diff().median()
         if pd.notna(median_step) and isinstance(median_step, pd.Timedelta):
             tolerance = max(tolerance, median_step)
 
     # Merge clipped audio with clipped biomechanics
     synchronized_df = pd.merge_asof(
-        audio_df.sort_values('tt'),
-        bio_df.sort_values('TIME'),
-        right_on='TIME',
-        left_on='tt',
-        direction='nearest',  # Nearest with tolerance to avoid stale rows
+        audio_df.sort_values("tt"),
+        bio_df.sort_values("TIME"),
+        right_on="TIME",
+        left_on="tt",
+        direction="nearest",  # Nearest with tolerance to avoid stale rows
         tolerance=tolerance,
     )
     # Interpolate biomechanics columns to upsample from ~120Hz to 52kHz
     # Identify biomechanics columns (everything except audio & tt)
-    audio_cols = {'tt', 'ch1', 'ch2', 'ch3', 'ch4',
-                  'f_ch1', 'f_ch2', 'f_ch3', 'f_ch4'}
-    bio_cols = [col for col in synchronized_df.columns
-                if col not in audio_cols and col != 'TIME']
+    audio_cols = {"tt", "ch1", "ch2", "ch3", "ch4", "f_ch1", "f_ch2", "f_ch3", "f_ch4"}
+    bio_cols = [col for col in synchronized_df.columns if col not in audio_cols and col != "TIME"]
 
     # Use linear interpolation (much faster than time-based for
     # large datasets). This is valid since audio samples are
@@ -966,11 +959,9 @@ def sync_audio_with_biomechanics(
     for col in bio_cols:
         # Only interpolate numeric columns
         if pd.api.types.is_numeric_dtype(synchronized_df[col]):
-            synchronized_df[col] = (
-                synchronized_df[col].interpolate(
-                    method='linear',
-                    limit_area='inside'  # Only interpolate valid values
-                )
+            synchronized_df[col] = synchronized_df[col].interpolate(
+                method="linear",
+                limit_area="inside",  # Only interpolate valid values
             )
 
     # QC: Validate synchronized DataFrame contains both audio and biomechanics data
@@ -989,12 +980,10 @@ def _validate_synchronized_dataframe(df: "pd.DataFrame") -> None:
         ValueError: If DataFrame is missing audio or biomechanics data.
     """
     if df.empty:
-        raise ValueError(
-            "Synchronized DataFrame is empty. No data after merge."
-        )
+        raise ValueError("Synchronized DataFrame is empty. No data after merge.")
 
     # Check for audio channels
-    audio_channels = [col for col in df.columns if col in ['ch1', 'ch2', 'ch3', 'ch4']]
+    audio_channels = [col for col in df.columns if col in ["ch1", "ch2", "ch3", "ch4"]]
     if not audio_channels:
         raise ValueError(
             "Synchronized DataFrame contains no audio channels (ch1-ch4). "
@@ -1016,7 +1005,7 @@ def _validate_synchronized_dataframe(df: "pd.DataFrame") -> None:
         )
 
     # Check for biomechanics columns (exclude audio, tt, TIME, and frequency channels)
-    audio_cols = {'tt', 'ch1', 'ch2', 'ch3', 'ch4', 'f_ch1', 'f_ch2', 'f_ch3', 'f_ch4', 'TIME'}
+    audio_cols = {"tt", "ch1", "ch2", "ch3", "ch4", "f_ch1", "f_ch2", "f_ch3", "f_ch4", "TIME"}
     bio_cols = [col for col in df.columns if col not in audio_cols]
 
     if not bio_cols:
@@ -1062,13 +1051,12 @@ def _validate_synchronized_dataframe(df: "pd.DataFrame") -> None:
         )
 
 
-
 def get_bio_start_time(
     event_metadata: "pd.DataFrame",
     maneuver: Literal["walk", "sit_to_stand", "flexion_extension"],
-    speed: Optional[Literal["slow", "normal", "fast"]] = None,
-    pass_number: Optional[int] = None,
-    study_name: Optional[str] = None,
+    speed: Literal["slow", "normal", "fast"] | None = None,
+    pass_number: int | None = None,
+    study_name: str | None = None,
 ) -> timedelta:
     """Get the start time of the biomechanics data for the specified maneuver.
 
@@ -1095,12 +1083,10 @@ def get_bio_start_time(
 
     study_config = get_study_config(study_name or "AOA")
 
-    if maneuver == "walk":
-        if speed is None or pass_number is None:
-            raise ValueError(
-                f"speed and pass_number required for walk maneuver, "
-                f"got speed={speed}, pass_number={pass_number}"
-            )
+    if maneuver == "walk" and (speed is None or pass_number is None):
+        raise ValueError(
+            f"speed and pass_number required for walk maneuver, got speed={speed}, pass_number={pass_number}"
+        )
     event_name = study_config.get_movement_start_event(maneuver, speed, pass_number or 1)
 
     event_data = get_event_metadata(event_metadata, event_name, study_name=study_name)
@@ -1116,9 +1102,9 @@ def get_bio_start_time(
 def get_bio_end_time(
     event_metadata: "pd.DataFrame",
     maneuver: Literal["walk", "sit_to_stand", "flexion_extension"],
-    speed: Optional[Literal["slow", "normal", "fast"]] = None,
-    pass_number: Optional[int] = None,
-    study_name: Optional[str] = None,
+    speed: Literal["slow", "normal", "fast"] | None = None,
+    pass_number: int | None = None,
+    study_name: str | None = None,
 ) -> timedelta:
     """Get the end time of the biomechanics data for the specified maneuver.
 
@@ -1145,12 +1131,10 @@ def get_bio_end_time(
 
     study_config = get_study_config(study_name or "AOA")
 
-    if maneuver == "walk":
-        if speed is None or pass_number is None:
-            raise ValueError(
-                f"speed and pass_number required for walk maneuver, "
-                f"got speed={speed}, pass_number={pass_number}"
-            )
+    if maneuver == "walk" and (speed is None or pass_number is None):
+        raise ValueError(
+            f"speed and pass_number required for walk maneuver, got speed={speed}, pass_number={pass_number}"
+        )
     event_name = study_config.get_movement_end_event(maneuver, speed, pass_number or 1)
 
     event_data = get_event_metadata(event_metadata, event_name, study_name=study_name)
@@ -1171,7 +1155,7 @@ def plot_stomp_detection(
     bio_stomp_left: timedelta,
     bio_stomp_right: timedelta,
     output_path: Path,
-    detection_results: Optional[dict] = None,
+    detection_results: dict | None = None,
 ) -> None:
     """Create a visualization of stomp detection with overview and per-channel plots.
 
@@ -1203,21 +1187,25 @@ def plot_stomp_detection(
         audio_stomp_s = float(audio_stomp_time.total_seconds())
 
         # Extract detection method times if available
-        rms_time_s = detection_results.get('rms_time', audio_stomp_s) if detection_results else audio_stomp_s
-        onset_time_s = detection_results.get('onset_time', audio_stomp_s) if detection_results else audio_stomp_s
-        freq_time_s = detection_results.get('freq_time', audio_stomp_s) if detection_results else audio_stomp_s
+        rms_time_s = detection_results.get("rms_time", audio_stomp_s) if detection_results else audio_stomp_s
+        onset_time_s = detection_results.get("onset_time", audio_stomp_s) if detection_results else audio_stomp_s
+        freq_time_s = detection_results.get("freq_time", audio_stomp_s) if detection_results else audio_stomp_s
         bio_left_s = float(bio_stomp_left.total_seconds())
         bio_right_s = float(bio_stomp_right.total_seconds())
 
         # Extract biomechanics-guided metadata
-        selected_stomp_method = detection_results.get('selected_stomp_method', 'consensus') if detection_results else 'consensus'
-        bio_selected_time_s = detection_results.get('bio_selected_time') if detection_results else None
-        contra_bio_selected_time_s = detection_results.get('contra_bio_selected_time') if detection_results else None
+        selected_stomp_method = (
+            detection_results.get("selected_stomp_method", "consensus") if detection_results else "consensus"
+        )
+        bio_selected_time_s = detection_results.get("bio_selected_time") if detection_results else None
+        contra_bio_selected_time_s = detection_results.get("contra_bio_selected_time") if detection_results else None
 
         # Debug logging for visualization timing
         if detection_results:
-            consensus_time_s = detection_results.get('consensus_time', audio_stomp_s)
-            logging.debug(f"Visualization timing: audio_stomp={audio_stomp_s:.3f}s, consensus={consensus_time_s:.3f}s, rms={rms_time_s:.3f}s, onset={onset_time_s:.3f}s, freq={freq_time_s:.3f}s")
+            consensus_time_s = detection_results.get("consensus_time", audio_stomp_s)
+            logging.debug(
+                f"Visualization timing: audio_stomp={audio_stomp_s:.3f}s, consensus={consensus_time_s:.3f}s, rms={rms_time_s:.3f}s, onset={onset_time_s:.3f}s, freq={freq_time_s:.3f}s"
+            )
 
         # Create figure with 2x4 subplots (top row: overview, bottom row: per-channel)
         fig, axes = plt.subplots(2, 4, figsize=(28, 10))
@@ -1306,8 +1294,10 @@ def plot_stomp_detection(
 
         # Plot RMS energy (detection metric) on left (secondary axis)
         ax_left_audio = ax_left.twinx()
-        ax_left_audio.plot(rms_times_plot, rms_energies_plot, 'b-', linewidth=1.5, alpha=0.8, label="RMS Energy (Detection Metric)")
-        ax_left_audio.fill_between(rms_times_plot, 0, rms_energies_plot, alpha=0.2, color='blue')
+        ax_left_audio.plot(
+            rms_times_plot, rms_energies_plot, "b-", linewidth=1.5, alpha=0.8, label="RMS Energy (Detection Metric)"
+        )
+        ax_left_audio.fill_between(rms_times_plot, 0, rms_energies_plot, alpha=0.2, color="blue")
 
         ax_left_audio.set_ylabel("RMS Energy\n(Stomp Detection Metric)", fontsize=11, color="blue")
         ax_left_audio.tick_params(axis="y", labelcolor="blue")
@@ -1316,9 +1306,7 @@ def plot_stomp_detection(
         knee_angle_col = None
         # Prefer explicit Z-axis knee angle, fall back to any knee angle (exclude velocities)
         preferred_cols = [
-            col
-            for col in bio_df_trunc.columns
-            if "knee angle z" in col.lower() and "velocity" not in col.lower()
+            col for col in bio_df_trunc.columns if "knee angle z" in col.lower() and "velocity" not in col.lower()
         ]
         if preferred_cols:
             knee_angle_col = preferred_cols[0]
@@ -1353,36 +1341,57 @@ def plot_stomp_detection(
 
         # Draw the selected stomp time as red dashed line
         ax_left.axvline(
-            audio_stomp_s, color="red", linestyle="--", linewidth=2.5,
-            label=f"Selected ({method_label})\n{audio_stomp_s:.2f}s", zorder=10
+            audio_stomp_s,
+            color="red",
+            linestyle="--",
+            linewidth=2.5,
+            label=f"Selected ({method_label})\n{audio_stomp_s:.2f}s",
+            zorder=10,
         )
         # Add detection method lines if available
         if detection_results:
             ax_left.axvline(
-                rms_time_s, color="darkred", linestyle="-", linewidth=1.5, alpha=0.6,
-                label=f"RMS\n{rms_time_s:.2f}s", zorder=9
+                rms_time_s,
+                color="darkred",
+                linestyle="-",
+                linewidth=1.5,
+                alpha=0.6,
+                label=f"RMS\n{rms_time_s:.2f}s",
+                zorder=9,
             )
             ax_left.axvline(
-                onset_time_s, color="maroon", linestyle=":", linewidth=1.5, alpha=0.6,
-                label=f"Onset\n{onset_time_s:.2f}s", zorder=9
+                onset_time_s,
+                color="maroon",
+                linestyle=":",
+                linewidth=1.5,
+                alpha=0.6,
+                label=f"Onset\n{onset_time_s:.2f}s",
+                zorder=9,
             )
             ax_left.axvline(
-                freq_time_s, color="brown", linestyle="-.", linewidth=1.5, alpha=0.6,
-                label=f"Freq\n{freq_time_s:.2f}s", zorder=9
+                freq_time_s,
+                color="brown",
+                linestyle="-.",
+                linewidth=1.5,
+                alpha=0.6,
+                label=f"Freq\n{freq_time_s:.2f}s",
+                zorder=9,
             )
         # Add contralateral peak marker if biomechanics-guided
         if contra_bio_selected_time_s is not None:
             ax_left.axvline(
-                contra_bio_selected_time_s, color="purple", linestyle="-.", linewidth=2.0,
-                label=f"Contra Selected\n{contra_bio_selected_time_s:.2f}s", zorder=10
+                contra_bio_selected_time_s,
+                color="purple",
+                linestyle="-.",
+                linewidth=2.0,
+                label=f"Contra Selected\n{contra_bio_selected_time_s:.2f}s",
+                zorder=10,
             )
         ax_left.axvline(
-            bio_left_s, color="green", linestyle=":", linewidth=2.5,
-            label=f"Bio Left\n{bio_left_s:.2f}s", zorder=10
+            bio_left_s, color="green", linestyle=":", linewidth=2.5, label=f"Bio Left\n{bio_left_s:.2f}s", zorder=10
         )
         ax_left.axvline(
-            bio_right_s, color="orange", linestyle=":", linewidth=2.5,
-            label=f"Bio Right\n{bio_right_s:.2f}s", zorder=10
+            bio_right_s, color="orange", linestyle=":", linewidth=2.5, label=f"Bio Right\n{bio_right_s:.2f}s", zorder=10
         )
 
         ax_left.set_xlabel("Time (seconds)", fontsize=11)
@@ -1408,9 +1417,14 @@ def plot_stomp_detection(
         for idx, ch in enumerate(channel_names):
             if ch in audio_channels.columns:
                 ch_voltage_30s = audio_channels[ch].values[first_30s_mask][::raw_downsample]
-                ax_zoom.plot(tt_audio_30s_plot, ch_voltage_30s,
-                           color=channel_colors_raw[idx], linewidth=0.8, alpha=0.7,
-                           label=ch.upper())
+                ax_zoom.plot(
+                    tt_audio_30s_plot,
+                    ch_voltage_30s,
+                    color=channel_colors_raw[idx],
+                    linewidth=0.8,
+                    alpha=0.7,
+                    label=ch.upper(),
+                )
 
         ax_zoom.set_title("First 30 Seconds - Raw Audio (Untruncated)", fontsize=12, fontweight="bold")
         ax_zoom.set_xlabel("Time (seconds)", fontsize=11)
@@ -1476,8 +1490,8 @@ def plot_stomp_detection(
 
         # Plot RMS energy on right (secondary axis)
         ax_right_audio = ax_right.twinx()
-        ax_right_audio.plot(synced_rms_times_plot, synced_rms_plot, 'b-', linewidth=1.5, alpha=0.8, label="RMS Energy")
-        ax_right_audio.fill_between(synced_rms_times_plot, 0, synced_rms_plot, alpha=0.2, color='blue')
+        ax_right_audio.plot(synced_rms_times_plot, synced_rms_plot, "b-", linewidth=1.5, alpha=0.8, label="RMS Energy")
+        ax_right_audio.fill_between(synced_rms_times_plot, 0, synced_rms_plot, alpha=0.2, color="blue")
 
         ax_right_audio.set_ylabel("RMS Energy\n(Stomp Detection Metric)", fontsize=11, color="blue")
         ax_right_audio.tick_params(axis="y", labelcolor="blue")
@@ -1485,9 +1499,7 @@ def plot_stomp_detection(
         # Find and plot knee angle from synced data
         synced_knee_col = None
         preferred_synced = [
-            col
-            for col in synced_df.columns
-            if "knee angle z" in col.lower() and "velocity" not in col.lower()
+            col for col in synced_df.columns if "knee angle z" in col.lower() and "velocity" not in col.lower()
         ]
         if preferred_synced:
             synced_knee_col = preferred_synced[0]
@@ -1522,12 +1534,9 @@ def plot_stomp_detection(
         ax_right.legend(lines3 + lines4, labels3 + labels4, fontsize=8, loc="upper left")
 
         # ===== TOP RIGHT 2: Summary info =====
-        summary_text = (
-            f"Stomp Detection Summary\n\n"
-            f"Method: {selected_stomp_method}\n\n"
-        )
+        summary_text = f"Stomp Detection Summary\n\nMethod: {selected_stomp_method}\n\n"
         if detection_results:
-            consensus_time = detection_results.get('consensus_time', audio_stomp_s)
+            consensus_time = detection_results.get("consensus_time", audio_stomp_s)
             summary_text += (
                 f"Consensus: {consensus_time:.3f}s\n"
                 f"  RMS: {rms_time_s:.3f}s\n"
@@ -1543,12 +1552,9 @@ def plot_stomp_detection(
                 summary_text += "\n"
         else:
             summary_text += f"Selected Stomp: {audio_stomp_s:.3f}s\n\n"
-        summary_text += (
-            f"Bio Left: {bio_left_s:.3f}s\n"
-            f"Bio Right: {bio_right_s:.3f}s\n\n"
-        )
+        summary_text += f"Bio Left: {bio_left_s:.3f}s\nBio Right: {bio_right_s:.3f}s\n\n"
         if detection_results:
-            consensus_time = detection_results.get('consensus_time', audio_stomp_s)
+            consensus_time = detection_results.get("consensus_time", audio_stomp_s)
             summary_text += (
                 f"Δ (Consensus - Left): {consensus_time - bio_left_s:.3f}s\n"
                 f"Δ (Consensus - Right): {consensus_time - bio_right_s:.3f}s"
@@ -1558,11 +1564,16 @@ def plot_stomp_detection(
                 f"Δ (Stomp - Left): {audio_stomp_s - bio_left_s:.3f}s\n"
                 f"Δ (Stomp - Right): {audio_stomp_s - bio_right_s:.3f}s"
             )
-        ax_summary.text(0.5, 0.5,
-                       summary_text,
-                       ha="center", va="center", fontsize=10,
-                       bbox=dict(boxstyle="round,pad=1", facecolor="lightgray", alpha=0.8),
-                       family='monospace')
+        ax_summary.text(
+            0.5,
+            0.5,
+            summary_text,
+            ha="center",
+            va="center",
+            fontsize=10,
+            bbox={"boxstyle": "round,pad=1", "facecolor": "lightgray", "alpha": 0.8},
+            family="monospace",
+        )
         ax_summary.set_title("Timing Summary", fontsize=12, fontweight="bold")
         ax_summary.axis("off")
 
@@ -1578,9 +1589,7 @@ def plot_stomp_detection(
         # Find knee angle column for biomechanics overlay (used in per-channel plots)
         synced_knee_col = None
         preferred_synced = [
-            col
-            for col in synced_df.columns
-            if "knee angle z" in col.lower() and "velocity" not in col.lower()
+            col for col in synced_df.columns if "knee angle z" in col.lower() and "velocity" not in col.lower()
         ]
         if preferred_synced:
             synced_knee_col = preferred_synced[0]
@@ -1614,11 +1623,18 @@ def plot_stomp_detection(
             # Plot voltage on primary axis
             ch_voltage = audio_channels_trunc[ch].values[::voltage_downsample]
             if np.any(volt_zoom_mask):
-                ax_ch.plot(tt_voltage_plot[volt_zoom_mask], ch_voltage[volt_zoom_mask],
-                          color=channel_colors[idx], linewidth=0.8, alpha=0.7, label="Voltage")
+                ax_ch.plot(
+                    tt_voltage_plot[volt_zoom_mask],
+                    ch_voltage[volt_zoom_mask],
+                    color=channel_colors[idx],
+                    linewidth=0.8,
+                    alpha=0.7,
+                    label="Voltage",
+                )
             else:
-                ax_ch.plot(tt_voltage_plot, ch_voltage,
-                          color=channel_colors[idx], linewidth=0.8, alpha=0.7, label="Voltage")
+                ax_ch.plot(
+                    tt_voltage_plot, ch_voltage, color=channel_colors[idx], linewidth=0.8, alpha=0.7, label="Voltage"
+                )
 
             # Compute and plot RMS on secondary axis
             if idx < audio_downsampled.shape[1]:
@@ -1633,36 +1649,85 @@ def plot_stomp_detection(
 
                 rms_ch_plot = rms_ch[::rms_downsample]
                 if np.any(rms_zoom_mask):
-                    ax_ch_rms.plot(rms_times_plot[rms_zoom_mask], rms_ch_plot[rms_zoom_mask],
-                                  color=channel_colors[idx], linewidth=1.2, alpha=0.5,
-                                  linestyle='--', label="RMS")
+                    ax_ch_rms.plot(
+                        rms_times_plot[rms_zoom_mask],
+                        rms_ch_plot[rms_zoom_mask],
+                        color=channel_colors[idx],
+                        linewidth=1.2,
+                        alpha=0.5,
+                        linestyle="--",
+                        label="RMS",
+                    )
                 else:
-                    ax_ch_rms.plot(rms_times_plot, rms_ch_plot,
-                                  color=channel_colors[idx], linewidth=1.2, alpha=0.5,
-                                  linestyle='--', label="RMS")
+                    ax_ch_rms.plot(
+                        rms_times_plot,
+                        rms_ch_plot,
+                        color=channel_colors[idx],
+                        linewidth=1.2,
+                        alpha=0.5,
+                        linestyle="--",
+                        label="RMS",
+                    )
 
                 ax_ch_rms.set_ylabel("RMS Energy", fontsize=9, color=channel_colors[idx], alpha=0.7)
                 ax_ch_rms.tick_params(axis="y", labelcolor=channel_colors[idx], labelsize=8)
 
             # Draw selected stomp time as red dashed line
-            ax_ch.axvline(audio_stomp_s, color="red", linestyle="--", linewidth=1.0, alpha=0.6,
-                         label=f"Selected ({audio_stomp_s:.2f}s)")
+            ax_ch.axvline(
+                audio_stomp_s,
+                color="red",
+                linestyle="--",
+                linewidth=1.0,
+                alpha=0.6,
+                label=f"Selected ({audio_stomp_s:.2f}s)",
+            )
             # Add contralateral peak marker if biomechanics-guided
             if contra_bio_selected_time_s is not None:
-                ax_ch.axvline(contra_bio_selected_time_s, color="purple", linestyle="-.", linewidth=1.0, alpha=0.6,
-                             label=f"Contra ({contra_bio_selected_time_s:.2f}s)")
+                ax_ch.axvline(
+                    contra_bio_selected_time_s,
+                    color="purple",
+                    linestyle="-.",
+                    linewidth=1.0,
+                    alpha=0.6,
+                    label=f"Contra ({contra_bio_selected_time_s:.2f}s)",
+                )
             # Add detection method lines if available
             if detection_results:
-                ax_ch.axvline(rms_time_s, color="darkred", linestyle="-", linewidth=0.8, alpha=0.5,
-                             label=f"RMS ({rms_time_s:.2f}s)")
-                ax_ch.axvline(onset_time_s, color="maroon", linestyle=":", linewidth=0.7, alpha=0.5,
-                             label=f"Onset ({onset_time_s:.2f}s)")
-                ax_ch.axvline(freq_time_s, color="brown", linestyle="-.", linewidth=0.7, alpha=0.5,
-                             label=f"Freq ({freq_time_s:.2f}s)")
-            ax_ch.axvline(bio_left_s, color="green", linestyle=":", linewidth=0.8, alpha=0.6,
-                         label=f"Left ({bio_left_s:.2f}s)")
-            ax_ch.axvline(bio_right_s, color="orange", linestyle=":", linewidth=0.8, alpha=0.6,
-                         label=f"Right ({bio_right_s:.2f}s)")
+                ax_ch.axvline(
+                    rms_time_s,
+                    color="darkred",
+                    linestyle="-",
+                    linewidth=0.8,
+                    alpha=0.5,
+                    label=f"RMS ({rms_time_s:.2f}s)",
+                )
+                ax_ch.axvline(
+                    onset_time_s,
+                    color="maroon",
+                    linestyle=":",
+                    linewidth=0.7,
+                    alpha=0.5,
+                    label=f"Onset ({onset_time_s:.2f}s)",
+                )
+                ax_ch.axvline(
+                    freq_time_s,
+                    color="brown",
+                    linestyle="-.",
+                    linewidth=0.7,
+                    alpha=0.5,
+                    label=f"Freq ({freq_time_s:.2f}s)",
+                )
+            ax_ch.axvline(
+                bio_left_s, color="green", linestyle=":", linewidth=0.8, alpha=0.6, label=f"Left ({bio_left_s:.2f}s)"
+            )
+            ax_ch.axvline(
+                bio_right_s,
+                color="orange",
+                linestyle=":",
+                linewidth=0.8,
+                alpha=0.6,
+                label=f"Right ({bio_right_s:.2f}s)",
+            )
 
             # Add biomechanics overlay (tertiary y-axis) if knee angle available
             if synced_knee_col and synced_knee_col in synced_df.columns:
@@ -1675,8 +1740,8 @@ def plot_stomp_detection(
                     # Create tertiary y-axis for biomechanics
                     ax_ch_bio = ax_ch.twinx()
                     # Offset the spine to avoid overlap with RMS axis
-                    ax_ch_bio.spines['right'].set_position(('outward', 60))
-                    ax_ch_bio.plot(tt_knee_zoom, knee_zoom, 'k-', linewidth=1.0, alpha=0.3, label="Knee Angle")
+                    ax_ch_bio.spines["right"].set_position(("outward", 60))
+                    ax_ch_bio.plot(tt_knee_zoom, knee_zoom, "k-", linewidth=1.0, alpha=0.3, label="Knee Angle")
                     ax_ch_bio.set_ylabel("Knee Angle (°)", fontsize=8, color="black", alpha=0.5)
                     ax_ch_bio.tick_params(axis="y", labelcolor="black", labelsize=7)
 

@@ -175,10 +175,7 @@ class TestCreatePersistentProcessor:
         mock_create_session.return_value = mock_session
         mock_processor_class.return_value = MagicMock()
 
-        processor = create_persistent_processor(
-            participant_dir,
-            db_url="postgresql://localhost/test"
-        )
+        processor = create_persistent_processor(participant_dir, db_url="postgresql://localhost/test")
 
         assert processor is not None
         assert processor.persistence.enabled
@@ -192,10 +189,7 @@ class TestCreatePersistentProcessor:
         mock_create_session.side_effect = Exception("Connection failed")
         mock_processor_class.return_value = MagicMock()
 
-        processor = create_persistent_processor(
-            participant_dir,
-            db_url="postgresql://localhost/test"
-        )
+        processor = create_persistent_processor(participant_dir, db_url="postgresql://localhost/test")
 
         assert processor is not None
         assert not processor.persistence.enabled
@@ -206,10 +200,7 @@ class TestCreatePersistentProcessor:
         participant_dir = Path("/tmp/test_participant")
         mock_processor_class.return_value = MagicMock()
 
-        processor = create_persistent_processor(
-            participant_dir,
-            biomechanics_type="Motion Analysis"
-        )
+        processor = create_persistent_processor(participant_dir, biomechanics_type="Motion Analysis")
 
         assert processor.biomechanics_type == "Motion Analysis"
 
@@ -221,6 +212,7 @@ class TestIntegrationWithRealParticipantDirectory:
     def sample_participant_dir(self):
         """Get sample participant directory if available."""
         import os
+
         root = os.getenv("AE_DATA_ROOT")
         if not root:
             pytest.skip("AE_DATA_ROOT not set")

@@ -200,14 +200,14 @@ bad_intervals_synced = adjust_bad_intervals_for_sync(
 for cycle in movement_cycles:
     cycle_start = cycle['start_time']  # in synced coordinates
     cycle_end = cycle['end_time']
-    
+
     audio_qc_passed = not check_cycle_in_bad_interval(
         cycle_start,
         cycle_end,
         bad_intervals_synced,
         overlap_threshold=0.1,  # 10% overlap threshold
     )
-    
+
     # Update cycle metadata
     cycle['audio_qc_pass'] = audio_qc_passed
     if not audio_qc_passed:

@@ -9,14 +9,12 @@ Naming conventions:
     Cycle files:   left_walk_p1_slow_c003.pkl, right_sts_c000.pkl
 """
 
-from typing import Optional
-
 
 def generate_sync_filename(
     knee: str,
     maneuver: str,
-    pass_number: Optional[int] = None,
-    speed: Optional[str] = None,
+    pass_number: int | None = None,
+    speed: str | None = None,
 ) -> str:
     """Generate a short sync output filename.
 
@@ -41,8 +39,8 @@ def generate_cycle_filename(
     knee: str,
     maneuver: str,
     cycle_index: int,
-    pass_number: Optional[int] = None,
-    speed: Optional[str] = None,
+    pass_number: int | None = None,
+    speed: str | None = None,
 ) -> str:
     """Generate a short cycle output filename.
 

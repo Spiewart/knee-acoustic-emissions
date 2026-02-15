@@ -4,7 +4,7 @@ This module provides validation functions for biomechanics waveform patterns
 and project-level constants for knee angle thresholds across different maneuvers.
 """
 
-from typing import Literal, Optional, Tuple
+from typing import Literal
 
 import numpy as np
 from scipy.signal import find_peaks
@@ -34,10 +34,10 @@ MIN_VALID_DATA_FRACTION = 0.8  # Minimum fraction of non-NaN data points require
 
 def get_default_min_rom(maneuver: Literal["walk", "sit_to_stand", "flexion_extension"]) -> float:
     """Get the default minimum ROM threshold for a maneuver.
-    
+
     Args:
         maneuver: Type of movement
-        
+
     Returns:
         Default minimum ROM in degrees
     """
@@ -53,36 +53,36 @@ def get_default_min_rom(maneuver: Literal["walk", "sit_to_stand", "flexion_exten
 
 def compute_knee_angle_rom(knee_angle: np.ndarray) -> float:
     """Compute range of motion (ROM) for knee angle data.
-    
+
     ROM is calculated as the difference between maximum and minimum knee angle
     values, representing the extent of joint movement.
-    
+
     Args:
         knee_angle: Array of knee angle values (should not contain NaNs)
-        
+
     Returns:
         Range of motion in degrees
     """
     if len(knee_angle) == 0:
         return 0.0
-    
+
     return float(np.max(knee_angle) - np.min(knee_angle))
 
 
 def validate_knee_angle_waveform(
     knee_angle: np.ndarray,
     maneuver: Literal["walk", "sit_to_stand", "flexion_extension"],
-    min_rom: Optional[float] = None,
-    angle_tolerance: Optional[float] = None,
+    min_rom: float | None = None,
+    angle_tolerance: float | None = None,
     peak_prominence_ratio: float = DEFAULT_PEAK_PROMINENCE_RATIO,
     min_absolute_prominence: float = MIN_ABSOLUTE_PROMINENCE,
-) -> Tuple[bool, str]:
+) -> tuple[bool, str]:
     """Validate that knee angle waveform matches expected pattern for the maneuver.
-    
+
     Performs waveform-level validation beyond simple ROM checks, verifying that
     the knee angle exhibits the stereotypic fluctuation pattern characteristic
     of the maneuver type.
-    
+
     Args:
         knee_angle: Clean knee angle array (no NaNs, sufficient data points)
         maneuver: Type of movement
@@ -90,23 +90,23 @@ def validate_knee_angle_waveform(
         angle_tolerance: Start/end angle matching tolerance (uses default if None)
         peak_prominence_ratio: Peak prominence as fraction of ROM
         min_absolute_prominence: Minimum absolute prominence for peak detection
-        
+
     Returns:
         Tuple of (is_valid, reason) where is_valid indicates if the cycle passes
         validation and reason provides details about the validation result.
     """
     if len(knee_angle) < 10:
         return False, "insufficient data points"
-    
+
     # Get default ROM threshold if not provided
     if min_rom is None:
         min_rom = get_default_min_rom(maneuver)
-    
+
     # Compute ROM
     rom = compute_knee_angle_rom(knee_angle)
     if rom < min_rom:
         return False, f"ROM={rom:.1f}° below threshold {min_rom:.1f}°"
-    
+
     # Perform maneuver-specific waveform validation
     if maneuver == "walk":
         return validate_walking_waveform(
@@ -126,56 +126,56 @@ def validate_knee_angle_waveform(
 def validate_walking_waveform(
     knee_angle: np.ndarray,
     rom: float,
-    angle_tolerance: Optional[float] = None,
+    angle_tolerance: float | None = None,
     peak_prominence_ratio: float = DEFAULT_PEAK_PROMINENCE_RATIO,
     min_absolute_prominence: float = MIN_ABSOLUTE_PROMINENCE,
-) -> Tuple[bool, str]:
+) -> tuple[bool, str]:
     """Validate waveform pattern for walking gait cycles.
-    
+
     Walking gait cycles should exhibit:
     1. Start and end at similar low angles (heel strike)
     2. A flexion peak during swing phase (typically in middle portion, ~20-80% of cycle)
     3. Single dominant peak (not multiple peaks of similar magnitude)
-    
+
     Args:
         knee_angle: Clean knee angle array (no NaNs)
         rom: Pre-computed range of motion
         angle_tolerance: Start/end angle match tolerance (uses default if None)
         peak_prominence_ratio: Peak prominence as fraction of ROM
         min_absolute_prominence: Minimum absolute prominence for peak detection
-        
+
     Returns:
         Tuple of (is_valid, reason)
     """
     if angle_tolerance is None:
         angle_tolerance = DEFAULT_WALK_ANGLE_TOLERANCE
-    
+
     # Check for proper start/end angles (should be at extension, i.e., minima)
     start_angle = knee_angle[0]
     end_angle = knee_angle[-1]
-    
+
     if abs(end_angle - start_angle) > angle_tolerance:
         return False, f"start/end angle mismatch: {abs(end_angle - start_angle):.1f}° > {angle_tolerance}°"
-    
+
     # Find flexion peaks (maxima) with minimum absolute prominence
     prominence = max(rom * peak_prominence_ratio, min_absolute_prominence)
     peaks, _ = find_peaks(knee_angle, prominence=prominence)
-    
+
     if len(peaks) == 0:
         return False, "no flexion peak detected"
-    
+
     # Should have one dominant peak during swing phase
     if len(peaks) > 2:
         return False, f"too many peaks detected ({len(peaks)})"
-    
+
     # Peak should be in middle portion of cycle (20-80%)
     cycle_length = len(knee_angle)
     peak_idx = peaks[0]  # Use first/dominant peak
     peak_position = peak_idx / cycle_length
-    
+
     if peak_position < 0.2 or peak_position > 0.8:
-        return False, f"peak at {peak_position*100:.0f}% of cycle (expected 20-80%)"
-    
+        return False, f"peak at {peak_position * 100:.0f}% of cycle (expected 20-80%)"
+
     return True, f"ROM={rom:.1f}°, valid gait pattern"
 
 
@@ -185,7 +185,7 @@ def validate_sit_to_stand_waveform(
     angle_change_ratio: float = DEFAULT_STS_ANGLE_CHANGE_RATIO,
     seated_threshold: float = DEFAULT_STS_SEATED_THRESHOLD,
     endpoint_tolerance: float = DEFAULT_STS_ENDPOINT_TOLERANCE,
-) -> Tuple[bool, str]:
+) -> tuple[bool, str]:
     """Validate waveform pattern for full sit-to-stand-sit cycles.
 
     Handles both cycle orientations by inferring the starting position from
@@ -246,18 +246,13 @@ def validate_sit_to_stand_waveform(
         trough_position = trough_idx / cycle_length
 
         if trough_position < 0.15 or trough_position > 0.85:
-            return False, (
-                f"standing trough at {trough_position*100:.0f}% of cycle "
-                f"(expected 15-85%)"
-            )
+            return False, (f"standing trough at {trough_position * 100:.0f}% of cycle (expected 15-85%)")
 
         # Verify the trough is substantially lower than endpoints
         trough_depth = start_angle - knee_angle[trough_idx]
         min_depth = rom * angle_change_ratio
         if trough_depth < min_depth:
-            return False, (
-                f"insufficient trough depth: {trough_depth:.1f}° < {min_depth:.1f}°"
-            )
+            return False, (f"insufficient trough depth: {trough_depth:.1f}° < {min_depth:.1f}°")
 
         return True, f"ROM={rom:.1f}°, valid sit→stand→sit pattern (seated start)"
 
@@ -273,18 +268,13 @@ def validate_sit_to_stand_waveform(
         peak_position = peak_idx / cycle_length
 
         if peak_position < 0.15 or peak_position > 0.85:
-            return False, (
-                f"sitting peak at {peak_position*100:.0f}% of cycle "
-                f"(expected 15-85%)"
-            )
+            return False, (f"sitting peak at {peak_position * 100:.0f}% of cycle (expected 15-85%)")
 
         # Verify the peak is substantially higher than endpoints
         peak_height = knee_angle[peak_idx] - start_angle
         min_height = rom * angle_change_ratio
         if peak_height < min_height:
-            return False, (
-                f"insufficient peak height: {peak_height:.1f}° < {min_height:.1f}°"
-            )
+            return False, (f"insufficient peak height: {peak_height:.1f}° < {min_height:.1f}°")
 
         return True, f"ROM={rom:.1f}°, valid stand→sit→stand pattern (standing start)"
 
@@ -292,54 +282,54 @@ def validate_sit_to_stand_waveform(
 def validate_flexion_extension_waveform(
     knee_angle: np.ndarray,
     rom: float,
-    angle_tolerance: Optional[float] = None,
+    angle_tolerance: float | None = None,
     peak_prominence_ratio: float = DEFAULT_PEAK_PROMINENCE_RATIO,
     min_absolute_prominence: float = MIN_ABSOLUTE_PROMINENCE,
-) -> Tuple[bool, str]:
+) -> tuple[bool, str]:
     """Validate waveform pattern for flexion-extension maneuvers.
-    
+
     Flexion-extension cycles should exhibit:
     1. Start and end at similar angles (extension position)
     2. Clear flexion peak in the middle
     3. Relatively smooth, cyclic pattern
-    
+
     Args:
         knee_angle: Clean knee angle array (no NaNs)
         rom: Pre-computed range of motion
         angle_tolerance: Start/end angle match tolerance (uses default if None)
         peak_prominence_ratio: Peak prominence as fraction of ROM
         min_absolute_prominence: Minimum absolute prominence for peak detection
-        
+
     Returns:
         Tuple of (is_valid, reason)
     """
     if angle_tolerance is None:
         angle_tolerance = DEFAULT_FLEXION_EXTENSION_ANGLE_TOLERANCE
-    
+
     # Check for proper start/end angles (should be similar - at extension)
     start_angle = knee_angle[0]
     end_angle = knee_angle[-1]
-    
+
     if abs(end_angle - start_angle) > angle_tolerance:
         return False, f"start/end angle mismatch: {abs(end_angle - start_angle):.1f}° > {angle_tolerance}°"
-    
+
     # Find flexion peaks (maxima) with minimum absolute prominence
     prominence = max(rom * peak_prominence_ratio, min_absolute_prominence)
     peaks, _ = find_peaks(knee_angle, prominence=prominence)
-    
+
     if len(peaks) == 0:
         return False, "no flexion peak detected"
-    
+
     # Should have at least one clear peak
     if len(peaks) > 3:
         return False, f"too many peaks detected ({len(peaks)})"
-    
+
     # Main peak should be in middle portion of cycle
     cycle_length = len(knee_angle)
     peak_idx = peaks[np.argmax(knee_angle[peaks])]  # Get index of highest peak
     peak_position = peak_idx / cycle_length
-    
+
     if peak_position < 0.25 or peak_position > 0.75:
-        return False, f"peak at {peak_position*100:.0f}% of cycle (expected 25-75%)"
-    
+        return False, f"peak at {peak_position * 100:.0f}% of cycle (expected 25-75%)"
+
     return True, f"ROM={rom:.1f}°, valid flexion-extension pattern"

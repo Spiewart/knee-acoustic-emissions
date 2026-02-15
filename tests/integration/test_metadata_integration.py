@@ -9,8 +9,8 @@ Validates the current (normalized) structure in src/metadata.py:
 from datetime import datetime
 
 import pandas as pd
-import pytest
 from pydantic import ValidationError
+import pytest
 
 from src.metadata import BiomechanicsImport, MovementCycle, Synchronization
 from src.orchestration.processing_log import _timedelta_to_seconds

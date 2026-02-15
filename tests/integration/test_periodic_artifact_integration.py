@@ -7,25 +7,24 @@ Validates that periodic artifact fields propagate correctly through:
 4. Database persistence (new columns exist and accept data)
 """
 
-from datetime import datetime
-
 import pandas as pd
 import pytest
-from sqlalchemy import select
 
 from src.db.models import (
     MovementCycleRecord,
     SynchronizationRecord,
 )
 from src.db.repository import Repository
-from src.metadata import MovementCycle, Synchronization
 
 
 class TestPeriodicArtifactDatabaseColumns:
     """Verify periodic artifact columns exist and accept real values in the DB."""
 
     def test_sync_periodic_columns_persist_true_values(
-        self, db_session, synchronization_factory, audio_processing_factory,
+        self,
+        db_session,
+        synchronization_factory,
+        audio_processing_factory,
         biomechanics_import_factory,
     ):
         """Sync record should store periodic_artifact_detected=True with segments."""
@@ -64,7 +63,10 @@ class TestPeriodicArtifactDatabaseColumns:
         assert len(record.periodic_artifact_segments_ch1) == 2  # [1.0, 3.5]
 
     def test_sync_periodic_columns_default_false(
-        self, db_session, synchronization_factory, audio_processing_factory,
+        self,
+        db_session,
+        synchronization_factory,
+        audio_processing_factory,
         biomechanics_import_factory,
     ):
         """Sync record should default periodic fields to False/None."""
@@ -88,8 +90,12 @@ class TestPeriodicArtifactDatabaseColumns:
         assert record.periodic_artifact_segments is None
 
     def test_cycle_periodic_columns_persist_true_values(
-        self, db_session, movement_cycle_factory, audio_processing_factory,
-        synchronization_factory, biomechanics_import_factory,
+        self,
+        db_session,
+        movement_cycle_factory,
+        audio_processing_factory,
+        synchronization_factory,
+        biomechanics_import_factory,
     ):
         """Cycle record should store periodic fail flags and timestamps."""
         repo = Repository(db_session)
@@ -137,8 +143,12 @@ class TestPeriodicArtifactDatabaseColumns:
         assert len(record.audio_artifact_periodic_timestamps_ch1) == 2
 
     def test_cycle_periodic_columns_default_false(
-        self, db_session, movement_cycle_factory, audio_processing_factory,
-        synchronization_factory, biomechanics_import_factory,
+        self,
+        db_session,
+        movement_cycle_factory,
+        audio_processing_factory,
+        synchronization_factory,
+        biomechanics_import_factory,
     ):
         """Cycle record should default periodic fields to False/None."""
         repo = Repository(db_session)
@@ -177,7 +187,10 @@ class TestPeriodicArtifactExcelReport:
     """Verify periodic artifact columns appear in Excel reports."""
 
     def test_sync_sheet_includes_periodic_columns(
-        self, db_session, synchronization_factory, audio_processing_factory,
+        self,
+        db_session,
+        synchronization_factory,
+        audio_processing_factory,
         biomechanics_import_factory,
     ):
         """Synchronization Excel sheet should contain periodic artifact columns."""
@@ -218,13 +231,16 @@ class TestPeriodicArtifactExcelReport:
         ]
         for col in expected_columns:
             assert col in sync_sheet.columns, (
-                f"Missing column '{col}' in Synchronization sheet. "
-                f"Available: {list(sync_sheet.columns)}"
+                f"Missing column '{col}' in Synchronization sheet. Available: {list(sync_sheet.columns)}"
             )
 
     def test_cycles_sheet_includes_periodic_columns(
-        self, db_session, movement_cycle_factory, audio_processing_factory,
-        synchronization_factory, biomechanics_import_factory,
+        self,
+        db_session,
+        movement_cycle_factory,
+        audio_processing_factory,
+        synchronization_factory,
+        biomechanics_import_factory,
     ):
         """Movement Cycles Excel sheet should contain periodic artifact columns."""
         from src.reports.report_generator import ReportGenerator
@@ -272,26 +288,21 @@ class TestPeriodicArtifactExcelReport:
         ]
         for col in expected_columns:
             assert col in cycles_sheet.columns, (
-                f"Missing column '{col}' in Movement Cycles sheet. "
-                f"Available: {list(cycles_sheet.columns)}"
+                f"Missing column '{col}' in Movement Cycles sheet. Available: {list(cycles_sheet.columns)}"
             )
 
 
 class TestPeriodicArtifactFactoryDefaults:
     """Verify factory fixtures produce valid objects with periodic fields."""
 
-    def test_synchronization_factory_includes_periodic_fields(
-        self, synchronization_factory
-    ):
+    def test_synchronization_factory_includes_periodic_fields(self, synchronization_factory):
         """Default sync factory should include periodic artifact fields."""
         sync = synchronization_factory()
         assert hasattr(sync, "periodic_artifact_detected")
         assert sync.periodic_artifact_detected is False
         assert sync.periodic_artifact_segments is None
 
-    def test_synchronization_factory_accepts_periodic_overrides(
-        self, synchronization_factory
-    ):
+    def test_synchronization_factory_accepts_periodic_overrides(self, synchronization_factory):
         """Sync factory should accept periodic artifact overrides."""
         sync = synchronization_factory(
             periodic_artifact_detected=True,
@@ -303,18 +314,14 @@ class TestPeriodicArtifactFactoryDefaults:
         assert sync.periodic_artifact_detected_ch2 is True
         assert sync.periodic_artifact_segments == [(5.0, 10.0)]
 
-    def test_movement_cycle_factory_includes_periodic_fields(
-        self, movement_cycle_factory
-    ):
+    def test_movement_cycle_factory_includes_periodic_fields(self, movement_cycle_factory):
         """Default cycle factory should include periodic artifact fields."""
         cycle = movement_cycle_factory()
         assert hasattr(cycle, "audio_artifact_periodic_fail")
         assert cycle.audio_artifact_periodic_fail is False
         assert cycle.audio_artifact_periodic_timestamps is None
 
-    def test_movement_cycle_factory_accepts_periodic_overrides(
-        self, movement_cycle_factory
-    ):
+    def test_movement_cycle_factory_accepts_periodic_overrides(self, movement_cycle_factory):
         """Cycle factory should accept periodic artifact overrides."""
         cycle = movement_cycle_factory(
             audio_artifact_periodic_fail=True,
@@ -335,9 +342,9 @@ class TestContinuousArtifactThreshold:
         from src.audio.raw_qc import _classify_artifact_type
 
         intervals = [
-            (0.0, 3.9),   # 3.9s -> Intermittent (< 4.0)
-            (5.0, 9.1),   # 4.1s -> Continuous (>= 4.0)
-            (10.0, 10.5), # 0.5s -> Intermittent
+            (0.0, 3.9),  # 3.9s -> Intermittent (< 4.0)
+            (5.0, 9.1),  # 4.1s -> Continuous (>= 4.0)
+            (10.0, 10.5),  # 0.5s -> Intermittent
         ]
 
         types = _classify_artifact_type(intervals)
@@ -362,6 +369,7 @@ class TestQCVersionsBumped:
             BIOMECH_QC_VERSION,
             CYCLE_QC_VERSION,
         )
+
         assert AUDIO_QC_VERSION == 2, "Audio QC should be v2"
         assert BIOMECH_QC_VERSION == 2, "Biomech QC should be v2"
         assert CYCLE_QC_VERSION == 2, "Cycle QC should be v2"
@@ -389,7 +397,7 @@ class TestPerformSyncQCReturnsSyncQCOutput:
 
     def test_return_is_sync_qc_output(self, syncd_walk, tmp_path):
         """perform_sync_qc should return a SyncQCOutput dataclass."""
-        from src.synchronization.quality_control import perform_sync_qc, SyncQCOutput
+        from src.synchronization.quality_control import SyncQCOutput, perform_sync_qc
 
         synced_dir = tmp_path / "Synced"
         synced_dir.mkdir()

@@ -6,7 +6,7 @@ that differ by maneuver type (walking, sit-to-stand, flexion-extension).
 
 from __future__ import annotations
 
-from typing import Literal, Optional
+from typing import Literal
 
 import numpy as np
 import pandas as pd
@@ -18,7 +18,7 @@ class MovementCycleExtractor:
     def __init__(
         self,
         maneuver: Literal["walk", "sit_to_stand", "flexion_extension"],
-        speed: Optional[Literal["slow", "medium", "fast"]] = None,
+        speed: Literal["slow", "medium", "fast"] | None = None,
     ):
         """Initialize extractor for a specific maneuver type.
 
@@ -97,15 +97,11 @@ class MovementCycleExtractor:
         # Find local minima (heel strike events) by inverting signal and finding peaks
         # Use distance parameter to ensure peaks are at least 0.8 seconds apart
         dt = synced_df["tt"].iloc[1] - synced_df["tt"].iloc[0]
-        dt_seconds = dt.total_seconds() if hasattr(dt, 'total_seconds') else float(dt)
+        dt_seconds = dt.total_seconds() if hasattr(dt, "total_seconds") else float(dt)
         sample_rate = 1 / dt_seconds
-        min_peak_distance = int(
-            0.8 * sample_rate
-        )  # 0.8 seconds minimum between heel strikes
+        min_peak_distance = int(0.8 * sample_rate)  # 0.8 seconds minimum between heel strikes
 
-        minima_indices, _ = find_peaks(
-            -knee_angle_smooth, distance=min_peak_distance, prominence=5
-        )
+        minima_indices, _ = find_peaks(-knee_angle_smooth, distance=min_peak_distance, prominence=5)
 
         if len(minima_indices) < 2:
             return []
@@ -124,16 +120,12 @@ class MovementCycleExtractor:
                 # Include the endpoint only for the last cycle to avoid off-by-one
                 # under-coverage without duplicating shared boundaries across cycles.
                 end_slice = end_idx + 1 if i == (len(minima_indices) - 2) else end_idx
-                cycle_df = synced_df.iloc[start_idx:end_slice].reset_index(
-                    drop=True
-                )
+                cycle_df = synced_df.iloc[start_idx:end_slice].reset_index(drop=True)
                 if len(cycle_df) > 10:  # Minimum cycle length
                     cycles.append(cycle_df)
         return cycles
 
-    def _extract_sit_to_stand_cycles(
-        self, synced_df: pd.DataFrame
-    ) -> list[pd.DataFrame]:
+    def _extract_sit_to_stand_cycles(self, synced_df: pd.DataFrame) -> list[pd.DataFrame]:
         """Extract sit-to-stand cycles.
 
         For sit-to-stand maneuvers, cycles are segmented by standing phases
@@ -154,13 +146,11 @@ class MovementCycleExtractor:
         # Find minima (standing positions - low knee angle)
         # Standing phases should be at least 2 seconds apart
         dt = synced_df["tt"].iloc[1] - synced_df["tt"].iloc[0]
-        dt_seconds = dt.total_seconds() if hasattr(dt, 'total_seconds') else float(dt)
+        dt_seconds = dt.total_seconds() if hasattr(dt, "total_seconds") else float(dt)
         sample_rate = 1 / dt_seconds
         min_peak_distance = int(2.0 * sample_rate)
 
-        standing_indices, _ = find_peaks(
-            -knee_angle, distance=min_peak_distance, prominence=20
-        )
+        standing_indices, _ = find_peaks(-knee_angle, distance=min_peak_distance, prominence=20)
 
         if len(standing_indices) < 1:
             # No clear cycles, return entire dataframe as single cycle
@@ -181,9 +171,7 @@ class MovementCycleExtractor:
 
         return cycles
 
-    def _extract_flexion_extension_cycles(
-        self, synced_df: pd.DataFrame
-    ) -> list[pd.DataFrame]:
+    def _extract_flexion_extension_cycles(self, synced_df: pd.DataFrame) -> list[pd.DataFrame]:
         """Extract flexion-extension cycles.
 
         A complete cycle consists of extension (minimum angle) → flexion (maximum angle) → extension.
@@ -200,7 +188,7 @@ class MovementCycleExtractor:
         # Minimum distance is 90% of expected cycle time to avoid double-counting while
         # still detecting slightly faster cycles (e.g., 1.8s for 2s cycles, 4.5s for 5s cycles)
         dt = synced_df["tt"].iloc[1] - synced_df["tt"].iloc[0]
-        dt_seconds = dt.total_seconds() if hasattr(dt, 'total_seconds') else float(dt)
+        dt_seconds = dt.total_seconds() if hasattr(dt, "total_seconds") else float(dt)
         sample_rate = 1 / dt_seconds
         min_peak_distance = int(1.8 * sample_rate)
 
@@ -248,9 +236,7 @@ class MovementCycleExtractor:
 
         # Remove consecutive duplicates
         if minima:
-            minima = [minima[0]] + [
-                m for i, m in enumerate(minima[1:], 1) if m != minima[i - 1]
-            ]
+            minima = [minima[0]] + [m for i, m in enumerate(minima[1:], 1) if m != minima[i - 1]]
 
         return minima
 
@@ -276,9 +262,7 @@ class MovementCycleExtractor:
 
         # Remove consecutive duplicates
         if maxima:
-            maxima = [maxima[0]] + [
-                m for i, m in enumerate(maxima[1:], 1) if m != maxima[i - 1]
-            ]
+            maxima = [maxima[0]] + [m for i, m in enumerate(maxima[1:], 1) if m != maxima[i - 1]]
 
         return maxima
 
@@ -286,7 +270,7 @@ class MovementCycleExtractor:
 def extract_movement_cycles(
     synced_df: pd.DataFrame,
     maneuver: Literal["walk", "sit_to_stand", "flexion_extension"],
-    speed: Optional[Literal["slow", "medium", "fast"]] = None,
+    speed: Literal["slow", "medium", "fast"] | None = None,
 ) -> list[pd.DataFrame]:
     """Convenience function to extract movement cycles from synchronized data.
 

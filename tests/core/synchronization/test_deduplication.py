@@ -6,17 +6,8 @@ These tests validate the fixes for:
 3. Correct aggregation in Excel reports (per-maneuver, not across all maneuvers)
 """
 
-from pathlib import Path
-
 import pandas as pd
-import pytest
 
-from src.metadata import (
-    AudioProcessing,
-    BiomechanicsImport,
-    MovementCycle,
-    Synchronization,
-)
 from src.reports.report_generator import ReportGenerator
 
 
@@ -34,23 +25,17 @@ class TestSyncDeduplication:
     ):
         """Test that sync count in Summary sheet uses DISTINCT on sync_file_name."""
         # Create audio and biomechanics records
-        audio = audio_processing_factory(
-            study="AOA", study_id=5001, knee="right", maneuver="walk"
-        )
+        audio = audio_processing_factory(study="AOA", study_id=5001, knee="right", maneuver="walk")
         audio_record = repository.save_audio_processing(audio)
         db_session.commit()
 
-        biomech = biomechanics_import_factory(
-            study="AOA", study_id=5001, knee="right", maneuver="walk"
-        )
-        biomech_record = repository.save_biomechanics_import(
-            biomech, audio_processing_id=audio_record.id
-        )
+        biomech = biomechanics_import_factory(study="AOA", study_id=5001, knee="right", maneuver="walk")
+        biomech_record = repository.save_biomechanics_import(biomech, audio_processing_id=audio_record.id)
         db_session.commit()
 
         # Create multiple sync records with SAME sync_file_name (simulating duplicate)
         sync_file_name = "AOA5001_walk_Pass0001_sync.pkl"
-        for i in range(3):  # Add 3 records with same sync_file_name
+        for _i in range(3):  # Add 3 records with same sync_file_name
             sync = synchronization_factory(
                 study="AOA",
                 study_id=5001,
@@ -96,23 +81,17 @@ class TestSyncDeduplication:
         tmp_path,
     ):
         """Test that Synchronization sheet shows only unique sync files."""
-        audio = audio_processing_factory(
-            study="AOA", study_id=5002, knee="left", maneuver="sts"
-        )
+        audio = audio_processing_factory(study="AOA", study_id=5002, knee="left", maneuver="sts")
         audio_record = repository.save_audio_processing(audio)
         db_session.commit()
 
-        biomech = biomechanics_import_factory(
-            study="AOA", study_id=5002, knee="left", maneuver="sts"
-        )
-        biomech_record = repository.save_biomechanics_import(
-            biomech, audio_processing_id=audio_record.id
-        )
+        biomech = biomechanics_import_factory(study="AOA", study_id=5002, knee="left", maneuver="sts")
+        biomech_record = repository.save_biomechanics_import(biomech, audio_processing_id=audio_record.id)
         db_session.commit()
 
         # Create 3 records with same sync_file_name
         sync_file_name = "AOA5002_sts_sync.pkl"
-        for i in range(3):
+        for _i in range(3):
             sync = synchronization_factory(
                 study="AOA",
                 study_id=5002,
@@ -145,8 +124,7 @@ class TestSyncDeduplication:
 
         # Should have only 1 row (deduplicated)
         assert len(sync_sheet) == 1, (
-            f"Expected 1 unique sync record, but got {len(sync_sheet)}. "
-            "Sync sheet deduplication failed."
+            f"Expected 1 unique sync record, but got {len(sync_sheet)}. Sync sheet deduplication failed."
         )
 
 
@@ -164,18 +142,12 @@ class TestMovementCyclePersistence:
         tmp_path,
     ):
         """Test that Cycles sheet is populated when movement cycles exist in database."""
-        audio = audio_processing_factory(
-            study="AOA", study_id=5003, knee="right", maneuver="fe"
-        )
+        audio = audio_processing_factory(study="AOA", study_id=5003, knee="right", maneuver="fe")
         audio_record = repository.save_audio_processing(audio)
         db_session.commit()
 
-        biomech = biomechanics_import_factory(
-            study="AOA", study_id=5003, knee="right", maneuver="fe"
-        )
-        biomech_record = repository.save_biomechanics_import(
-            biomech, audio_processing_id=audio_record.id
-        )
+        biomech = biomechanics_import_factory(study="AOA", study_id=5003, knee="right", maneuver="fe")
+        biomech_record = repository.save_biomechanics_import(biomech, audio_processing_id=audio_record.id)
         db_session.commit()
 
         sync = synchronization_factory(
@@ -248,18 +220,12 @@ class TestMovementCyclePersistence:
         tmp_path,
     ):
         """Test that Cycles sheet includes 'Is Outlier' column for QC classification."""
-        audio = audio_processing_factory(
-            study="AOA", study_id=5004, knee="left", maneuver="walk"
-        )
+        audio = audio_processing_factory(study="AOA", study_id=5004, knee="left", maneuver="walk")
         audio_record = repository.save_audio_processing(audio)
         db_session.commit()
 
-        biomech = biomechanics_import_factory(
-            study="AOA", study_id=5004, knee="left", maneuver="walk"
-        )
-        biomech_record = repository.save_biomechanics_import(
-            biomech, audio_processing_id=audio_record.id
-        )
+        biomech = biomechanics_import_factory(study="AOA", study_id=5004, knee="left", maneuver="walk")
+        biomech_record = repository.save_biomechanics_import(biomech, audio_processing_id=audio_record.id)
         db_session.commit()
 
         sync = synchronization_factory(
@@ -327,21 +293,17 @@ class TestMovementCyclePersistence:
         cycles_sheet = pd.read_excel(output_path, sheet_name="Cycles")
 
         # Should have "Is Outlier" column
-        assert "Is Outlier" in cycles_sheet.columns, (
-            "Cycles sheet missing 'Is Outlier' column for QC classification"
-        )
+        assert "Is Outlier" in cycles_sheet.columns, "Cycles sheet missing 'Is Outlier' column for QC classification"
 
         # Check counts: 3 should be False, 2 should be True
         outlier_count = cycles_sheet["Is Outlier"].sum()
         assert outlier_count == 2, (
-            f"Expected 2 outlier cycles, got {outlier_count}. "
-            "Outlier classification not properly persisted."
+            f"Expected 2 outlier cycles, got {outlier_count}. Outlier classification not properly persisted."
         )
 
         clean_count = (~cycles_sheet["Is Outlier"]).sum()
         assert clean_count == 3, (
-            f"Expected 3 clean cycles, got {clean_count}. "
-            "Clean cycle classification not properly persisted."
+            f"Expected 3 clean cycles, got {clean_count}. Clean cycle classification not properly persisted."
         )
 
 
@@ -359,15 +321,11 @@ class TestAggregationPerManeuver:
     ):
         """Test that Summary sheet counts only sync records for requested maneuver."""
         # Create audio/biomech for walk
-        audio_walk = audio_processing_factory(
-            study="AOA", study_id=5005, knee="right", maneuver="walk"
-        )
+        audio_walk = audio_processing_factory(study="AOA", study_id=5005, knee="right", maneuver="walk")
         audio_walk_record = repository.save_audio_processing(audio_walk)
         db_session.commit()
 
-        biomech_walk = biomechanics_import_factory(
-            study="AOA", study_id=5005, knee="right", maneuver="walk"
-        )
+        biomech_walk = biomechanics_import_factory(study="AOA", study_id=5005, knee="right", maneuver="walk")
         biomech_walk_record = repository.save_biomechanics_import(
             biomech_walk, audio_processing_id=audio_walk_record.id
         )
@@ -394,18 +352,12 @@ class TestAggregationPerManeuver:
 
         # Create audio/biomech for STS (different participant or same?)
         # For this test, let's use same participant so we can verify filtering
-        audio_sts = audio_processing_factory(
-            study="AOA", study_id=5005, knee="right", maneuver="sts"
-        )
+        audio_sts = audio_processing_factory(study="AOA", study_id=5005, knee="right", maneuver="sts")
         audio_sts_record = repository.save_audio_processing(audio_sts)
         db_session.commit()
 
-        biomech_sts = biomechanics_import_factory(
-            study="AOA", study_id=5005, knee="right", maneuver="sts"
-        )
-        biomech_sts_record = repository.save_biomechanics_import(
-            biomech_sts, audio_processing_id=audio_sts_record.id
-        )
+        biomech_sts = biomechanics_import_factory(study="AOA", study_id=5005, knee="right", maneuver="sts")
+        biomech_sts_record = repository.save_biomechanics_import(biomech_sts, audio_processing_id=audio_sts_record.id)
         db_session.commit()
 
         # Create 1 sync record for STS

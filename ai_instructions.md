@@ -315,11 +315,10 @@ The project uses the following dependencies:
 - `pydantic==2.12.4` - Data validation and modeling
 
 **Development Dependencies** (`dev-requirements.txt`):
-- `black==25.9.0` - Code formatting
-- `isort==7.0.0` - Import sorting
-- `pytest==8.4.2` - Testing framework
-- `mypy==1.8.0` - Type checking
-- `flake8==6.1.0` - Linting
+- `ruff>=0.9` - Linting & formatting (replaces black, isort, flake8)
+- `mypy>=1.15` - Type checking (with pydantic plugin)
+- `pytest>=8.4` - Testing framework
+- `pre-commit>=4.1` - Pre-commit hooks
 
 ### Installation Steps
 
@@ -484,10 +483,10 @@ pytest tests/ -v -m "not slow"
 
 ### Code Style
 
-- **Formatting**: Use `black` for auto-formatting
-- **Imports**: Use `isort` for consistent import ordering
-- **Type Hints**: Prefer type annotations; use `mypy` for static type checking
-- **Linting**: Follow `flake8` rules
+- **Formatting & Linting**: Use `ruff` (replaces black, isort, flake8). Configured in `pyproject.toml`.
+- **Type Hints**: Prefer type annotations; use `mypy` (with pydantic plugin) for static type checking
+- **Pre-commit hooks**: `pre-commit run --all-files` runs trailing-whitespace, end-of-file-fixer, ruff, ruff-format, and mypy
+- **Config files**: `pyproject.toml` (ruff, mypy, pytest) + `.pre-commit-config.yaml`
 
 ### Documentation
 
@@ -512,6 +511,24 @@ pytest tests/ -v -m "not slow"
 - All tests should pass before commits
 - Use descriptive test names: `test_<function>_<scenario>`
 - Use pytest fixtures for common setup (see `conftest.py`)
+
+### Live Validation Requirement
+
+**Any significant project-wide testing must include live validation** against the sample participant directory. Unit tests alone cannot catch integration issues with real file I/O, Excel parsing, and data edge cases.
+
+1. **Process** a participant end-to-end:
+   ```bash
+   python cli/process_directory.py /Users/spiewart/kae_signal_processing_ml/sample_project_directory/ \
+     --participant 1013 --entrypoint bin --persist-to-db
+   ```
+
+2. **Re-process** the same participant to verify idempotency (soft-delete + re-create):
+   ```bash
+   python cli/process_directory.py /Users/spiewart/kae_signal_processing_ml/sample_project_directory/ \
+     --participant 1013 --entrypoint bin --persist-to-db
+   ```
+
+Both runs should complete without errors. Re-processing validates that the `is_active` soft-delete mechanism works correctly.
 
 ---
 

@@ -4,7 +4,6 @@
 import argparse
 import logging
 from pathlib import Path
-from typing import Optional
 
 from src.analysis.ml_cli_helpers import (
     SCRIPTED_MANEUVERS,
@@ -19,15 +18,22 @@ DEFAULT_DEMOGRAPHICS = "Winter 2023 Pilot Participant Demographics.xlsx"
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run ML model for knee pain (participant-level)")
     parser.add_argument("project_data", type=Path, help="Path to project directory containing participant folders")
-    parser.add_argument("--demographics", type=Path, default=Path(DEFAULT_PROJECT_DATA) / DEFAULT_DEMOGRAPHICS, help=f"Path to demographics Excel (default: {DEFAULT_PROJECT_DATA}/{DEFAULT_DEMOGRAPHICS})")
+    parser.add_argument(
+        "--demographics",
+        type=Path,
+        default=Path(DEFAULT_PROJECT_DATA) / DEFAULT_DEMOGRAPHICS,
+        help=f"Path to demographics Excel (default: {DEFAULT_PROJECT_DATA}/{DEFAULT_DEMOGRAPHICS})",
+    )
     parser.add_argument("--maneuvers", nargs="+", help="Optional maneuver filter (e.g., walk sit_to_stand)")
     parser.add_argument("--cycle-type", choices=["clean", "outliers"], default="clean")
     parser.add_argument("--aggregation", choices=["mean", "median", "max", "min"], default="mean")
-    parser.add_argument("--allow-partial-knees", action="store_true", help="Include participants with only one processed knee")
+    parser.add_argument(
+        "--allow-partial-knees", action="store_true", help="Include participants with only one processed knee"
+    )
     return parser
 
 
-def main(argv: Optional[list[str]] = None) -> None:
+def main(argv: list[str] | None = None) -> None:
     parser = build_parser()
     args = parser.parse_args(argv)
 

@@ -12,7 +12,6 @@ Design:
 """
 
 import logging
-from typing import Optional
 
 from sqlalchemy.orm import Session
 
@@ -30,14 +29,14 @@ logger = logging.getLogger(__name__)
 class OrchestrationDatabasePersistence:
     """Handles persistence of orchestration results to PostgreSQL database."""
 
-    def __init__(self, session: Optional[Session] = None):
+    def __init__(self, session: Session | None = None):
         """Initialize persistence layer.
 
         Args:
             session: Optional SQLAlchemy session. If None, persistence is disabled.
         """
         self.session = session
-        self.repository: Optional[Repository] = None
+        self.repository: Repository | None = None
         self.enabled = False
 
         if session is not None:
@@ -51,9 +50,9 @@ class OrchestrationDatabasePersistence:
     def save_audio_processing(
         self,
         audio: AudioProcessing,
-        pkl_file_path: Optional[str] = None,
-        biomechanics_import_id: Optional[int] = None,
-    ) -> Optional[int]:
+        pkl_file_path: str | None = None,
+        biomechanics_import_id: int | None = None,
+    ) -> int | None:
         """Save audio processing record to database.
 
         Args:
@@ -82,8 +81,8 @@ class OrchestrationDatabasePersistence:
     def save_biomechanics_import(
         self,
         biomech: BiomechanicsImport,
-        audio_processing_id: Optional[int] = None,
-    ) -> Optional[int]:
+        audio_processing_id: int | None = None,
+    ) -> int | None:
         """Save biomechanics import record to database.
 
         Args:
@@ -112,8 +111,8 @@ class OrchestrationDatabasePersistence:
         sync: Synchronization,
         audio_processing_id: int,
         biomechanics_import_id: int,
-        sync_file_path: Optional[str] = None,
-    ) -> Optional[int]:
+        sync_file_path: str | None = None,
+    ) -> int | None:
         """Save synchronization record to database.
 
         Args:
@@ -145,10 +144,10 @@ class OrchestrationDatabasePersistence:
         self,
         cycle: MovementCycle,
         audio_processing_id: int,
-        biomechanics_import_id: Optional[int] = None,
-        synchronization_id: Optional[int] = None,
-        cycles_file_path: Optional[str] = None,
-    ) -> Optional[int]:
+        biomechanics_import_id: int | None = None,
+        synchronization_id: int | None = None,
+        cycles_file_path: str | None = None,
+    ) -> int | None:
         """Save movement cycle record to database.
 
         Args:
@@ -187,8 +186,8 @@ class RecordTracker:
 
     def __init__(self):
         """Initialize the tracker."""
-        self.audio_processing_id: Optional[int] = None
-        self.biomechanics_import_id: Optional[int] = None
+        self.audio_processing_id: int | None = None
+        self.biomechanics_import_id: int | None = None
         self.synchronization_ids: dict = {}  # maps pass_number -> sync record ID
         self.movement_cycle_ids: list = []
 
@@ -202,7 +201,7 @@ class RecordTracker:
         self.biomechanics_import_id = record_id
         logger.debug(f"Tracked biomechanics import record: {record_id}")
 
-    def set_synchronization(self, pass_number: Optional[int], record_id: int) -> None:
+    def set_synchronization(self, pass_number: int | None, record_id: int) -> None:
         """Record synchronization record ID (indexed by pass_number for walk maneuvers)."""
         key = pass_number if pass_number is not None else "default"
         self.synchronization_ids[key] = record_id
@@ -213,15 +212,15 @@ class RecordTracker:
         self.movement_cycle_ids.append(record_id)
         logger.debug(f"Tracked movement cycle record: {record_id}")
 
-    def get_audio_processing(self) -> Optional[int]:
+    def get_audio_processing(self) -> int | None:
         """Get audio processing record ID."""
         return self.audio_processing_id
 
-    def get_biomechanics_import(self) -> Optional[int]:
+    def get_biomechanics_import(self) -> int | None:
         """Get biomechanics import record ID."""
         return self.biomechanics_import_id
 
-    def get_synchronization(self, pass_number: Optional[int] = None) -> Optional[int]:
+    def get_synchronization(self, pass_number: int | None = None) -> int | None:
         """Get synchronization record ID."""
         key = pass_number if pass_number is not None else "default"
         return self.synchronization_ids.get(key)

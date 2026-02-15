@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Dict, List, Union
+from typing import Union
 
 from ._utils import (
     attach_normalized_ids,
@@ -11,7 +11,7 @@ from ._utils import (
     read_sheet,
 )
 
-_KOOS_BASE_COLUMNS: List[str] = (
+_KOOS_BASE_COLUMNS: list[str] = (
     [f"s{i}" for i in range(1, 8)]
     + [f"p{i}" for i in range(1, 10)]
     + [f"a{i}" for i in range(1, 18)]
@@ -25,8 +25,8 @@ def _load_knee(
     excel_path: Path,
     sheet_name: str,
     suffix: str,
-    ids: List[int],
-) -> Dict[int, Dict[str, float]]:
+    ids: list[int],
+) -> dict[int, dict[str, float]]:
     df = read_sheet(excel_path, sheet_name)
 
     missing = [c for c in _KOOS_BASE_COLUMNS if c not in df.columns]
@@ -40,7 +40,7 @@ def _load_knee(
     for col in _KOOS_BASE_COLUMNS:
         df[col] = coerce_numeric_column(df[col], col)
 
-    result: Dict[int, Dict[str, float]] = {}
+    result: dict[int, dict[str, float]] = {}
     for _, row in df.iterrows():
         study_id = int(row["study_id"])
         per_id = result.setdefault(study_id, {})
@@ -51,8 +51,8 @@ def _load_knee(
 
 def import_koos(
     excel_path: Union[str, Path],
-    ids: Union[int, str, List[Union[int, str]], None] = None,
-) -> Dict[int, Dict[str, float]]:
+    ids: Union[int, str, list[Union[int, str]], None] = None,
+) -> dict[int, dict[str, float]]:
     """Load KOOS questionnaire scores for each knee.
 
     Reads the "KOOS R Knee" and "KOOS L Knee" sheets and tags every question
@@ -61,7 +61,7 @@ def import_koos(
     path = Path(excel_path)
     id_list = normalize_id_sequence(ids) if ids is not None else []
 
-    combined: Dict[int, Dict[str, float]] = {}
+    combined: dict[int, dict[str, float]] = {}
 
     for sheet_name, suffix in [("KOOS R Knee", "r_knee"), ("KOOS L Knee", "l_knee")]:
         knee_data = _load_knee(path, sheet_name, suffix, id_list)

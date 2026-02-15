@@ -8,11 +8,7 @@ architecture. The new architecture uses class-based processing with proper state
 management across stages.
 """
 
-import logging
-from pathlib import Path
-
 import pandas as pd
-import pytest
 
 from src.orchestration.participant import process_participant
 
@@ -66,12 +62,7 @@ class TestEntrypointLogic:
         (participant_dir / "Motion Capture").mkdir()
 
         # Process with sync entrypoint
-        result = process_participant(
-            participant_dir,
-            entrypoint="sync",
-            knee="left",
-            maneuver="walk"
-        )
+        result = process_participant(participant_dir, entrypoint="sync", knee="left", maneuver="walk")
 
         # Should return boolean result
         assert isinstance(result, bool)
@@ -86,19 +77,11 @@ class TestEntrypointLogic:
         synced_dir.mkdir(parents=True)
 
         synced_file = synced_dir / "synced_data.pkl"
-        df = pd.DataFrame({
-            "ch1": [1, 2, 3],
-            "KneeAngle": [0, 45, 90]
-        })
+        df = pd.DataFrame({"ch1": [1, 2, 3], "KneeAngle": [0, 45, 90]})
         df.to_pickle(synced_file)
 
         # Process with cycles entrypoint
-        result = process_participant(
-            participant_dir,
-            entrypoint="cycles",
-            knee="left",
-            maneuver="walk"
-        )
+        result = process_participant(participant_dir, entrypoint="cycles", knee="left", maneuver="walk")
 
         # Should return boolean result
         assert isinstance(result, bool)
@@ -129,12 +112,7 @@ class TestEntrypointLogic:
         (participant_dir / "Left Knee" / "Walking").mkdir(parents=True)
 
         # Run cycles - should return True (no synced files is not an error)
-        result = process_participant(
-            participant_dir,
-            entrypoint="cycles",
-            knee="left",
-            maneuver="walk"
-        )
+        result = process_participant(participant_dir, entrypoint="cycles", knee="left", maneuver="walk")
 
         # Should succeed even without synced files
         assert isinstance(result, bool)
@@ -179,9 +157,9 @@ class TestEntrypointIntegration:
 
         # Test each entrypoint
         test_cases = [
-            ("bin", [True, True, True]),      # Run all stages
-            ("sync", [False, True, True]),    # Skip bin, run sync and cycles
-            ("cycles", [False, False, True]), # Run cycles only
+            ("bin", [True, True, True]),  # Run all stages
+            ("sync", [False, True, True]),  # Skip bin, run sync and cycles
+            ("cycles", [False, False, True]),  # Run cycles only
         ]
 
         for entrypoint, expected_runs in test_cases:
@@ -192,6 +170,5 @@ class TestEntrypointIntegration:
 
             actual_runs = [run_bin, run_sync, run_cycles]
             assert actual_runs == expected_runs, (
-                f"Entrypoint '{entrypoint}' should run stages {expected_runs}, "
-                f"got {actual_runs}"
+                f"Entrypoint '{entrypoint}' should run stages {expected_runs}, got {actual_runs}"
             )

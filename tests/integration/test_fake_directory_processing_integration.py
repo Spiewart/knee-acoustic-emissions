@@ -6,7 +6,6 @@ These tests verify end-to-end processing (bin/sync/cycles) and DB/log outputs.
 from pathlib import Path
 
 import pandas as pd
-import pytest
 from sqlalchemy import select
 
 from src.db.models import (
@@ -35,9 +34,7 @@ def _get_latest_log_file(maneuver_dir: Path) -> Path:
 
 
 class TestFakeDirectoryProcessingIntegration:
-    def test_bin_stage_creates_audio_record_and_log(
-        self, fake_participant_directory, use_test_db, db_session
-    ):
+    def test_bin_stage_creates_audio_record_and_log(self, fake_participant_directory, use_test_db, db_session):
         participant_dir = fake_participant_directory["participant_dir"]
 
         success = process_participant(
@@ -49,13 +46,17 @@ class TestFakeDirectoryProcessingIntegration:
         assert success, "Bin stage should succeed with valid .bin files"
 
         study_id = _get_study_id(db_session, "AOA", 1011)
-        audio_records = db_session.execute(
-            select(AudioProcessingRecord).where(
-                AudioProcessingRecord.study_id == study_id,
-                AudioProcessingRecord.knee == "left",
-                AudioProcessingRecord.maneuver == "fe",
+        audio_records = (
+            db_session.execute(
+                select(AudioProcessingRecord).where(
+                    AudioProcessingRecord.study_id == study_id,
+                    AudioProcessingRecord.knee == "left",
+                    AudioProcessingRecord.maneuver == "fe",
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
 
         assert len(audio_records) == 1, "Should create exactly one audio record"
         audio = audio_records[0]
@@ -70,9 +71,7 @@ class TestFakeDirectoryProcessingIntegration:
         assert not audio_sheet.empty, "Audio sheet should have data"
         assert audio_sheet.iloc[0]["Processing Status"] == "success"
 
-    def test_bin_stage_is_idempotent_for_audio_record(
-        self, fake_participant_directory, use_test_db, db_session
-    ):
+    def test_bin_stage_is_idempotent_for_audio_record(self, fake_participant_directory, use_test_db, db_session):
         participant_dir = fake_participant_directory["participant_dir"]
 
         success_1 = process_participant(
@@ -92,19 +91,21 @@ class TestFakeDirectoryProcessingIntegration:
         assert success_2, "Second bin stage should succeed"
 
         study_id = _get_study_id(db_session, "AOA", 1011)
-        audio_records = db_session.execute(
-            select(AudioProcessingRecord).where(
-                AudioProcessingRecord.study_id == study_id,
-                AudioProcessingRecord.knee == "left",
-                AudioProcessingRecord.maneuver == "fe",
+        audio_records = (
+            db_session.execute(
+                select(AudioProcessingRecord).where(
+                    AudioProcessingRecord.study_id == study_id,
+                    AudioProcessingRecord.knee == "left",
+                    AudioProcessingRecord.maneuver == "fe",
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
 
         assert len(audio_records) == 1, "Should not create duplicate audio records"
 
-    def test_sync_stage_creates_sync_records(
-        self, fake_participant_directory, use_test_db, db_session
-    ):
+    def test_sync_stage_creates_sync_records(self, fake_participant_directory, use_test_db, db_session):
         participant_dir = fake_participant_directory["participant_dir"]
 
         success = process_participant(
@@ -124,19 +125,21 @@ class TestFakeDirectoryProcessingIntegration:
             )
         ).scalar_one()
 
-        sync_records = db_session.execute(
-            select(SynchronizationRecord).where(
-                SynchronizationRecord.study_id == study_id,
-                SynchronizationRecord.audio_processing_id == audio_record.id,
+        sync_records = (
+            db_session.execute(
+                select(SynchronizationRecord).where(
+                    SynchronizationRecord.study_id == study_id,
+                    SynchronizationRecord.audio_processing_id == audio_record.id,
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
 
         assert sync_records, "Should create synchronization records"
         assert sync_records[0].processing_status == "success"
 
-    def test_cycles_stage_creates_cycle_records(
-        self, fake_participant_directory, use_test_db, db_session
-    ):
+    def test_cycles_stage_creates_cycle_records(self, fake_participant_directory, use_test_db, db_session):
         participant_dir = fake_participant_directory["participant_dir"]
 
         # Ensure bin and sync stages ran to produce synced data
@@ -173,12 +176,16 @@ class TestFakeDirectoryProcessingIntegration:
             )
         ).scalar_one()
 
-        cycle_records = db_session.execute(
-            select(MovementCycleRecord).where(
-                MovementCycleRecord.study_id == study_id,
-                MovementCycleRecord.audio_processing_id == audio_record.id,
+        cycle_records = (
+            db_session.execute(
+                select(MovementCycleRecord).where(
+                    MovementCycleRecord.study_id == study_id,
+                    MovementCycleRecord.audio_processing_id == audio_record.id,
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
 
         # Some fixtures may not include Knee Angle Z; ensure cycles stage runs without error
         assert cycle_records is not None, "Cycle query should succeed"

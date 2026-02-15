@@ -7,13 +7,13 @@ This module provides performance optimization strategies for database persistenc
 - Monitoring and metrics collection
 """
 
-import asyncio
-import logging
-import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from collections.abc import Callable
+from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Optional
+import logging
+import time
+from typing import Any
 
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import QueuePool
@@ -45,38 +45,22 @@ class PersistenceMetrics:
     @property
     def avg_audio_time_ms(self) -> float:
         """Average time per audio save."""
-        return (
-            self.total_audio_time_ms / self.total_audio_saves
-            if self.total_audio_saves > 0
-            else 0.0
-        )
+        return self.total_audio_time_ms / self.total_audio_saves if self.total_audio_saves > 0 else 0.0
 
     @property
     def avg_biomech_time_ms(self) -> float:
         """Average time per biomech save."""
-        return (
-            self.total_biomech_time_ms / self.total_biomech_saves
-            if self.total_biomech_saves > 0
-            else 0.0
-        )
+        return self.total_biomech_time_ms / self.total_biomech_saves if self.total_biomech_saves > 0 else 0.0
 
     @property
     def avg_sync_time_ms(self) -> float:
         """Average time per sync save."""
-        return (
-            self.total_sync_time_ms / self.total_sync_saves
-            if self.total_sync_saves > 0
-            else 0.0
-        )
+        return self.total_sync_time_ms / self.total_sync_saves if self.total_sync_saves > 0 else 0.0
 
     @property
     def avg_cycle_time_ms(self) -> float:
         """Average time per cycle save."""
-        return (
-            self.total_cycle_time_ms / self.total_cycle_saves
-            if self.total_cycle_saves > 0
-            else 0.0
-        )
+        return self.total_cycle_time_ms / self.total_cycle_saves if self.total_cycle_saves > 0 else 0.0
 
     def summary(self) -> str:
         """Generate metrics summary."""
@@ -101,7 +85,7 @@ class PerformanceOptimizedPersistence:
 
     def __init__(
         self,
-        db_session: Optional[Session] = None,
+        db_session: Session | None = None,
         batch_size: int = 100,
         thread_pool_size: int = 4,
         enable_connection_pooling: bool = True,
@@ -133,10 +117,8 @@ class PerformanceOptimizedPersistence:
             engine = session.get_bind()
 
             # Configure pool if not already configured
-            if not isinstance(engine.pool, QueuePool):
-                logger.info(
-                    "Configuring QueuePool: size=5, max_overflow=10, timeout=30"
-                )
+            if not isinstance(engine.pool, QueuePool):  # type: ignore[union-attr]
+                logger.info("Configuring QueuePool: size=5, max_overflow=10, timeout=30")
                 # Note: Pool is typically configured at engine creation
                 # This is informational logging if already configured
         except Exception as e:
@@ -159,9 +141,9 @@ class PerformanceOptimizedPersistence:
 
     def batch_insert_cycles(
         self,
-        cycles: List[Dict[str, Any]],
-        save_func: Callable[[Dict[str, Any]], Optional[int]],
-    ) -> Dict[int, Optional[int]]:
+        cycles: list[dict[str, Any]],
+        save_func: Callable[[dict[str, Any]], int | None],
+    ) -> dict[int, int | None]:
         """Batch insert movement cycles with timing.
 
         Args:
@@ -178,7 +160,7 @@ class PerformanceOptimizedPersistence:
 
         # Process in batches
         for batch_idx in range(0, len(cycles), self.batch_size):
-            batch = cycles[batch_idx:batch_idx + self.batch_size]
+            batch = cycles[batch_idx : batch_idx + self.batch_size]
             batch_start = time.time()
 
             for cycle_offset, cycle_data in enumerate(batch):
@@ -195,8 +177,7 @@ class PerformanceOptimizedPersistence:
 
             batch_time_ms = (time.time() - batch_start) * 1000
             logger.debug(
-                f"Batch {batch_idx//self.batch_size + 1} completed "
-                f"({len(batch)} cycles in {batch_time_ms:.2f}ms)"
+                f"Batch {batch_idx // self.batch_size + 1} completed ({len(batch)} cycles in {batch_time_ms:.2f}ms)"
             )
 
         total_time_ms = (time.time() - start_time) * 1000
@@ -207,9 +188,9 @@ class PerformanceOptimizedPersistence:
 
     def async_save(
         self,
-        save_func: Callable[[], Optional[int]],
+        save_func: Callable[[], int | None],
         operation_name: str = "async_save",
-    ) -> asyncio.Future:
+    ) -> Future[int | None]:
         """Submit persistence operation to thread pool for async execution.
 
         Args:
@@ -219,13 +200,14 @@ class PerformanceOptimizedPersistence:
         Returns:
             Future that will contain the result
         """
+
         def timed_save():
             with self.timing_context(operation_name):
                 return save_func()
 
         return self.thread_pool.submit(timed_save)
 
-    def wait_for_async_saves(self, futures: List[asyncio.Future]) -> List[Optional[int]]:
+    def wait_for_async_saves(self, futures: list[Future[int | None]]) -> list[int | None]:
         """Wait for all async saves to complete.
 
         Args:
@@ -234,7 +216,7 @@ class PerformanceOptimizedPersistence:
         Returns:
             List of saved record IDs
         """
-        results = []
+        results: list[int | None] = []
         for future in as_completed(futures, timeout=300):  # 5 minute timeout
             try:
                 result = future.result()
@@ -293,7 +275,7 @@ class BatchMovementCyclePersister:
 
     def __init__(
         self,
-        db_session: Optional[Session],
+        db_session: Session | None,
         batch_size: int = 100,
     ):
         """Initialize batch cycle persister.
@@ -304,8 +286,8 @@ class BatchMovementCyclePersister:
         """
         self.db_session = db_session
         self.batch_size = batch_size
-        self.cycle_buffer: List[Dict[str, Any]] = []
-        self.pending_fks: Dict[str, int] = {}  # Track FKs across batches
+        self.cycle_buffer: list[dict[str, Any]] = []
+        self.pending_fks: dict[str, int] = {}  # Track FKs across batches
 
     def set_foreign_keys(
         self,
@@ -326,7 +308,7 @@ class BatchMovementCyclePersister:
             "sync_id": sync_id,
         }
 
-    def add_cycle(self, cycle_data: Dict[str, Any]) -> None:
+    def add_cycle(self, cycle_data: dict[str, Any]) -> None:
         """Add cycle to buffer for batch processing.
 
         Args:
@@ -340,7 +322,7 @@ class BatchMovementCyclePersister:
         if len(self.cycle_buffer) >= self.batch_size:
             self.flush()
 
-    def flush(self) -> List[Optional[int]]:
+    def flush(self) -> list[int | None]:
         """Flush buffered cycles to database.
 
         Returns:
@@ -349,12 +331,12 @@ class BatchMovementCyclePersister:
         if not self.cycle_buffer:
             return []
 
-        results = []
+        results: list[int | None] = []
         logger.info(f"Flushing {len(self.cycle_buffer)} buffered cycles")
 
         # In production, would use bulk insert here
         # For now, use individual saves (optimized in future)
-        for cycle_data in self.cycle_buffer:
+        for _cycle_data in self.cycle_buffer:
             if self.db_session:
                 try:
                     # Save individually (bulk insert would be DB-specific)
@@ -398,10 +380,7 @@ def create_optimized_db_session(
     )
 
     logger.info(
-        f"Created optimized DB engine: "
-        f"pool_size={pool_size}, "
-        f"max_overflow={max_overflow}, "
-        f"timeout={pool_timeout}s"
+        f"Created optimized DB engine: pool_size={pool_size}, max_overflow={max_overflow}, timeout={pool_timeout}s"
     )
 
     Session = sessionmaker(bind=engine)

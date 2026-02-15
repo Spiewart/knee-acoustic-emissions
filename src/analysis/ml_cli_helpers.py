@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional, Sequence, Tuple
+from typing import Any, Literal
 
 import numpy as np
 import pandas as pd
@@ -25,7 +26,7 @@ from src.orchestration.participant import (
 
 logger = logging.getLogger(__name__)
 
-SCRIPTED_MANEUVERS: List[str] = ["walk", "sit_to_stand", "flexion_extension"]
+SCRIPTED_MANEUVERS: list[str] = ["walk", "sit_to_stand", "flexion_extension"]
 
 
 def _normalize_knee_label(val: Any) -> str:
@@ -56,9 +57,9 @@ def find_processed_participant_dirs(
     project_dir: Path,
     maneuvers: Sequence[str] = SCRIPTED_MANEUVERS,
     require_both_knees: bool = True,
-) -> List[Tuple[str, Path]]:
+) -> list[tuple[str, Path]]:
     """Return (study_id, participant_dir) for participants with required processed knees."""
-    processed: List[Tuple[str, Path]] = []
+    processed: list[tuple[str, Path]] = []
     for participant_dir in find_participant_directories(project_dir):
         study_id = get_study_id_from_directory(participant_dir)
         left_ok = is_knee_fully_processed(study_id, participant_dir / "Left Knee", "Left", maneuvers)
@@ -128,7 +129,7 @@ def _load_long_format_outcomes(
 def _normalize_and_clean_outcomes(
     df: pd.DataFrame,
     outcome_column: str,
-    knee_label_map: Optional[Dict[str, str]] = None,
+    knee_label_map: dict[str, str] | None = None,
 ) -> pd.DataFrame:
     """Normalize knee labels and convert binary outcomes to numeric.
 
@@ -149,7 +150,7 @@ def _normalize_and_clean_outcomes(
         # Remove common prefixes
         for prefix in ["AOA", "AO", "KAE"]:
             if sval.startswith(prefix):
-                sval = sval[len(prefix):]
+                sval = sval[len(prefix) :]
         return sval
 
     def _normalize(val: Any) -> str:
@@ -196,10 +197,10 @@ def load_knee_outcomes_from_excel(
     excel_path: Path,
     outcome_column: str,
     side_column: str = "Knee",
-    sheet: Optional[str] = None,
-    left_sheet: Optional[str] = None,
-    right_sheet: Optional[str] = None,
-    knee_label_map: Optional[Dict[str, str]] = None,
+    sheet: str | None = None,
+    left_sheet: str | None = None,
+    right_sheet: str | None = None,
+    knee_label_map: dict[str, str] | None = None,
 ) -> pd.DataFrame:
     """Load knee-level outcomes from Excel.
 
@@ -243,9 +244,7 @@ def load_knee_outcomes_from_excel(
     return result
 
 
-def train_with_fallback(
-    X: pd.DataFrame, y: pd.Series, exclude_contralateral_knees: bool = True
-) -> Dict[str, Any]:
+def train_with_fallback(X: pd.DataFrame, y: pd.Series, exclude_contralateral_knees: bool = True) -> dict[str, Any]:
     """Train logistic regression with LOOCV fallback for tiny datasets.
 
     When exclude_contralateral_knees is True and X has a MultiIndex with (study_id, knee),
@@ -283,10 +282,7 @@ def train_with_fallback(
 
                 # Find indices to exclude (contralateral knee of test sample's participant)
                 exclude_mask = np.array(
-                    [
-                        idx[0] == test_study_id and idx[1] == contralateral_knee
-                        for idx in X.index[train_idx]
-                    ]
+                    [idx[0] == test_study_id and idx[1] == contralateral_knee for idx in X.index[train_idx]]
                 )
 
                 if exclude_mask.any():
@@ -308,9 +304,7 @@ def train_with_fallback(
         return {"mode": "loocv", "accuracy": accuracy, "samples": len(y)}
 
     # For larger datasets, use train-test split with contralateral exclusion
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, stratify=y, random_state=42
-    )
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, stratify=y, random_state=42)
 
     # Exclude contralateral knees from training
     if exclude_contralateral_knees and has_knee_index:
@@ -321,7 +315,7 @@ def train_with_fallback(
             test_knees_by_study[study_id] = set(knees)
 
         # Filter training data to exclude contralateral knees
-        exclude_mask = []
+        exclude_mask_list: list[bool] = []
         for idx in X_train.index:
             study_id, knee = idx
             if study_id in test_knees_by_study:
@@ -329,13 +323,13 @@ def train_with_fallback(
                 contralateral_knee = "L" if knee == "R" else "R"
                 # Exclude if this is the contralateral of a knee in test
                 if contralateral_knee in test_knees:
-                    exclude_mask.append(False)
+                    exclude_mask_list.append(False)
                 else:
-                    exclude_mask.append(True)
+                    exclude_mask_list.append(True)
             else:
-                exclude_mask.append(True)
+                exclude_mask_list.append(True)
 
-        exclude_mask = np.array(exclude_mask)
+        exclude_mask = np.array(exclude_mask_list)
         X_train = X_train[exclude_mask]
         y_train = y_train[exclude_mask]
 
@@ -356,7 +350,9 @@ def train_with_fallback(
         "accuracy": acc,
         "samples": len(y),
         "training_samples": len(y_train),
-        "excluded_contralateral": exclude_mask.sum() - len(y_train) if exclude_contralateral_knees and has_knee_index else 0,
+        "excluded_contralateral": exclude_mask.sum() - len(y_train)
+        if exclude_contralateral_knees and has_knee_index
+        else 0,
     }
 
 
@@ -364,11 +360,11 @@ def run_participant_level_pipeline(
     project_dir: Path,
     demographics_path: Path,
     outcome_column: str,
-    participant_ids: List[str],
+    participant_ids: list[str],
     cycle_type: Literal["clean", "outliers"] = "clean",
-    maneuvers: Optional[List[str]] = None,
+    maneuvers: list[str] | None = None,
     aggregation: str = "mean",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Load cycles, extract features, and train participant-level model."""
     from src.analysis.data_loader import prepare_ml_dataset
 
@@ -399,11 +395,11 @@ def run_knee_level_pipeline(
     project_dir: Path,
     outcome_df: pd.DataFrame,
     outcome_column: str,
-    participant_ids: List[str],
+    participant_ids: list[str],
     cycle_type: Literal["clean", "outliers"] = "clean",
-    maneuvers: Optional[List[str]] = None,
+    maneuvers: list[str] | None = None,
     exclude_contralateral_knees: bool = True,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Load cycles, extract features, and train knee-level model."""
     cycles = load_all_participant_cycles(
         project_dir=project_dir,

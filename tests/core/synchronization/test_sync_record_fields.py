@@ -1,6 +1,6 @@
 """Tests for Synchronization class new fields."""
 
-from datetime import datetime, timedelta
+from datetime import datetime
 
 import pandas as pd
 import pytest
@@ -58,6 +58,7 @@ def test_synchronization_has_biomech_guided_fields():
     assert record.bio_selected_sync_time == 2.5
     assert record.contra_bio_selected_sync_time == 3.8
 
+
 def test_synchronization_fields_include_new_values():
     """Test that new fields are populated on the model."""
     record = _create_test_record(
@@ -77,27 +78,29 @@ def test_synchronization_fields_include_new_values():
 def test_create_sync_record_populates_new_fields_from_detection_results():
     """Test that create_sync_record_from_data extracts new fields from detection_results."""
     # Create minimal synced dataframe
-    synced_df = pd.DataFrame({
-        'tt': pd.to_timedelta([0, 1, 2], unit='s'),
-        'ch1': [0.1, 0.2, 0.3],
-        'ch2': [0.1, 0.2, 0.3],
-        'ch3': [0.1, 0.2, 0.3],
-        'ch4': [0.1, 0.2, 0.3],
-    })
+    synced_df = pd.DataFrame(
+        {
+            "tt": pd.to_timedelta([0, 1, 2], unit="s"),
+            "ch1": [0.1, 0.2, 0.3],
+            "ch2": [0.1, 0.2, 0.3],
+            "ch3": [0.1, 0.2, 0.3],
+            "ch4": [0.1, 0.2, 0.3],
+        }
+    )
 
     # Detection results with new fields
     detection_results = {
-        'consensus_time': 2.0,
-        'rms_time': 2.1,
-        'rms_energy': 500.0,
-        'onset_time': 1.9,
-        'onset_magnitude': 100.0,
-        'freq_time': 2.0,
-        'freq_energy': 300.0,
-        'selected_stomp_method': 'biomechanics',
-        'stomp_detection_methods': ['biomechanics'],
-        'bio_selected_time': 2.5,
-        'contra_bio_selected_time': 3.8,
+        "consensus_time": 2.0,
+        "rms_time": 2.1,
+        "rms_energy": 500.0,
+        "onset_time": 1.9,
+        "onset_magnitude": 100.0,
+        "freq_time": 2.0,
+        "freq_energy": 300.0,
+        "selected_stomp_method": "biomechanics",
+        "stomp_detection_methods": ["biomechanics"],
+        "bio_selected_time": 2.5,
+        "contra_bio_selected_time": 3.8,
     }
 
     record = create_sync_record_from_data(
@@ -112,10 +115,9 @@ def test_create_sync_record_populates_new_fields_from_detection_results():
 
     # Verify new fields are populated
     assert record.selected_stomp_method == "biomechanics"
-    assert record.stomp_detection_methods == ['biomechanics']
+    assert record.stomp_detection_methods == ["biomechanics"]
     assert record.bio_selected_sync_time == 2.5
     assert record.contra_bio_selected_sync_time == 3.8
-
 
 
 def test_synchronization_biomech_guided_can_be_none():
@@ -129,23 +131,24 @@ def test_synchronization_biomech_guided_can_be_none():
     assert record.contra_bio_selected_sync_time is None
 
 
-
 def test_create_sync_record_consensus_without_biomech_guided():
     """Test creating a sync record with consensus detection (no biomech-guided fields)."""
-    synced_df = pd.DataFrame({
-        'tt': pd.to_timedelta([0, 1, 2], unit='s'),
-        'ch1': [0.1, 0.2, 0.3],
-        'ch2': [0.1, 0.2, 0.3],
-        'ch3': [0.1, 0.2, 0.3],
-        'ch4': [0.1, 0.2, 0.3],
-    })
+    synced_df = pd.DataFrame(
+        {
+            "tt": pd.to_timedelta([0, 1, 2], unit="s"),
+            "ch1": [0.1, 0.2, 0.3],
+            "ch2": [0.1, 0.2, 0.3],
+            "ch3": [0.1, 0.2, 0.3],
+            "ch4": [0.1, 0.2, 0.3],
+        }
+    )
 
     # Detection results without biomech-guided fields (pure consensus)
     detection_results = {
-        'consensus_time': 2.0,
-        'consensus_methods': ['rms', 'onset'],
-        'rms_time': 2.1,
-        'onset_time': 1.9,
+        "consensus_time": 2.0,
+        "consensus_methods": ["rms", "onset"],
+        "rms_time": 2.1,
+        "onset_time": 1.9,
     }
 
     record = create_sync_record_from_data(
@@ -168,24 +171,25 @@ def test_create_sync_record_consensus_without_biomech_guided():
     assert record.rms_time == 2.1
 
 
-
 def test_synchronization_consensus_method_agreement_span_calculation():
     """Test calculation of method_agreement_span in create_sync_record_from_data."""
-    synced_df = pd.DataFrame({
-        'tt': pd.to_timedelta([0, 1, 2, 3], unit='s'),
-        'ch1': [0.1, 0.2, 0.3, 0.4],
-        'ch2': [0.1, 0.2, 0.3, 0.4],
-        'ch3': [0.1, 0.2, 0.3, 0.4],
-        'ch4': [0.1, 0.2, 0.3, 0.4],
-    })
+    synced_df = pd.DataFrame(
+        {
+            "tt": pd.to_timedelta([0, 1, 2, 3], unit="s"),
+            "ch1": [0.1, 0.2, 0.3, 0.4],
+            "ch2": [0.1, 0.2, 0.3, 0.4],
+            "ch3": [0.1, 0.2, 0.3, 0.4],
+            "ch4": [0.1, 0.2, 0.3, 0.4],
+        }
+    )
 
     # All three methods agree within 0.2s
     detection_results = {
-        'consensus_time': 2.0,
-        'consensus_methods': ['rms', 'onset', 'freq'],
-        'rms_time': 1.9,
-        'onset_time': 2.0,
-        'freq_time': 2.1,
+        "consensus_time": 2.0,
+        "consensus_methods": ["rms", "onset", "freq"],
+        "rms_time": 1.9,
+        "onset_time": 2.0,
+        "freq_time": 2.1,
     }
 
     record = create_sync_record_from_data(
@@ -251,24 +255,25 @@ def test_synchronization_multiple_detection_methods():
     assert record.selected_stomp_method == "consensus"
 
 
-
 def test_synchronization_agreement_span_with_partial_consensus():
     """Test agreement span when only some methods agree (not all 3)."""
-    synced_df = pd.DataFrame({
-        'tt': pd.to_timedelta([0, 1, 2], unit='s'),
-        'ch1': [0.1, 0.2, 0.3],
-        'ch2': [0.1, 0.2, 0.3],
-        'ch3': [0.1, 0.2, 0.3],
-        'ch4': [0.1, 0.2, 0.3],
-    })
+    synced_df = pd.DataFrame(
+        {
+            "tt": pd.to_timedelta([0, 1, 2], unit="s"),
+            "ch1": [0.1, 0.2, 0.3],
+            "ch2": [0.1, 0.2, 0.3],
+            "ch3": [0.1, 0.2, 0.3],
+            "ch4": [0.1, 0.2, 0.3],
+        }
+    )
 
     # Only RMS and onset in consensus (freq disagreed)
     detection_results = {
-        'consensus_time': 2.0,
-        'consensus_methods': ['rms', 'onset'],
-        'rms_time': 1.95,
-        'onset_time': 2.05,
-        'freq_time': 5.0,  # Not in consensus
+        "consensus_time": 2.0,
+        "consensus_methods": ["rms", "onset"],
+        "rms_time": 1.95,
+        "onset_time": 2.05,
+        "freq_time": 5.0,  # Not in consensus
     }
 
     record = create_sync_record_from_data(
@@ -365,7 +370,7 @@ def test_validator_allows_only_one_audio_sync_time_without_offset():
     assert record_left.audio_sync_time_left == 5.0
     assert record_left.audio_sync_time_right is None
     assert record_left.audio_sync_offset is None
-    
+
     record_right = _create_test_record(
         audio_sync_time_right=5.5,
         # No left time, no offset required

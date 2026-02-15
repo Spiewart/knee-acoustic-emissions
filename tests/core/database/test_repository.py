@@ -4,16 +4,16 @@ These tests require PostgreSQL to be running and AE_DATABASE_URL configured.
 For safety, use a dedicated test database (e.g., acoustic_emissions_test).
 """
 
-import os
 from datetime import datetime
+import os
 from pathlib import Path
 
-import pytest
 from dotenv import load_dotenv
+import pytest
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
-from src.db import Base, ParticipantRecord, StudyRecord, init_db
+from src.db import ParticipantRecord, StudyRecord, init_db
 from src.db.repository import Repository
 from src.metadata import (
     AudioProcessing,
@@ -183,7 +183,6 @@ def create_test_movement_cycle(**kwargs):
     return MovementCycle(**defaults)
 
 
-
 def get_test_db_url():
     """Get test database URL, defaulting to a test database.
 
@@ -219,7 +218,7 @@ def test_db_engine():
         with engine.connect() as conn:
             pass
 
-# Reset schema to avoid FK naming mismatches
+        # Reset schema to avoid FK naming mismatches
         with engine.begin() as conn:
             conn.execute(text("DROP SCHEMA IF EXISTS public CASCADE"))
             conn.execute(text("CREATE SCHEMA public"))
@@ -356,10 +355,7 @@ class TestRepository:
 
         # Now save audio with FK reference
         audio = create_test_audio_processing()
-        record = repository.save_audio_processing(
-            audio,
-            biomechanics_import_id=biomech_record.id
-        )
+        record = repository.save_audio_processing(audio, biomechanics_import_id=biomech_record.id)
 
         assert record.id is not None
         assert record.audio_file_name == "test_audio.bin"
@@ -390,9 +386,7 @@ class TestRepository:
         )
 
         record = repository.save_synchronization(
-            sync,
-            audio_processing_id=audio_record.id,
-            biomechanics_import_id=biomech_record.id
+            sync, audio_processing_id=audio_record.id, biomechanics_import_id=biomech_record.id
         )
         assert record.id is not None
         assert record.audio_processing_id == audio_record.id
@@ -430,6 +424,7 @@ class TestRepository:
         left_records = repository.get_audio_processing_records(knee="left")
         assert len(left_records) == 1
         assert left_records[0].knee == "left"
+
     def test_save_biomechanics_import(self, repository):
         """Test saving biomechanics import record."""
         biomech = create_test_biomechanics_import()
@@ -450,10 +445,7 @@ class TestRepository:
 
         # Now save biomech with FK reference
         biomech = create_test_biomechanics_import(maneuver="walk")
-        record = repository.save_biomechanics_import(
-            biomech,
-            audio_processing_id=audio_record.id
-        )
+        record = repository.save_biomechanics_import(biomech, audio_processing_id=audio_record.id)
 
         assert record.id is not None
         assert record.biomechanics_file == "test_biomech.xlsx"
@@ -467,10 +459,7 @@ class TestRepository:
 
         # Now save cycle with audio FK
         cycle = create_test_movement_cycle()
-        record = repository.save_movement_cycle(
-            cycle,
-            audio_processing_id=audio_record.id
-        )
+        record = repository.save_movement_cycle(cycle, audio_processing_id=audio_record.id)
 
         assert record.id is not None
         assert record.audio_processing_id == audio_record.id
@@ -492,9 +481,7 @@ class TestRepository:
         # Create and save synchronization
         sync = create_test_synchronization()
         sync_record = repository.save_synchronization(
-            sync,
-            audio_processing_id=audio_record.id,
-            biomechanics_import_id=biomech_record.id
+            sync, audio_processing_id=audio_record.id, biomechanics_import_id=biomech_record.id
         )
 
         # Now save cycle with all FKs
@@ -503,7 +490,7 @@ class TestRepository:
             cycle,
             audio_processing_id=audio_record.id,
             biomechanics_import_id=biomech_record.id,
-            synchronization_id=sync_record.id
+            synchronization_id=sync_record.id,
         )
 
         assert record.id is not None

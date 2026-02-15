@@ -293,7 +293,7 @@ alembic revision -m "custom_data_migration"
    ```bash
    # Test upgrade
    alembic upgrade head
-   
+
    # Test downgrade
    alembic downgrade -1
    alembic upgrade head
@@ -303,7 +303,7 @@ alembic revision -m "custom_data_migration"
    ```python
    def upgrade():
        op.add_column('table', sa.Column('new_col', sa.String()))
-   
+
    def downgrade():
        op.drop_column('table', 'new_col')
    ```
@@ -312,7 +312,7 @@ alembic revision -m "custom_data_migration"
    ```bash
    # Good
    alembic revision -m "add_audio_sync_time_columns"
-   
+
    # Bad
    alembic revision -m "changes"
    ```

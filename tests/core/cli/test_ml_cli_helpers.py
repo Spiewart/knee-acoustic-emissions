@@ -165,20 +165,27 @@ def test_load_knee_outcomes_numeric_binary_conversion(tmp_path):
     assert sum(outcomes == 1) == 4  # 4 ones
     assert sum(outcomes == 0) == 4  # 4 zeros
 
+
 def test_train_with_fallback_excludes_contralateral_knees():
     """Verify that contralateral knees are excluded from training when their partner is in test set."""
     # Create data with 2 participants, each with both knees (4 knee-level samples)
     # Use a larger dataset to trigger train_test_split path
     index = pd.MultiIndex.from_tuples(
         [
-            (101, "R"), (101, "L"),
-            (102, "R"), (102, "L"),
-            (103, "R"), (103, "L"),
-            (104, "R"), (104, "L"),
-            (105, "R"), (105, "L"),
-            (106, "R"), (106, "L"),
+            (101, "R"),
+            (101, "L"),
+            (102, "R"),
+            (102, "L"),
+            (103, "R"),
+            (103, "L"),
+            (104, "R"),
+            (104, "L"),
+            (105, "R"),
+            (105, "L"),
+            (106, "R"),
+            (106, "L"),
         ],
-        names=["study_id", "knee"]
+        names=["study_id", "knee"],
     )
     # Create features
     X = pd.DataFrame(
@@ -186,14 +193,10 @@ def test_train_with_fallback_excludes_contralateral_knees():
             "feature_1": [1.0, 1.1, 2.0, 2.1, 3.0, 3.1, 4.0, 4.1, 5.0, 5.1, 6.0, 6.1],
             "feature_2": [10.0, 10.5, 20.0, 20.5, 30.0, 30.5, 40.0, 40.5, 50.0, 50.5, 60.0, 60.5],
         },
-        index=index
+        index=index,
     )
     # Create labels - outcome differs by participant
-    y = pd.Series(
-        [0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 1, 1],
-        index=index,
-        name="outcome"
-    )
+    y = pd.Series([0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 1, 1], index=index, name="outcome")
 
     result = train_with_fallback(X, y, exclude_contralateral_knees=True)
 
@@ -217,27 +220,29 @@ def test_train_with_fallback_without_contralateral_exclusion():
     # Create data with 2 participants, each with both knees
     index = pd.MultiIndex.from_tuples(
         [
-            (101, "R"), (101, "L"),
-            (102, "R"), (102, "L"),
-            (103, "R"), (103, "L"),
-            (104, "R"), (104, "L"),
-            (105, "R"), (105, "L"),
-            (106, "R"), (106, "L"),
+            (101, "R"),
+            (101, "L"),
+            (102, "R"),
+            (102, "L"),
+            (103, "R"),
+            (103, "L"),
+            (104, "R"),
+            (104, "L"),
+            (105, "R"),
+            (105, "L"),
+            (106, "R"),
+            (106, "L"),
         ],
-        names=["study_id", "knee"]
+        names=["study_id", "knee"],
     )
     X = pd.DataFrame(
         {
             "feature_1": [1.0, 1.1, 2.0, 2.1, 3.0, 3.1, 4.0, 4.1, 5.0, 5.1, 6.0, 6.1],
             "feature_2": [10.0, 10.5, 20.0, 20.5, 30.0, 30.5, 40.0, 40.5, 50.0, 50.5, 60.0, 60.5],
         },
-        index=index
-    )
-    y = pd.Series(
-        [0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 1, 1],
         index=index,
-        name="outcome"
     )
+    y = pd.Series([0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 1, 1], index=index, name="outcome")
 
     result = train_with_fallback(X, y, exclude_contralateral_knees=False)
 
@@ -252,18 +257,20 @@ def test_train_with_fallback_loocv_with_contralateral_exclusion():
     # Create small dataset (5 samples = triggers LOOCV)
     index = pd.MultiIndex.from_tuples(
         [
-            (101, "R"), (101, "L"),
-            (102, "R"), (102, "L"),
+            (101, "R"),
+            (101, "L"),
+            (102, "R"),
+            (102, "L"),
             (103, "R"),
         ],
-        names=["study_id", "knee"]
+        names=["study_id", "knee"],
     )
     X = pd.DataFrame(
         {
             "feature_1": [1.0, 1.1, 2.0, 2.1, 3.0],
             "feature_2": [10.0, 10.5, 20.0, 20.5, 30.0],
         },
-        index=index
+        index=index,
     )
     y = pd.Series([0, 0, 0, 1, 1], index=index, name="outcome")
 

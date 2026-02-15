@@ -10,9 +10,7 @@ from src.biomechanics.cycle_parsing import (
 )
 
 
-def _create_synthetic_walk_data(
-    start_angle: float, end_angle: float, num_cycles: int = 1
-) -> pd.DataFrame:
+def _create_synthetic_walk_data(start_angle: float, end_angle: float, num_cycles: int = 1) -> pd.DataFrame:
     """Creates synthetic walking data with specified start and end angles."""
     sample_rate = 1000
     cycle_duration = 1.0  # 1 second per cycle
@@ -83,9 +81,7 @@ class TestMovementCycleExtractorWalking:
         for cycle in cycles:
             duration = cycle["tt"].max() - cycle["tt"].min()
             # Allow 10% tolerance
-            assert (
-                0.9 <= duration <= 1.1
-            ), f"Cycle duration {duration}s outside expected range"
+            assert 0.9 <= duration <= 1.1, f"Cycle duration {duration}s outside expected range"
 
     def test_walking_cycles_sequential(self, syncd_walk):
         """Cycles should be sequential without overlap."""
@@ -140,9 +136,7 @@ class TestMovementCycleExtractorSitToStand:
         for cycle in cycles:
             duration = cycle["tt"].max() - cycle["tt"].min()
             # Allow generous tolerance because smoothing expands cycle bounds
-            assert (
-                4.0 <= duration <= 7.5
-            ), f"Cycle duration {duration}s outside expected range"
+            assert 4.0 <= duration <= 7.5, f"Cycle duration {duration}s outside expected range"
 
     def test_sit_to_stand_cycles_contain_extension_peak(self, syncd_sit_to_stand):
         """Each cycle should contain a standing peak (low knee angle)."""
@@ -152,26 +146,20 @@ class TestMovementCycleExtractorSitToStand:
         for cycle in cycles:
             min_angle = cycle["Knee Angle Z"].min()
             # Should have extension (standing) with angle near 10°
-            assert (
-                min_angle < 20
-            ), f"Cycle missing standing phase (min angle {min_angle})"
+            assert min_angle < 20, f"Cycle missing standing phase (min angle {min_angle})"
 
 
 class TestMovementCycleExtractorFlexionExtension:
     """Test flexion-extension cycle extraction."""
 
-    def test_extract_flexion_extension_cycles_finds_expected_range(
-        self, syncd_flexion_extension
-    ):
+    def test_extract_flexion_extension_cycles_finds_expected_range(self, syncd_flexion_extension):
         """Should find 4-7 flexion-extension cycles."""
         extractor = MovementCycleExtractor("flexion_extension")
         cycles = extractor.extract_cycles(syncd_flexion_extension)
 
         assert 4 <= len(cycles) <= 7
 
-    def test_flexion_extension_cycles_have_correct_structure(
-        self, syncd_flexion_extension
-    ):
+    def test_flexion_extension_cycles_have_correct_structure(self, syncd_flexion_extension):
         """Each cycle should be a DataFrame with proper columns."""
         extractor = MovementCycleExtractor("flexion_extension")
         cycles = extractor.extract_cycles(syncd_flexion_extension)
@@ -194,9 +182,7 @@ class TestMovementCycleExtractorFlexionExtension:
             assert isinstance(cycle, pd.DataFrame)
             assert all(col in cycle.columns for col in required_cols)
 
-    def test_flexion_extension_cycles_span_correct_duration(
-        self, syncd_flexion_extension
-    ):
+    def test_flexion_extension_cycles_span_correct_duration(self, syncd_flexion_extension):
         """Each flexion-extension cycle should be approximately 2 seconds."""
         extractor = MovementCycleExtractor("flexion_extension")
         cycles = extractor.extract_cycles(syncd_flexion_extension)
@@ -204,13 +190,9 @@ class TestMovementCycleExtractorFlexionExtension:
         for cycle in cycles:
             duration = cycle["tt"].max() - cycle["tt"].min()
             # Allow 20% tolerance
-            assert (
-                1.6 <= duration <= 2.4
-            ), f"Cycle duration {duration}s outside expected range"
+            assert 1.6 <= duration <= 2.4, f"Cycle duration {duration}s outside expected range"
 
-    def test_flexion_extension_cycles_contain_extension_peak(
-        self, syncd_flexion_extension
-    ):
+    def test_flexion_extension_cycles_contain_extension_peak(self, syncd_flexion_extension):
         """Each cycle should contain an extension peak (low knee angle)."""
         extractor = MovementCycleExtractor("flexion_extension")
         cycles = extractor.extract_cycles(syncd_flexion_extension)
@@ -218,9 +200,7 @@ class TestMovementCycleExtractorFlexionExtension:
         for cycle in cycles:
             min_angle = cycle["Knee Angle Z"].min()
             # Should have extension peak near minimum of sinusoid (~10°)
-            assert (
-                min_angle < 30
-            ), f"Cycle missing extension peak (min angle {min_angle})"
+            assert min_angle < 30, f"Cycle missing extension peak (min angle {min_angle})"
 
 
 class TestMovementCycleExtractorEdgeCases:
@@ -327,9 +307,9 @@ class TestMovementCycleDataIntegrity:
         original_samples = len(syncd_walk)
 
         # Should use most of the data (at least 50%)
-        assert (
-            total_cycle_samples >= 0.5 * original_samples
-        ), f"Too much data lost: {total_cycle_samples}/{original_samples} samples"
+        assert total_cycle_samples >= 0.5 * original_samples, (
+            f"Too much data lost: {total_cycle_samples}/{original_samples} samples"
+        )
 
     def test_cycles_dont_duplicate_data(self, syncd_walk):
         """Cycles should not contain overlapping/duplicate time points."""
@@ -343,9 +323,7 @@ class TestMovementCycleDataIntegrity:
         sorted_times = sorted(all_times)
         for i in range(len(sorted_times) - 1):
             time_gap = sorted_times[i + 1] - sorted_times[i]
-            assert (
-                time_gap >= 0.0001
-            ), f"Duplicate or overlapping times detected: gap={time_gap}"
+            assert time_gap >= 0.0001, f"Duplicate or overlapping times detected: gap={time_gap}"
 
     def test_walk_cycle_with_dissimilar_heel_strikes_is_rejected(self):
         """Should reject a walk cycle where start and end heel strike angles differ by more than the tolerance."""
@@ -355,19 +333,13 @@ class TestMovementCycleDataIntegrity:
 
         cycles = extract_movement_cycles(invalid_cycle_df, maneuver="walk")
 
-        assert (
-            len(cycles) == 0
-        ), "Cycle with dissimilar heel strikes should be rejected"
+        assert len(cycles) == 0, "Cycle with dissimilar heel strikes should be rejected"
 
     def test_walk_cycle_with_similar_heel_strikes_is_accepted(self):
         """Should accept a walk cycle where start and end heel strike angles are within tolerance."""
         # This cycle starts at -10° and ends at -8°, a difference of 2°, which is within the 5° tolerance.
-        valid_cycle_df = _create_synthetic_walk_data(
-            start_angle=-10.0, end_angle=-8.0, num_cycles=2
-        )
+        valid_cycle_df = _create_synthetic_walk_data(start_angle=-10.0, end_angle=-8.0, num_cycles=2)
 
         cycles = extract_movement_cycles(valid_cycle_df, maneuver="walk")
 
-        assert (
-            len(cycles) >= 1
-        ), "Cycle with similar heel strikes should be accepted"
+        assert len(cycles) >= 1, "Cycle with similar heel strikes should be accepted"

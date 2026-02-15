@@ -12,9 +12,7 @@ from src.audio.quality_control import (
 )
 
 
-def _pulse_series(
-    times_s: list[float], duration_s: float = 10.0, fs: float = 52000.0
-) -> pd.DataFrame:
+def _pulse_series(times_s: list[float], duration_s: float = 10.0, fs: float = 52000.0) -> pd.DataFrame:
     n = int(duration_s * fs)
     tt = np.arange(n) / fs
     signal = np.zeros(n)
@@ -118,9 +116,7 @@ def test_qc_bandpower_threshold_blocks_when_ratio_low():
     assert ratio < 0.95
 
 
-def _walking_signal(
-    pass_specs: list[tuple[float, float]], gap_s: float = 3.0, fs: float = 1000.0
-) -> pd.DataFrame:
+def _walking_signal(pass_specs: list[tuple[float, float]], gap_s: float = 3.0, fs: float = 1000.0) -> pd.DataFrame:
     """Create synthetic walking audio with multiple speed passes.
 
     pass_specs: list of (start_freq_hz, duration_s) pairs.
@@ -133,9 +129,7 @@ def _walking_signal(
     t_cursor = 0.0
     for freq_hz, dur_s in pass_specs:
         step_period = 1.0 / freq_hz
-        step_times = np.arange(
-            t_cursor + 0.5 * step_period, t_cursor + dur_s, step_period
-        )
+        step_times = np.arange(t_cursor + 0.5 * step_period, t_cursor + dur_s, step_period)
         width = max(int(0.01 * fs), 1)
         for st in step_times:
             idx = int(st * fs)
@@ -198,14 +192,10 @@ def test_qc_audio_walk_frequency_segmentation():
 
     # Each pass should have a different frequency
     freqs = [r["gait_cycle_hz"] for r in results]
-    assert (
-        len(set(np.round(freqs, 1))) >= 2
-    ), f"Expected different frequencies, got {freqs}"
+    assert len(set(np.round(freqs, 1))) >= 2, f"Expected different frequencies, got {freqs}"
 
 
-def _write_pickled_audio(
-    tmp_path: Path, knee: str, folder: str, df: pd.DataFrame
-) -> Path:
+def _write_pickled_audio(tmp_path: Path, knee: str, folder: str, df: pd.DataFrame) -> Path:
     base_name = "test_audio"
     maneuver_dir = tmp_path / knee / folder
     maneuver_dir.mkdir(parents=True, exist_ok=True)
@@ -270,9 +260,7 @@ def test_cli_dir_command_nonexistent_directory(monkeypatch, capsys):
 
     from cli.audio_qc import _cli_main
 
-    monkeypatch.setattr(
-        sys, "argv", ["audio_qc.py", "dir", "/nonexistent/participant/directory"]
-    )
+    monkeypatch.setattr(sys, "argv", ["audio_qc.py", "dir", "/nonexistent/participant/directory"])
 
     _cli_main()
 

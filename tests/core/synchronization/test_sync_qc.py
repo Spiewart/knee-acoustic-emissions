@@ -1,7 +1,7 @@
 """Tests for the movement cycle QC module."""
 
-import sys
 from pathlib import Path
+import sys
 from unittest.mock import patch
 
 import numpy as np
@@ -89,9 +89,7 @@ class TestMovementCycleQC:
         assert len(outliers_f) == 1
 
         # 2. 'raw' channel should result in a clean cycle
-        qc_raw = MovementCycleQC(
-            maneuver="walk", acoustic_threshold=1.0, acoustic_channel="raw"
-        )
+        qc_raw = MovementCycleQC(maneuver="walk", acoustic_threshold=1.0, acoustic_channel="raw")
         clean_r, _ = qc_raw.analyze_cycles([cycle])
         assert len(clean_r) == 1
 
@@ -103,15 +101,15 @@ class TestMovementCycleQC:
         n = len(cycle_good)
         gait_pattern = 10 + 30 * np.sin(np.linspace(0, np.pi, n))  # 10-40 degree range (ROM=30°)
         cycle_good["Knee Angle Z"] = gait_pattern
-        
+
         # Create cycle with insufficient ROM (5 degrees)
         cycle_bad = _create_test_cycle(base_amplitude=1.0)
         cycle_bad["Knee Angle Z"] = np.ones(len(cycle_bad)) * 15  # Flat line, no movement
-        
+
         # Test with default threshold for walk (20 degrees)
         qc = MovementCycleQC(maneuver="walk", acoustic_threshold=0.0)
         clean, outliers = qc.analyze_cycles([cycle_good, cycle_bad])
-        
+
         assert len(clean) == 1
         assert len(outliers) == 1
         # Verify that cycle_bad was identified as outlier
@@ -125,20 +123,20 @@ class TestMovementCycleQC:
         # Walking pattern with 25 degree ROM (gait-like up-then-down)
         gait_pattern_walk = 5 + 25 * np.sin(np.linspace(0, np.pi, n))
         cycle_walk["Knee Angle Z"] = gait_pattern_walk
-        
+
         # For walk (threshold=20°), this should pass
         qc_walk = MovementCycleQC(maneuver="walk", acoustic_threshold=0.0)
         clean_walk, outliers_walk = qc_walk.analyze_cycles([cycle_walk])
         assert len(clean_walk) == 1
         assert len(outliers_walk) == 0
-        
+
         # Create cycle with ROM of 25 degrees and proper sit-to-stand pattern
         cycle_sts = _create_test_cycle(base_amplitude=1.0)
         n_sts = len(cycle_sts)
         # Sit-to-stand pattern: monotonically decreasing from 40° to 15° (ROM 25°)
         sts_pattern = np.linspace(40.0, 15.0, n_sts)
         cycle_sts["Knee Angle Z"] = sts_pattern
-        
+
         # For sit_to_stand (threshold=40°), this should fail due to ROM while having a valid waveform shape
         qc_sts = MovementCycleQC(maneuver="sit_to_stand", acoustic_threshold=0.0)
         clean_sts, outliers_sts = qc_sts.analyze_cycles([cycle_sts])
@@ -152,13 +150,9 @@ class TestMovementCycleQC:
         # Create walking pattern with 30 degree ROM
         gait_pattern = 5 + 30 * np.sin(np.linspace(0, np.pi, n))
         cycle["Knee Angle Z"] = gait_pattern
-        
+
         # With custom threshold of 35°, this should fail
-        qc = MovementCycleQC(
-            maneuver="walk", 
-            acoustic_threshold=0.0,
-            biomech_min_rom=35.0
-        )
+        qc = MovementCycleQC(maneuver="walk", acoustic_threshold=0.0, biomech_min_rom=35.0)
         clean, outliers = qc.analyze_cycles([cycle])
         assert len(clean) == 0
         assert len(outliers) == 1
@@ -167,10 +161,10 @@ class TestMovementCycleQC:
         """Should handle cycles missing 'Knee Angle Z' column gracefully."""
         cycle = _create_test_cycle(base_amplitude=1.0)
         del cycle["Knee Angle Z"]
-        
+
         qc = MovementCycleQC(maneuver="walk", acoustic_threshold=0.0)
         clean, outliers = qc.analyze_cycles([cycle])
-        
+
         # Cycle should be outlier due to missing column
         assert len(clean) == 0
         assert len(outliers) == 1
@@ -183,10 +177,10 @@ class TestMovementCycleQC:
         gait_pattern = 10 + 30 * np.sin(np.linspace(0, np.pi, n))
         gait_pattern[10:20] = np.nan  # Insert some NaN values
         cycle["Knee Angle Z"] = gait_pattern
-        
+
         qc = MovementCycleQC(maneuver="walk", acoustic_threshold=0.0)
         clean, outliers = qc.analyze_cycles([cycle])
-        
+
         # Should still validate from valid values
         assert len(clean) == 1
         assert len(outliers) == 0
@@ -197,26 +191,22 @@ class TestMovementCycleQC:
         cycle1 = _create_test_cycle(base_amplitude=1.0)
         n = len(cycle1)
         cycle1["Knee Angle Z"] = 10 + 30 * np.sin(np.linspace(0, np.pi, n))
-        
+
         # Cycle 2: Good acoustic, bad ROM/pattern
         cycle2 = _create_test_cycle(base_amplitude=1.0)
         cycle2["Knee Angle Z"] = np.ones(len(cycle2)) * 15  # Flat line
-        
+
         # Cycle 3: Bad acoustic, good ROM and pattern
         cycle3 = _create_test_cycle(base_amplitude=0.01)
         cycle3["Knee Angle Z"] = 10 + 30 * np.sin(np.linspace(0, np.pi, len(cycle3)))
-        
+
         # Cycle 4: Bad acoustic, bad ROM/pattern
         cycle4 = _create_test_cycle(base_amplitude=0.01)
         cycle4["Knee Angle Z"] = np.ones(len(cycle4)) * 15
-        
-        qc = MovementCycleQC(
-            maneuver="walk",
-            acoustic_threshold=1.0,
-            biomech_min_rom=20.0
-        )
+
+        qc = MovementCycleQC(maneuver="walk", acoustic_threshold=1.0, biomech_min_rom=20.0)
         clean, outliers = qc.analyze_cycles([cycle1, cycle2, cycle3, cycle4])
-        
+
         # Only cycle1 should pass both checks
         assert len(clean) == 1
         assert len(outliers) == 3
@@ -225,14 +215,14 @@ class TestMovementCycleQC:
         """Should validate proper walking gait pattern."""
         cycle = _create_test_cycle(base_amplitude=1.0)
         n = len(cycle)
-        
+
         # Valid walking pattern: start low, peak in middle, end low
         valid_pattern = 10 + 30 * np.sin(np.linspace(0, np.pi, n))
         cycle["Knee Angle Z"] = valid_pattern
-        
+
         qc = MovementCycleQC(maneuver="walk", acoustic_threshold=0.0)
         clean, outliers = qc.analyze_cycles([cycle])
-        
+
         assert len(clean) == 1
         assert len(outliers) == 0
 
@@ -240,14 +230,14 @@ class TestMovementCycleQC:
         """Should reject walking cycles with mismatched start/end angles."""
         cycle = _create_test_cycle(base_amplitude=1.0)
         n = len(cycle)
-        
+
         # Invalid pattern: starts low but ends high
         invalid_pattern = np.linspace(10, 50, n)
         cycle["Knee Angle Z"] = invalid_pattern
-        
+
         qc = MovementCycleQC(maneuver="walk", acoustic_threshold=0.0)
         clean, outliers = qc.analyze_cycles([cycle])
-        
+
         assert len(clean) == 0
         assert len(outliers) == 1
 
@@ -302,27 +292,27 @@ class TestMovementCycleQC:
         """Should validate proper flexion-extension pattern."""
         cycle = _create_test_cycle(base_amplitude=1.0)
         n = len(cycle)
-        
+
         # Valid flexion-extension: start at extension, flex, return to extension
         valid_pattern = 10 + 50 * np.sin(np.linspace(0, np.pi, n))
         cycle["Knee Angle Z"] = valid_pattern
-        
+
         qc = MovementCycleQC(maneuver="flexion_extension", acoustic_threshold=0.0)
         clean, outliers = qc.analyze_cycles([cycle])
-        
+
         assert len(clean) == 1
         assert len(outliers) == 0
 
     def test_flexion_extension_rejects_no_peak(self):
         """Should reject flexion-extension cycles without clear peak."""
         cycle = _create_test_cycle(base_amplitude=1.0)
-        
+
         # Invalid: flat line, no flexion
         cycle["Knee Angle Z"] = np.ones(len(cycle)) * 20
-        
+
         qc = MovementCycleQC(maneuver="flexion_extension", acoustic_threshold=0.0)
         clean, outliers = qc.analyze_cycles([cycle])
-        
+
         assert len(clean) == 0
         assert len(outliers) == 1
 
@@ -456,20 +446,18 @@ class TestSyncQCCLI:
 
     @patch("cli.sync_qc.find_synced_files")
     @patch("cli.sync_qc.perform_sync_qc")
-    def test_cli_with_valid_file(
-        self, mock_perform_qc, mock_find_files, tmp_path
-    ):
+    def test_cli_with_valid_file(self, mock_perform_qc, mock_find_files, tmp_path):
         """Should succeed with a valid file path and call qc function."""
         synced_file = tmp_path / "synced.pkl"
         synced_file.touch()
         mock_find_files.return_value = [synced_file]
         mock_perform_qc.return_value = SyncQCOutput(
-            clean_cycles=[], outlier_cycles=[], output_dir=tmp_path,
+            clean_cycles=[],
+            outlier_cycles=[],
+            output_dir=tmp_path,
         )
 
-        with patch.object(
-            sys, "argv", ["sync_qc.py", str(synced_file)]
-        ):
+        with patch.object(sys, "argv", ["sync_qc.py", str(synced_file)]):
             from cli.sync_qc import main
 
             assert main() == 0
@@ -487,7 +475,9 @@ class TestSyncQCCLI:
         synced_file.touch()
         mock_find_files.return_value = [synced_file]
         mock_perform_qc.return_value = SyncQCOutput(
-            clean_cycles=[], outlier_cycles=[], output_dir=tmp_path,
+            clean_cycles=[],
+            outlier_cycles=[],
+            output_dir=tmp_path,
         )
 
         with patch.object(

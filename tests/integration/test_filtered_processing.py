@@ -19,9 +19,7 @@ Test coverage includes:
 5. Backward compatibility (no filters = validate everything)
 """
 
-import logging
 import shutil
-from pathlib import Path
 
 import pytest
 
@@ -30,7 +28,6 @@ from src.orchestration.participant import (
     check_participant_dir_for_required_files,
     knee_folder_has_subfolder_each_maneuver,
     participant_dir_has_top_level_folders,
-    process_participant,
 )
 
 
@@ -132,19 +129,11 @@ def test_check_bin_stage_with_missing_data_filtered(fake_participant_directory):
     shutil.rmtree(left_knee_dir / "Walking")
 
     # Should still pass when checking only sit_to_stand
-    knee_folder_has_subfolder_each_maneuver(
-        left_knee_dir,
-        require_processed=False,
-        maneuver="sit_to_stand"
-    )
+    knee_folder_has_subfolder_each_maneuver(left_knee_dir, require_processed=False, maneuver="sit_to_stand")
 
     # Should fail when checking walk
     with pytest.raises(FileNotFoundError, match="walk"):
-        knee_folder_has_subfolder_each_maneuver(
-            left_knee_dir,
-            require_processed=False,
-            maneuver="walk"
-        )
+        knee_folder_has_subfolder_each_maneuver(left_knee_dir, require_processed=False, maneuver="walk")
 
 
 def test_participant_dir_has_top_level_folders_no_filter(fake_participant_directory):
@@ -225,18 +214,10 @@ def test_knee_folder_has_subfolder_each_maneuver_require_processed_flag(fake_par
 
     # Should pass with require_processed=False even if processed files don't exist
     # (just checks for .bin file)
-    knee_folder_has_subfolder_each_maneuver(
-        left_knee_dir,
-        require_processed=False,
-        maneuver="walk"
-    )
+    knee_folder_has_subfolder_each_maneuver(left_knee_dir, require_processed=False, maneuver="walk")
 
     # Should pass with require_processed=True when processed files exist
-    knee_folder_has_subfolder_each_maneuver(
-        left_knee_dir,
-        require_processed=True,
-        maneuver="walk"
-    )
+    knee_folder_has_subfolder_each_maneuver(left_knee_dir, require_processed=True, maneuver="walk")
 
 
 def test_check_participant_dir_for_bin_stage_with_left_knee_filter(fake_participant_directory):

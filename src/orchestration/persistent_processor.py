@@ -12,7 +12,7 @@ Key Design Principles:
 
 import logging
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Literal
 
 from sqlalchemy.orm import Session
 
@@ -49,8 +49,8 @@ class PersistentParticipantProcessor:
     def __init__(
         self,
         participant_dir: Path,
-        biomechanics_type: Optional[str] = None,
-        db_session: Optional[Session] = None,
+        biomechanics_type: str | None = None,
+        db_session: Session | None = None,
     ):
         """Initialize persistent participant processor.
 
@@ -90,8 +90,8 @@ class PersistentParticipantProcessor:
     def process(
         self,
         entrypoint: Literal["bin", "sync", "cycles"] = "sync",
-        knee: Optional[str] = None,
-        maneuver: Optional[str] = None,
+        knee: str | None = None,
+        maneuver: str | None = None,
     ) -> bool:
         """Process participant with optional database persistence.
 
@@ -162,16 +162,12 @@ class PersistentParticipantProcessor:
                         self.tracker.set_audio_processing(audio_id)
 
                     # Phase 2A Step 2: Save BiomechanicsImport record with audio_id FK
-                    biomech_id = self._persist_biomechanics_record(
-                        maneuver_processor, audio_id
-                    )
+                    biomech_id = self._persist_biomechanics_record(maneuver_processor, audio_id)
                     if biomech_id:
                         self.tracker.set_biomechanics_import(biomech_id)
 
                     # Phase 2A Step 3 & 4: Save Synchronization records with cycles
-                    self._persist_synchronization_and_cycles(
-                        maneuver_processor, audio_id, biomech_id
-                    )
+                    self._persist_synchronization_and_cycles(maneuver_processor, audio_id, biomech_id)
 
             summary = self.tracker.summary()
             logger.info(
@@ -189,7 +185,7 @@ class PersistentParticipantProcessor:
 
         Returns record ID if successful, None otherwise.
         """
-        if not hasattr(maneuver_processor, 'audio') or not maneuver_processor.audio:
+        if not hasattr(maneuver_processor, "audio") or not maneuver_processor.audio:
             logger.debug("No audio record available to persist")
             return None
 
@@ -200,7 +196,7 @@ class PersistentParticipantProcessor:
         try:
             audio_id = self.persistence.save_audio_processing(
                 audio=maneuver_processor.audio.record,
-                pkl_file_path=str(maneuver_processor.audio.pkl_path) if maneuver_processor.audio.pkl_path else None,
+                pkl_file_path=str(maneuver_processor.audio.pkl_path) if maneuver_processor.audio.pkl_path else "",
                 biomechanics_import_id=None,  # Will be updated after biomechanics save
             )
 
@@ -212,14 +208,12 @@ class PersistentParticipantProcessor:
             logger.warning(f"Failed to persist audio record: {e}")
             return None
 
-    def _persist_biomechanics_record(
-        self, maneuver_processor, audio_id: int | None
-    ) -> int | None:
+    def _persist_biomechanics_record(self, maneuver_processor, audio_id: int | None) -> int | None:
         """Persist BiomechanicsImport record with FK to audio.
 
         Returns record ID if successful, None otherwise.
         """
-        if not hasattr(maneuver_processor, 'biomechanics') or not maneuver_processor.biomechanics:
+        if not hasattr(maneuver_processor, "biomechanics") or not maneuver_processor.biomechanics:
             logger.debug("No biomechanics record available to persist")
             return None
 
@@ -251,7 +245,7 @@ class PersistentParticipantProcessor:
 
         Handles the FK cascade: audio_id + biomech_id → sync → cycles
         """
-        if not hasattr(maneuver_processor, 'synced_files') or not maneuver_processor.synced_files:
+        if not hasattr(maneuver_processor, "synced_files") or not maneuver_processor.synced_files:
             logger.debug("No synchronization records available to persist")
             return
 
@@ -270,14 +264,12 @@ class PersistentParticipantProcessor:
                     sync_file_path=str(sync_data.output_path) if sync_data.output_path else None,
                 )
 
-                if sync_id:
+                if sync_id and self.tracker:
                     self.tracker.set_synchronization(pass_number=pass_number, record_id=sync_id)
                     logger.debug(f"Persisted Synchronization record: {sync_id} (pass {pass_number})")
 
                 # Phase 2A Step 4: Save MovementCycle records with all FKs
-                self._persist_movement_cycles(
-                    maneuver_processor, pass_number, audio_id, biomech_id, sync_id
-                )
+                self._persist_movement_cycles(maneuver_processor, pass_number, audio_id, biomech_id, sync_id)
 
         except Exception as e:
             logger.warning(f"Failed to persist synchronization/cycles: {e}")
@@ -294,7 +286,7 @@ class PersistentParticipantProcessor:
 
         Each cycle gets FKs to audio, biomechanics, and synchronization.
         """
-        if not hasattr(maneuver_processor, 'processed_cycles') or not maneuver_processor.processed_cycles:
+        if not hasattr(maneuver_processor, "processed_cycles") or not maneuver_processor.processed_cycles:
             logger.debug(f"No cycle records for pass {pass_number}")
             return
 
@@ -314,7 +306,7 @@ class PersistentParticipantProcessor:
                     cycles_file_path=None,
                 )
 
-                if cycle_id:
+                if cycle_id and self.tracker:
                     self.tracker.add_movement_cycle(cycle_id)
                     logger.debug(
                         f"Persisted MovementCycle: {cycle_id} "
@@ -327,8 +319,8 @@ class PersistentParticipantProcessor:
 
 def create_persistent_processor(
     participant_dir: Path,
-    biomechanics_type: Optional[str] = None,
-    db_url: Optional[str] = None,
+    biomechanics_type: str | None = None,
+    db_url: str | None = None,
 ) -> PersistentParticipantProcessor:
     """Factory function to create a processor with optional database persistence.
 
@@ -353,6 +345,7 @@ def create_persistent_processor(
     """
     if db_url:
         from src.orchestration.cli_db_helpers import create_db_session
+
         try:
             session = create_db_session(db_url)
             return PersistentParticipantProcessor(

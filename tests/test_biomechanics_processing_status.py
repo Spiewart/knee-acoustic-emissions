@@ -1,9 +1,6 @@
 """Test that biomechanics records are saved with correct processing_status."""
 
 from datetime import datetime
-from pathlib import Path
-
-import pytest
 
 from src.db.repository import Repository
 from src.metadata import BiomechanicsImport

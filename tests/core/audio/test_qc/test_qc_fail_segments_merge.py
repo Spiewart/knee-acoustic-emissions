@@ -63,11 +63,11 @@ class TestPerChannelQCDataAssembly:
         for ch_num in range(1, 5):
             ch_name = f"ch{ch_num}"
             ch_fail_sources = []
-            if ch_name in dropout_per_mic and dropout_per_mic[ch_name]:
+            if dropout_per_mic.get(ch_name):
                 ch_fail_sources.extend(dropout_per_mic[ch_name])
-            if ch_name in continuous_per_mic and continuous_per_mic[ch_name]:
+            if continuous_per_mic.get(ch_name):
                 ch_fail_sources.extend(continuous_per_mic[ch_name])
-            if ch_name in artifact_per_mic and artifact_per_mic[ch_name]:
+            if artifact_per_mic.get(ch_name):
                 ch_fail_sources.extend(artifact_per_mic[ch_name])
 
             merged = merge_bad_intervals(ch_fail_sources, []) if ch_fail_sources else []
@@ -84,9 +84,7 @@ class TestPerChannelQCDataAssembly:
         artifact_per_mic = {"ch2": [(8.0, 9.0)]}
 
         ch_fail_sources = (
-            dropout_per_mic.get("ch2", [])
-            + continuous_per_mic.get("ch2", [])
-            + artifact_per_mic.get("ch2", [])
+            dropout_per_mic.get("ch2", []) + continuous_per_mic.get("ch2", []) + artifact_per_mic.get("ch2", [])
         )
         merged = merge_bad_intervals(ch_fail_sources, [])
         assert merged == [(1.0, 2.0), (3.0, 5.0), (8.0, 9.0)]

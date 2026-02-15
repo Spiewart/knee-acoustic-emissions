@@ -1,9 +1,5 @@
 """Integration tests for DB-backed report generation."""
 
-from pathlib import Path
-
-import pytest
-
 from src.orchestration.processing_log import ManeuverProcessingLog
 from src.reports.report_generator import ReportGenerator
 
@@ -97,7 +93,7 @@ def test_report_generator_queries_database(
         biomechanics_import_id=biomech_record.id,
         synchronization_id=sync_record.id,
     )
-    cycle_record = repository.save_movement_cycle(
+    repository.save_movement_cycle(
         cycle,
         audio_processing_id=audio_record.id,
         biomechanics_import_id=biomech_record.id,

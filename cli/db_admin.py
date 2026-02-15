@@ -1,7 +1,6 @@
 """Database initialization and migration utilities."""
 
 import logging
-from pathlib import Path
 
 import click
 
@@ -37,7 +36,7 @@ def init(echo: bool):
         click.echo(f"✗ Configuration error: {e}", err=True)
         click.echo("\nPlease set AE_DATABASE_URL in your .env.local file:", err=True)
         click.echo("  AE_DATABASE_URL=postgresql+psycopg://user:password@localhost:5432/acoustic_emissions", err=True)
-        raise click.Abort()
+        raise click.Abort() from e
     except Exception as e:
         click.echo(f"✗ Database initialization failed: {e}", err=True)
         raise
@@ -55,14 +54,14 @@ def check(echo: bool):
     """
     try:
         engine = get_engine(echo=echo)
-        with engine.connect() as conn:
+        with engine.connect():
             click.echo("✓ Database connection successful")
             click.echo(f"  Connected to: {engine.url}")
     except ValueError as e:
         click.echo(f"✗ Configuration error: {e}", err=True)
         click.echo("\nPlease set AE_DATABASE_URL in your .env.local file:", err=True)
         click.echo("  AE_DATABASE_URL=postgresql+psycopg://user:password@localhost:5432/acoustic_emissions", err=True)
-        raise click.Abort()
+        raise click.Abort() from e
     except Exception as e:
         click.echo(f"✗ Database connection failed: {e}", err=True)
         raise

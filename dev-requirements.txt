@@ -1,6 +1,9 @@
-black==25.9.0
-isort==7.0.0
-pytest==8.4.2
-# Optional tooling
-mypy==1.8.0
-flake8==6.1.0
+# Linting & formatting
+ruff>=0.9
+mypy>=1.15
+
+# Testing
+pytest>=8.4
+
+# Pre-commit hooks
+pre-commit>=4.1

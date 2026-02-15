@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Callable, Iterable
 from pathlib import Path
-from typing import Dict, Iterable, Union
+from typing import Literal, Union, cast
 
 from ._utils import normalize_id_sequence
 from .demographics import import_demographics
@@ -12,10 +13,10 @@ from .varus_thurst import import_varus_thurst
 
 __all__ = [
     "import_demographics",
-    "import_koos",
-    "import_varus_thurst",
-    "import_oai",
     "import_kl",
+    "import_koos",
+    "import_oai",
+    "import_varus_thurst",
     "load_characteristics",
 ]
 
@@ -25,7 +26,7 @@ def load_characteristics(
     study_ids: Union[int, str, Iterable[Union[int, str]]],
     *,
     oai_knees: str = "both",
-) -> Dict[int, Dict[str, object]]:
+) -> dict[int, dict[str, object]]:
     """Load all participant characteristics for the requested Study IDs.
 
     Aggregates demographics, KOOS, varus thrust, OAI (tibiofemoral/patellofemoral),
@@ -34,14 +35,15 @@ def load_characteristics(
     """
     path = Path(excel_path)
     ids = normalize_id_sequence(study_ids)
-    combined: Dict[int, Dict[str, object]] = {study_id: {} for study_id in ids}
+    combined: dict[int, dict[str, object]] = {study_id: {} for study_id in ids}
+    knees = cast(Literal["left", "right", "both"], oai_knees)
 
-    importers = [
-        lambda: import_demographics(path, ids),
-        lambda: import_koos(path, ids),
-        lambda: import_varus_thurst(path, ids),
-        lambda: import_oai(path, ids, knees=oai_knees),
-        lambda: import_kl(path, ids),
+    importers: list[Callable[[], dict[int, dict[str, object]]]] = [
+        lambda: dict(import_demographics(path, ids)),  # type: ignore[arg-type]
+        lambda: dict(import_koos(path, ids)),  # type: ignore[arg-type]
+        lambda: dict(import_varus_thurst(path, ids)),  # type: ignore[arg-type]
+        lambda: dict(import_oai(path, ids, knees=knees)),  # type: ignore[arg-type]
+        lambda: dict(import_kl(path, ids)),  # type: ignore[arg-type]
     ]
 
     for importer in importers:

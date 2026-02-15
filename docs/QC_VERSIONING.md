@@ -89,9 +89,9 @@ Document significant changes to QC methods in the docstring of `src/qc_versions.
 Version History:
     Audio QC v1: Initial implementation with periodic audio detection
     Audio QC v2: Added bandpower ratio filtering (2026-01-15)
-    
+
     Biomechanics QC v1: Basic biomechanics validation
-    
+
     Cycle QC v1: Initial cycle-level acoustic energy thresholding
 """
 ```
@@ -102,9 +102,9 @@ The QC version fields in metadata are designed to be saved to a database. When q
 
 ```python
 # Example database query to filter by QC version
-# SELECT * FROM movement_cycles 
-# WHERE audio_qc_version = 2 
-#   AND biomech_qc_version = 1 
+# SELECT * FROM movement_cycles
+# WHERE audio_qc_version = 2
+#   AND biomech_qc_version = 1
 #   AND cycle_qc_version = 1
 ```
 

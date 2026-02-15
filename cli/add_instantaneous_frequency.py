@@ -4,7 +4,6 @@ import argparse
 import json
 import logging
 from pathlib import Path
-from typing import Tuple
 
 import numpy as np
 import pandas as pd
@@ -12,7 +11,7 @@ import pandas as pd
 from src.audio.instantaneous_frequency import add_instantaneous_frequency
 
 
-def determine_fs_and_dt(df: pd.DataFrame, meta_json: Path) -> Tuple[float, float]:
+def determine_fs_and_dt(df: pd.DataFrame, meta_json: Path) -> tuple[float, float]:
     """Determine sampling frequency and time step from DataFrame or metadata.
 
     Attempts to derive sampling rate and time delta in this order:
@@ -37,7 +36,7 @@ def determine_fs_and_dt(df: pd.DataFrame, meta_json: Path) -> Tuple[float, float
         return 1.0 / dt, dt
     if meta_json.exists():
         try:
-            with open(meta_json, "r", encoding="utf-8") as f:
+            with open(meta_json, encoding="utf-8") as f:
                 meta = json.load(f)
             fs = float(meta.get("fs", np.nan))
             if not np.isnan(fs) and fs > 0:
@@ -60,20 +59,14 @@ def main() -> None:
     - 1: Input pickle not found or failed to read
     - 2: Cannot determine sampling frequency (missing tt and meta.fs)
     """
-    p = argparse.ArgumentParser(
-        description="Add instantaneous frequency to a pickle file."
-    )
+    p = argparse.ArgumentParser(description="Add instantaneous frequency to a pickle file.")
     p.add_argument("input_file", type=Path, help="Input pickle file.")
     p.add_argument("--lowcut", type=float, default=10.0, help="Low cutoff frequency (Hz)")
-    p.add_argument(
-        "--highcut", type=float, default=5000.0, help="High cutoff frequency (Hz)"
-    )
+    p.add_argument("--highcut", type=float, default=5000.0, help="High cutoff frequency (Hz)")
     p.add_argument("--order", type=int, default=4, help="Butterworth order")
     args = p.parse_args()
 
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s"
-    )
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
 
     pkl_path = args.input_file
     if not pkl_path.exists():
@@ -90,9 +83,7 @@ def main() -> None:
     fs, dt = determine_fs_and_dt(df, meta_json)
     logging.info("Using sampling frequency: %.6f Hz (dt=%.9f s)", fs, dt)
 
-    df_with_freq = add_instantaneous_frequency(
-        df, fs, lowcut=args.lowcut, highcut=args.highcut, order=args.order
-    )
+    df_with_freq = add_instantaneous_frequency(df, fs, lowcut=args.lowcut, highcut=args.highcut, order=args.order)
 
     out_pkl = dirpath / (base + "_with_freq.pkl")
     out_csv = dirpath / (base + "_with_freq_channels.csv")

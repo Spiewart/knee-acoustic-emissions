@@ -1,11 +1,11 @@
 """Object-oriented participant processing with clear state management."""
 
-import logging
-import re
 from dataclasses import dataclass, field
 from datetime import datetime
+import logging
 from pathlib import Path
-from typing import Literal, Optional, cast
+import re
+from typing import Literal, cast
 
 import pandas as pd
 
@@ -17,10 +17,12 @@ from src.orchestration.participant import (
 from src.orchestration.processing_log import (
     KneeProcessingLog,
     ManeuverProcessingLog,
-    _normalize_maneuver as _maneuver_to_db_code,
     create_audio_record_from_data,
     create_biomechanics_record_from_data,
     create_sync_record_from_data,
+)
+from src.orchestration.processing_log import (
+    _normalize_maneuver as _maneuver_to_db_code,
 )
 from src.synchronization.sync import load_audio_data
 
@@ -55,40 +57,43 @@ def _normalize_folder_name(name: str) -> str:
 @dataclass
 class AudioData:
     """Encapsulates audio processing state for a maneuver."""
+
     pkl_path: Path
-    df: Optional[pd.DataFrame] = None
-    metadata: Optional[dict] = None
-    record: Optional[AudioProcessing] = None
+    df: pd.DataFrame | None = None
+    metadata: dict | None = None
+    record: AudioProcessing | None = None
 
 
 @dataclass
 class BiomechanicsData:
     """Encapsulates biomechanics processing state for a maneuver."""
+
     file_path: Path
     recordings: list = field(default_factory=list)
-    record: Optional[BiomechanicsImport] = None
+    record: BiomechanicsImport | None = None
 
 
 @dataclass
 class SyncData:
     """Encapsulates a single synchronized pass."""
+
     output_path: Path
     df: pd.DataFrame
     stomp_times: tuple  # (audio_stomp, bio_left, bio_right, detection_results)
-    record: Optional[Synchronization] = None
-    pass_number: Optional[int] = None  # For walk maneuvers
-    speed: Optional[str] = None  # For walk maneuvers
+    record: Synchronization | None = None
+    pass_number: int | None = None  # For walk maneuvers
+    speed: str | None = None  # For walk maneuvers
 
 
 @dataclass
 class CycleData:
     """Encapsulates cycle QC results for a sync file."""
-    synced_file_path: Path
-    output_dir: Optional[Path] = None
-    record: Optional[Synchronization] = None  # Synchronization record with cycle details
-    sync_file_stem: Optional[str] = None
-    cycle_qc_results: list[CycleQCResult] = field(default_factory=list)
 
+    synced_file_path: Path
+    output_dir: Path | None = None
+    record: Synchronization | None = None  # Synchronization record with cycle details
+    sync_file_stem: str | None = None
+    cycle_qc_results: list[CycleQCResult] = field(default_factory=list)
 
 
 class ManeuverProcessor:
@@ -101,7 +106,7 @@ class ManeuverProcessor:
         knee_side: Literal["Left", "Right"],
         study_id: str,
         biomechanics_file: Path,
-        biomechanics_type: Optional[str] = None,
+        biomechanics_type: str | None = None,
         study_name: str = "AOA",
     ):
         self.maneuver_dir = maneuver_dir
@@ -113,11 +118,11 @@ class ManeuverProcessor:
         self.study_name = study_name
 
         # Processing state
-        self.audio: Optional[AudioData] = None
-        self.biomechanics: Optional[BiomechanicsData] = None
+        self.audio: AudioData | None = None
+        self.biomechanics: BiomechanicsData | None = None
         self.synced_data: list[SyncData] = []
         self.cycle_data: list[CycleData] = []
-        self.log: Optional[ManeuverProcessingLog] = None
+        self.log: ManeuverProcessingLog | None = None
 
     def process_bin_stage(self) -> bool:
         """Read .bin file, run QC, add frequency, and produce *_with_freq.pkl."""
@@ -140,6 +145,7 @@ class ManeuverProcessor:
 
             # Read .bin file (creates base pkl)
             from src.audio.readers import read_audio_board_file
+
             audio_df = read_audio_board_file(str(bin_path), str(outputs_dir))
 
             # Check that base pkl was created
@@ -157,8 +163,9 @@ class ManeuverProcessor:
                 merge_bad_intervals,
                 run_raw_audio_qc,
             )
+
             dropout_intervals, artifact_intervals = run_raw_audio_qc(audio_df)
-            bad_intervals = merge_bad_intervals(dropout_intervals, artifact_intervals)
+            merge_bad_intervals(dropout_intervals, artifact_intervals)
             dropout_per_mic = detect_signal_dropout_per_mic(audio_df)
             artifact_per_mic, artifact_types_per_mic = detect_artifactual_noise_per_mic(audio_df)
 
@@ -170,6 +177,7 @@ class ManeuverProcessor:
 
             # Add instantaneous frequency
             from src.audio.instantaneous_frequency import add_instantaneous_frequency
+
             audio_df = add_instantaneous_frequency(audio_df, fs)
 
             # Save frequency-augmented pickle
@@ -192,18 +200,14 @@ class ManeuverProcessor:
                     overall_artifact_types.extend(artifact_types_per_mic[ch_name])
             # Remove duplicates while preserving order
             seen = set()
-            overall_artifact_types = [x for x in overall_artifact_types if not (x in seen or seen.add(x))]
+            overall_artifact_types = [x for x in overall_artifact_types if not (x in seen or seen.add(x))]  # type: ignore[func-returns-value]
 
             # Merge ALL fail types into overall qc_fail_segments:
             # signal dropout + intermittent artifacts + continuous artifacts
             all_fail_intervals = (
-                list(dropout_intervals or [])
-                + list(artifact_intervals or [])
-                + list(continuous_intervals or [])
+                list(dropout_intervals or []) + list(artifact_intervals or []) + list(continuous_intervals or [])
             )
-            overall_fail_segments = merge_bad_intervals(
-                all_fail_intervals, []
-            ) if all_fail_intervals else []
+            overall_fail_segments = merge_bad_intervals(all_fail_intervals, []) if all_fail_intervals else []
 
             qc_data = {
                 "qc_fail_segments": overall_fail_segments,
@@ -219,27 +223,26 @@ class ManeuverProcessor:
                 ch_fail_sources = []
 
                 # Per-channel continuous artifact (spectral detection)
-                if ch_name in continuous_per_mic and continuous_per_mic[ch_name]:
+                if continuous_per_mic.get(ch_name):
                     ch_continuous = list(continuous_per_mic[ch_name])
                     qc_data[f"qc_continuous_artifact_ch{ch_num}"] = True
                     qc_data[f"qc_continuous_artifact_segments_ch{ch_num}"] = ch_continuous
                     ch_fail_sources.extend(ch_continuous)
 
                 # Per-channel signal dropout
-                if ch_name in dropout_per_mic and dropout_per_mic[ch_name]:
+                if dropout_per_mic.get(ch_name):
                     ch_dropout = list(dropout_per_mic[ch_name])
                     qc_data[f"qc_signal_dropout_ch{ch_num}"] = True
                     qc_data[f"qc_signal_dropout_segments_ch{ch_num}"] = ch_dropout
                     ch_fail_sources.extend(ch_dropout)
 
                 # Per-channel intermittent artifact
-                if ch_name in artifact_per_mic and artifact_per_mic[ch_name]:
+                if artifact_per_mic.get(ch_name):
                     ch_fail_sources.extend(artifact_per_mic[ch_name])
 
                 # Merge all per-channel fail sources into qc_fail_segments_chX
                 qc_data[f"qc_fail_segments_ch{ch_num}"] = (
-                    merge_bad_intervals(ch_fail_sources, [])
-                    if ch_fail_sources else []
+                    merge_bad_intervals(ch_fail_sources, []) if ch_fail_sources else []
                 )
 
             self.audio = AudioData(
@@ -277,10 +280,9 @@ class ManeuverProcessor:
     def process_sync_stage(self) -> bool:
         """Synchronize audio with biomechanics."""
         # Load audio state if not already loaded (handles resuming from sync)
-        if not self.audio or self.audio.df is None:
-            if not self._load_existing_audio_state():
-                logging.error("Audio state must be available to run sync stage")
-                return False
+        if (not self.audio or self.audio.df is None) and not self._load_existing_audio_state():
+            logging.error("Audio state must be available to run sync stage")
+            return False
 
         try:
             logging.info(f"Processing {self.knee_side} {self.maneuver_key} sync stage")
@@ -298,11 +300,11 @@ class ManeuverProcessor:
                     self.synced_data.append(sync_result)
 
             # Update audio record with biomechanics info
-            if self.audio.record and self.biomechanics.recordings:
-                self.audio.record.linked_biomechanics = True
-                self.audio.record.biomechanics_file = str(self.biomechanics_file)
-                self.audio.record.biomechanics_type = self.biomechanics_type
-                self.audio.record.log_updated = datetime.now()
+            if self.audio.record and self.biomechanics.recordings:  # type: ignore[union-attr]
+                self.audio.record.linked_biomechanics = True  # type: ignore[union-attr]
+                self.audio.record.biomechanics_file = str(self.biomechanics_file)  # type: ignore[union-attr]
+                self.audio.record.biomechanics_type = self.biomechanics_type  # type: ignore[union-attr]
+                self.audio.record.log_updated = datetime.now()  # type: ignore[union-attr]
                 if self.biomechanics.recordings:
                     first_rec = self.biomechanics.recordings[0]
                     # Try to infer sample rate from the biomechanics data
@@ -322,16 +324,16 @@ class ManeuverProcessor:
                                 if len(time_diffs) > 0:
                                     avg_diff_sec = time_diffs.mean().total_seconds()
                                     if avg_diff_sec > 0:
-                                        self.audio.record.biomechanics_sample_rate = 1.0 / avg_diff_sec
+                                        self.audio.record.biomechanics_sample_rate = 1.0 / avg_diff_sec  # type: ignore[union-attr]
                         elif hasattr(first_rec, "sample_rate"):
-                            self.audio.record.biomechanics_sample_rate = float(first_rec.sample_rate)
+                            self.audio.record.biomechanics_sample_rate = float(first_rec.sample_rate)  # type: ignore[union-attr]
                     except Exception as e:
                         logging.debug(f"Could not determine biomechanics sample rate: {e}")
                 # Set sync method based on biomechanics type
                 if self.biomechanics_type == "Gonio":
-                    self.audio.record.biomechanics_sync_method = "flick"
+                    self.audio.record.biomechanics_sync_method = "flick"  # type: ignore[union-attr]
                 else:
-                    self.audio.record.biomechanics_sync_method = "stomp"
+                    self.audio.record.biomechanics_sync_method = "stomp"  # type: ignore[union-attr]
 
             # Create biomechanics record
             self.biomechanics.record = create_biomechanics_record_from_data(
@@ -342,7 +344,9 @@ class ManeuverProcessor:
                 biomechanics_type=self.biomechanics_type,
                 knee=self.knee_side.lower(),
                 biomechanics_sync_method=("flick" if self.biomechanics_type == "Gonio" else "stomp"),
-                biomechanics_sample_rate=getattr(self.audio.record, "biomechanics_sample_rate", None) if self.audio else None,
+                biomechanics_sample_rate=getattr(self.audio.record, "biomechanics_sample_rate", None)
+                if self.audio
+                else None,
                 study_id=int(self.study_id),
             )
 
@@ -390,10 +394,9 @@ class ManeuverProcessor:
             True if successful, False otherwise
         """
         # Load synced files from disk if needed (handles resuming from cycles)
-        if not self.synced_data:
-            if not self._load_existing_synced_data():
-                logging.warning(f"No synced data to run cycles on for {self.knee_side} {self.maneuver_key}")
-                return True  # Not a failure
+        if not self.synced_data and not self._load_existing_synced_data():
+            logging.warning(f"No synced data to run cycles on for {self.knee_side} {self.maneuver_key}")
+            return True  # Not a failure
 
         try:
             from src.synchronization.quality_control import perform_sync_qc
@@ -424,15 +427,15 @@ class ManeuverProcessor:
                     qc_output = perform_sync_qc(
                         synced_pkl_path=sync_data.output_path,
                         output_dir=output_dir,
-                        maneuver=maneuver,
-                        speed=speed,
+                        maneuver=maneuver,  # type: ignore[arg-type]
+                        speed=speed,  # type: ignore[arg-type]
                         acoustic_threshold=100.0,  # Default threshold
                         create_plots=True,
                         bad_audio_segments=None,  # Will load from processing log
                     )
 
-                    clean_cycles = qc_output.clean_cycles
-                    outlier_cycles = qc_output.outlier_cycles
+                    clean_cycles = qc_output.clean_cycles  # type: ignore[attr-defined]
+                    outlier_cycles = qc_output.outlier_cycles  # type: ignore[attr-defined]
 
                     logging.info(
                         f"Extracted {len(clean_cycles)} clean and {len(outlier_cycles)} outlier cycles "
@@ -443,7 +446,7 @@ class ManeuverProcessor:
                     # (record is None when entering from cycles entrypoint)
                     if sync_data.record is not None:
                         # Store sync-level periodic artifact results (Phase E.1)
-                        sync_periodic = qc_output.sync_periodic_results
+                        sync_periodic = qc_output.sync_periodic_results  # type: ignore[attr-defined]
                         if sync_periodic:
                             sync_data.record.periodic_artifact_detected = sync_periodic.get(
                                 "periodic_artifact_detected", False
@@ -494,6 +497,7 @@ class ManeuverProcessor:
 
                             if cycle_durations:
                                 import statistics
+
                                 sync_data.record.mean_cycle_duration_s = statistics.mean(cycle_durations)
                                 sync_data.record.median_cycle_duration_s = statistics.median(cycle_durations)
                                 sync_data.record.min_cycle_duration_s = min(cycle_durations)
@@ -502,10 +506,10 @@ class ManeuverProcessor:
                     # Store cycle record in CycleData (using the updated sync record)
                     cycle_data = CycleData(
                         synced_file_path=sync_data.output_path,
-                        output_dir=qc_output.output_dir,
+                        output_dir=qc_output.output_dir,  # type: ignore[attr-defined]
                         record=sync_data.record,  # Use the updated sync record directly
                         sync_file_stem=sync_data.output_path.stem,
-                        cycle_qc_results=qc_output.cycle_qc_results,
+                        cycle_qc_results=qc_output.cycle_qc_results,  # type: ignore[attr-defined]
                     )
                     self.cycle_data.append(cycle_data)
 
@@ -562,10 +566,7 @@ class ManeuverProcessor:
     def save_logs(self) -> bool:
         """Update and save processing logs."""
         try:
-            from datetime import datetime, timedelta
-
             from src.db.repository import Repository
-            from src.metadata import MovementCycle
             from src.orchestration.processing_log import (
                 close_db_session,
                 create_db_session,
@@ -621,8 +622,7 @@ class ManeuverProcessor:
                     # Save biomechanics record linked to audio
                     if self.log.biomechanics_record and audio_db_record:
                         biomech_db_record = repo.save_biomechanics_import(
-                            self.log.biomechanics_record,
-                            audio_processing_id=audio_db_record.id
+                            self.log.biomechanics_record, audio_processing_id=audio_db_record.id
                         )
                         seen_biomech_ids.add(biomech_db_record.id)
 
@@ -636,7 +636,7 @@ class ManeuverProcessor:
                             db_sync = repo.save_synchronization(
                                 sync_record,
                                 audio_processing_id=audio_db_record.id,
-                                biomechanics_import_id=biomech_db_record.id
+                                biomechanics_import_id=biomech_db_record.id,
                             )
                             seen_sync_ids.add(db_sync.id)
                             if sync_record.sync_file_name:
@@ -656,10 +656,7 @@ class ManeuverProcessor:
                         # Mark sync records as "seen" if their synced file was processed
                         processed_stems = {sd.output_path.stem for sd in self.synced_data if sd.output_path}
                         for name, sr in sync_records_by_name.items():
-                            if hasattr(sr, 'id') and (
-                                name in processed_stems
-                                or Path(name).stem in processed_stems
-                            ):
+                            if hasattr(sr, "id") and (name in processed_stems or Path(name).stem in processed_stems):
                                 seen_sync_ids.add(sr.id)
 
                     # Save movement cycle records
@@ -685,9 +682,7 @@ class ManeuverProcessor:
                         )
                         total_deactivated = sum(deactivated.values())
                         if total_deactivated > 0:
-                            logging.info(
-                                f"Deactivated {total_deactivated} stale record(s): {deactivated}"
-                            )
+                            logging.info(f"Deactivated {total_deactivated} stale record(s): {deactivated}")
 
                     session.commit()
                 finally:
@@ -718,11 +713,11 @@ class ManeuverProcessor:
         # Detect nested format: first element is a list or tuple of length 2
         first = flat[0]
         if isinstance(first, (list, tuple)):
-            return [(float(pair[0]), float(pair[1])) for pair in flat]
+            return [(float(pair[0]), float(pair[1])) for pair in flat]  # type: ignore[index]
         # Flat format: pair up consecutive elements
         if len(flat) % 2 != 0:
             return []
-        return [(float(flat[i]), float(flat[i + 1])) for i in range(0, len(flat), 2)]
+        return [(float(flat[i]), float(flat[i + 1])) for i in range(0, len(flat), 2)]  # type: ignore[arg-type]
 
     @staticmethod
     def _flatten_intervals(intervals: list[tuple[float, float]]) -> list[float]:
@@ -797,18 +792,14 @@ class ManeuverProcessor:
                 sync_query = base_sync_query
                 if sync_stem:
                     sync_query = sync_query.filter(
-                        SynchronizationRecord.sync_file_name.in_(
-                            [sync_stem, f"{sync_stem}.pkl"]
-                        )
+                        SynchronizationRecord.sync_file_name.in_([sync_stem, f"{sync_stem}.pkl"])
                     )
                 sync_db_record = sync_query.first()
                 if sync_db_record is None and self.maneuver_key != "walk":
                     sync_db_record = base_sync_query.order_by(SynchronizationRecord.id.desc()).first()
 
             # Build lookup from in-memory CycleQCResult objects
-            qc_by_file: dict[str, CycleQCResult] = {
-                r.cycle_file: r for r in cycle_data.cycle_qc_results
-            }
+            qc_by_file: dict[str, CycleQCResult] = {r.cycle_file: r for r in cycle_data.cycle_qc_results}
 
             for pkl_path in sorted(cycle_data.output_dir.rglob("*.pkl")):
                 if not pkl_path.name.startswith(sync_stem):
@@ -861,9 +852,7 @@ class ManeuverProcessor:
                 has_dropout = False
                 for ch_num in range(1, 5):
                     flat = getattr(audio_db_record, f"qc_signal_dropout_segments_ch{ch_num}", None)
-                    trimmed = trim_intervals_to_cycle(
-                        self._unflatten_intervals(flat), start_time_s, end_time_s
-                    )
+                    trimmed = trim_intervals_to_cycle(self._unflatten_intervals(flat), start_time_s, end_time_s)
                     dropout_per_ch[ch_num] = trimmed
                     if trimmed:
                         has_dropout = True
@@ -875,9 +864,7 @@ class ManeuverProcessor:
                 has_continuous = False
                 for ch_num in range(1, 5):
                     flat = getattr(audio_db_record, f"qc_continuous_artifact_segments_ch{ch_num}", None)
-                    trimmed = trim_intervals_to_cycle(
-                        self._unflatten_intervals(flat), start_time_s, end_time_s
-                    )
+                    trimmed = trim_intervals_to_cycle(self._unflatten_intervals(flat), start_time_s, end_time_s)
                     continuous_per_ch[ch_num] = trimmed
                     if trimmed:
                         has_continuous = True
@@ -885,12 +872,14 @@ class ManeuverProcessor:
                     audio_qc_failures.append("continuous")
 
                 # --- Cycle-stage QC: intermittent artifacts ---
-                has_intermittent = any([
-                    qc.intermittent_intervals_ch1,
-                    qc.intermittent_intervals_ch2,
-                    qc.intermittent_intervals_ch3,
-                    qc.intermittent_intervals_ch4,
-                ])
+                has_intermittent = any(
+                    [
+                        qc.intermittent_intervals_ch1,
+                        qc.intermittent_intervals_ch2,
+                        qc.intermittent_intervals_ch3,
+                        qc.intermittent_intervals_ch4,
+                    ]
+                )
                 if has_intermittent:
                     audio_qc_failures.append("intermittent")
 
@@ -902,13 +891,13 @@ class ManeuverProcessor:
                 audio_qc_fail = len(audio_qc_failures) > 0
 
                 cycle = MovementCycle(
-                    study=self.log.audio_record.study if self.log and self.log.audio_record else self.study_name,
+                    study=self.log.audio_record.study if self.log and self.log.audio_record else self.study_name,  # type: ignore[arg-type]
                     study_id=int(self.study_id),
                     audio_processing_id=audio_db_record.id,
                     biomechanics_import_id=biomech_db_record.id if biomech_db_record else None,
                     synchronization_id=synchronization_id,
-                    knee=self.knee_side.lower(),
-                    maneuver=_maneuver_to_db_code(self.maneuver_key),
+                    knee=self.knee_side.lower(),  # type: ignore[arg-type]
+                    maneuver=_maneuver_to_db_code(self.maneuver_key),  # type: ignore[arg-type]
                     pass_number=pass_number,
                     speed=speed,
                     cycle_file=pkl_path.name,
@@ -923,7 +912,7 @@ class ManeuverProcessor:
                     sync_qc_fail=not qc.sync_qc_pass,
                     # Aggregate audio QC
                     audio_qc_fail=audio_qc_fail,
-                    audio_qc_failures=audio_qc_failures if audio_qc_failures else None,
+                    audio_qc_failures=audio_qc_failures if audio_qc_failures else None,  # type: ignore[arg-type]
                     # Dropout artifacts (audio-stage, trimmed to cycle)
                     audio_artifact_dropout_fail=has_dropout,
                     audio_artifact_dropout_fail_ch1=bool(dropout_per_ch.get(1)),
@@ -932,7 +921,8 @@ class ManeuverProcessor:
                     audio_artifact_dropout_fail_ch4=bool(dropout_per_ch.get(4)),
                     audio_artifact_dropout_timestamps=self._flatten_intervals(
                         [iv for ch in dropout_per_ch.values() for iv in ch]
-                    ) or None,
+                    )
+                    or None,
                     audio_artifact_dropout_timestamps_ch1=self._flatten_intervals(dropout_per_ch.get(1, [])) or None,
                     audio_artifact_dropout_timestamps_ch2=self._flatten_intervals(dropout_per_ch.get(2, [])) or None,
                     audio_artifact_dropout_timestamps_ch3=self._flatten_intervals(dropout_per_ch.get(3, [])) or None,
@@ -945,11 +935,16 @@ class ManeuverProcessor:
                     audio_artifact_continuous_fail_ch4=bool(continuous_per_ch.get(4)),
                     audio_artifact_continuous_timestamps=self._flatten_intervals(
                         [iv for ch in continuous_per_ch.values() for iv in ch]
-                    ) or None,
-                    audio_artifact_continuous_timestamps_ch1=self._flatten_intervals(continuous_per_ch.get(1, [])) or None,
-                    audio_artifact_continuous_timestamps_ch2=self._flatten_intervals(continuous_per_ch.get(2, [])) or None,
-                    audio_artifact_continuous_timestamps_ch3=self._flatten_intervals(continuous_per_ch.get(3, [])) or None,
-                    audio_artifact_continuous_timestamps_ch4=self._flatten_intervals(continuous_per_ch.get(4, [])) or None,
+                    )
+                    or None,
+                    audio_artifact_continuous_timestamps_ch1=self._flatten_intervals(continuous_per_ch.get(1, []))
+                    or None,
+                    audio_artifact_continuous_timestamps_ch2=self._flatten_intervals(continuous_per_ch.get(2, []))
+                    or None,
+                    audio_artifact_continuous_timestamps_ch3=self._flatten_intervals(continuous_per_ch.get(3, []))
+                    or None,
+                    audio_artifact_continuous_timestamps_ch4=self._flatten_intervals(continuous_per_ch.get(4, []))
+                    or None,
                     # Intermittent artifacts (cycle-stage)
                     audio_artifact_intermittent_fail=has_intermittent,
                     audio_artifact_intermittent_fail_ch1=bool(qc.intermittent_intervals_ch1),
@@ -957,9 +952,12 @@ class ManeuverProcessor:
                     audio_artifact_intermittent_fail_ch3=bool(qc.intermittent_intervals_ch3),
                     audio_artifact_intermittent_fail_ch4=bool(qc.intermittent_intervals_ch4),
                     audio_artifact_timestamps=self._flatten_intervals(
-                        qc.intermittent_intervals_ch1 + qc.intermittent_intervals_ch2
-                        + qc.intermittent_intervals_ch3 + qc.intermittent_intervals_ch4
-                    ) or None,
+                        qc.intermittent_intervals_ch1
+                        + qc.intermittent_intervals_ch2
+                        + qc.intermittent_intervals_ch3
+                        + qc.intermittent_intervals_ch4
+                    )
+                    or None,
                     audio_artifact_timestamps_ch1=self._flatten_intervals(qc.intermittent_intervals_ch1) or None,
                     audio_artifact_timestamps_ch2=self._flatten_intervals(qc.intermittent_intervals_ch2) or None,
                     audio_artifact_timestamps_ch3=self._flatten_intervals(qc.intermittent_intervals_ch3) or None,
@@ -971,9 +969,12 @@ class ManeuverProcessor:
                     audio_artifact_periodic_fail_ch3=qc.periodic_noise_ch3,
                     audio_artifact_periodic_fail_ch4=qc.periodic_noise_ch4,
                     audio_artifact_periodic_timestamps=self._flatten_intervals(
-                        qc.periodic_intervals_ch1 + qc.periodic_intervals_ch2
-                        + qc.periodic_intervals_ch3 + qc.periodic_intervals_ch4
-                    ) or None,
+                        qc.periodic_intervals_ch1
+                        + qc.periodic_intervals_ch2
+                        + qc.periodic_intervals_ch3
+                        + qc.periodic_intervals_ch4
+                    )
+                    or None,
                     audio_artifact_periodic_timestamps_ch1=self._flatten_intervals(qc.periodic_intervals_ch1) or None,
                     audio_artifact_periodic_timestamps_ch2=self._flatten_intervals(qc.periodic_intervals_ch2) or None,
                     audio_artifact_periodic_timestamps_ch3=self._flatten_intervals(qc.periodic_intervals_ch3) or None,
@@ -1036,15 +1037,13 @@ class ManeuverProcessor:
                     AudioProcessingRecord.study_id == study.id,
                     AudioProcessingRecord.knee == knee,
                     AudioProcessingRecord.maneuver == db_maneuver,
-                    AudioProcessingRecord.is_active == True,  # noqa: E712
+                    AudioProcessingRecord.is_active == True,
                 )
             )
         ).scalar_one_or_none()
 
         if audio_db_record is None:
-            logging.warning(
-                f"No active audio record found for {knee} {db_maneuver} (participant {self.study_id})"
-            )
+            logging.warning(f"No active audio record found for {knee} {db_maneuver} (participant {self.study_id})")
             return None, None
 
         # Look up existing biomechanics record
@@ -1054,22 +1053,26 @@ class ManeuverProcessor:
                     BiomechanicsImportRecord.study_id == study.id,
                     BiomechanicsImportRecord.knee == knee,
                     BiomechanicsImportRecord.maneuver == db_maneuver,
-                    BiomechanicsImportRecord.is_active == True,  # noqa: E712
+                    BiomechanicsImportRecord.is_active == True,
                 )
             )
         ).scalar_one_or_none()
 
         # Populate sync_records_by_name from existing sync records
-        sync_records = repo.session.execute(
-            select(SynchronizationRecord).where(
-                and_(
-                    SynchronizationRecord.study_id == study.id,
-                    SynchronizationRecord.knee == knee,
-                    SynchronizationRecord.maneuver == db_maneuver,
-                    SynchronizationRecord.is_active == True,  # noqa: E712
+        sync_records = (
+            repo.session.execute(
+                select(SynchronizationRecord).where(
+                    and_(
+                        SynchronizationRecord.study_id == study.id,
+                        SynchronizationRecord.knee == knee,
+                        SynchronizationRecord.maneuver == db_maneuver,
+                        SynchronizationRecord.is_active == True,
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         for sr in sync_records:
             if sr.sync_file_name:
                 sync_records_by_name[sr.sync_file_name] = sr
@@ -1122,7 +1125,9 @@ class ManeuverProcessor:
 
             # Create audio record
             audio_bin_path = self._find_bin_file()
-            audio_file_base = Path(audio_bin_path).stem if audio_bin_path else audio_pkl_path.stem.replace("_with_freq", "")
+            audio_file_base = (
+                Path(audio_bin_path).stem if audio_bin_path else audio_pkl_path.stem.replace("_with_freq", "")
+            )
             self.audio.record = create_audio_record_from_data(
                 audio_file_name=audio_file_base,
                 audio_df=audio_df,
@@ -1140,7 +1145,7 @@ class ManeuverProcessor:
             logging.error(f"Failed to load existing audio state: {e}")
             return False
 
-    def _find_audio_pickle(self) -> Optional[Path]:
+    def _find_audio_pickle(self) -> Path | None:
         """Find the audio pickle file."""
         # Look in outputs subdirectories first
         for pkl in self.maneuver_dir.glob("*_outputs/*_with_freq.pkl"):
@@ -1150,7 +1155,7 @@ class ManeuverProcessor:
             return pkl
         return None
 
-    def _find_bin_file(self) -> Optional[Path]:
+    def _find_bin_file(self) -> Path | None:
         """Find the .bin audio file."""
         for bin_file in self.maneuver_dir.glob("*.bin"):
             return bin_file
@@ -1179,20 +1184,20 @@ class ManeuverProcessor:
         participant_dir = self.maneuver_dir.parents[1]
         legend_pattern = study_config.get_legend_file_pattern()
         legend_files = [
-            f for f in participant_dir.glob(f"{legend_pattern}.xls*")
+            f
+            for f in participant_dir.glob(f"{legend_pattern}.xls*")
             if not f.name.startswith("~$")  # Exclude Excel temp/lock files
         ]
         if not legend_files:
-            raise FileNotFoundError(
-                f"No acoustic file legend found in {participant_dir}"
-            )
+            raise FileNotFoundError(f"No acoustic file legend found in {participant_dir}")
         legend_path = legend_files[0]
 
         from src.audio.parsers import get_acoustics_metadata
+
         meta, legend_mismatches = get_acoustics_metadata(
             metadata_file_path=str(legend_path),
             scripted_maneuver=self.maneuver_key,
-            knee=self.knee_side.lower(),
+            knee=self.knee_side.lower(),  # type: ignore[arg-type]
             study_name=self.study_name,
         )
         self._legend_mismatches = legend_mismatches
@@ -1207,19 +1212,18 @@ class ManeuverProcessor:
             mic_positions[f"mic_{mic_num}_position"] = _to_code(pos)
 
         if len(mic_positions) != 4:
-            raise ValueError(
-                f"Incomplete microphone positions in legend: {legend_path}"
-            )
+            raise ValueError(f"Incomplete microphone positions in legend: {legend_path}")
 
         return mic_positions
 
-    def _load_audio_metadata(self, pkl_path: Path) -> Optional[dict]:
+    def _load_audio_metadata(self, pkl_path: Path) -> dict | None:
         """Load audio metadata from _meta.json file."""
         meta_json_path = pkl_path.parent / f"{pkl_path.stem.replace('_with_freq', '')}_meta.json"
         if meta_json_path.exists():
             import json
+
             try:
-                with open(meta_json_path, "r") as f:
+                with open(meta_json_path) as f:
                     return json.load(f)
             except Exception as e:
                 logging.warning(f"Failed to load metadata from {meta_json_path}: {e}")
@@ -1235,7 +1239,7 @@ class ManeuverProcessor:
                     speed_recordings = import_biomechanics_recordings(
                         biomechanics_file=self.biomechanics_file,
                         maneuver=self.maneuver_key,
-                        speed=speed,
+                        speed=speed,  # type: ignore[arg-type]
                     )
                     recordings.extend(speed_recordings)
             else:
@@ -1248,7 +1252,7 @@ class ManeuverProcessor:
 
         return BiomechanicsData(file_path=self.biomechanics_file, recordings=recordings)
 
-    def _load_event_data(self) -> Optional[pd.DataFrame]:
+    def _load_event_data(self) -> pd.DataFrame | None:
         """Load event metadata from biomechanics file.
 
         Returns:
@@ -1256,6 +1260,7 @@ class ManeuverProcessor:
         """
         try:
             from src.orchestration.participant import _load_event_data
+
             return _load_event_data(
                 biomechanics_file=self.biomechanics_file,
                 maneuver_key=self.maneuver_key,
@@ -1264,7 +1269,7 @@ class ManeuverProcessor:
             logging.warning(f"Failed to load event metadata: {e}")
             return None
 
-    def _sync_recording(self, recording) -> Optional[SyncData]:
+    def _sync_recording(self, recording) -> SyncData | None:
         """Synchronize a single recording with audio using stomp detection.
 
         Performs multi-method stomp detection (RMS, onset, frequency) on audio,
@@ -1319,9 +1324,9 @@ class ManeuverProcessor:
             except Exception:
                 study_name = None
 
-            audio_stomp_time, detection_results = get_audio_stomp_time(
+            audio_stomp_time, detection_results = get_audio_stomp_time(  # type: ignore[misc]
                 audio_df,
-                recorded_knee=recorded_knee,
+                recorded_knee=recorded_knee,  # type: ignore[arg-type]
                 right_stomp_time=right_stomp_time,
                 left_stomp_time=left_stomp_time,
                 return_details=True,
@@ -1336,8 +1341,8 @@ class ManeuverProcessor:
             )
 
             # Get pass number and speed from recording
-            pass_number = getattr(recording, 'pass_number', None)
-            speed = getattr(recording, 'speed', None)
+            pass_number = getattr(recording, "pass_number", None)
+            speed = getattr(recording, "speed", None)
 
             # Normalize speed (medium -> normal for event metadata lookups)
             normalized_speed = None
@@ -1406,9 +1411,14 @@ class ManeuverProcessor:
             # Generate stomp visualization
             try:
                 plot_stomp_detection(
-                    audio_df, bio_df, trimmed_df,
-                    audio_stomp_time, left_stomp_time, right_stomp_time,
-                    output_path, detection_results
+                    audio_df,
+                    bio_df,
+                    trimmed_df,
+                    audio_stomp_time,
+                    left_stomp_time,
+                    right_stomp_time,
+                    output_path,
+                    detection_results,
                 )
                 logging.debug(f"Saved stomp detection visualization for {output_path.stem}")
             except Exception as e:
@@ -1458,7 +1468,7 @@ class KneeProcessor:
         knee_side: Literal["Left", "Right"],
         study_id: str,
         biomechanics_file: Path,
-        biomechanics_type: Optional[str] = None,
+        biomechanics_type: str | None = None,
         study_name: str = "AOA",
     ):
         from src.studies import get_study_config
@@ -1471,12 +1481,12 @@ class KneeProcessor:
         self.study_config = get_study_config(study_name)
 
         self.maneuver_processors: dict[str, ManeuverProcessor] = {}
-        self.knee_log: Optional[KneeProcessingLog] = None
+        self.knee_log: KneeProcessingLog | None = None
 
     def process(
         self,
         entrypoint: Literal["bin", "sync", "cycles"] = "sync",
-        maneuver: Optional[str] = None,
+        maneuver: str | None = None,
     ) -> bool:
         """Process all maneuvers for this knee."""
         try:
@@ -1534,7 +1544,7 @@ class KneeProcessor:
         proc.save_logs()
         return True
 
-    def _find_maneuver_dir(self, maneuver_key: str) -> Optional[Path]:
+    def _find_maneuver_dir(self, maneuver_key: str) -> Path | None:
         """Find the directory for a maneuver using alias matching.
 
         Handles naming variations like "Sit-Stand", "Sit_Stand", "sit-to-stand", etc.
@@ -1563,8 +1573,7 @@ class KneeProcessor:
             for maneuver_key, proc in self.maneuver_processors.items():
                 if proc.log:
                     self.knee_log.update_maneuver_summary(
-                        cast(Literal["walk", "sit_to_stand", "flexion_extension"], maneuver_key),
-                        proc.log
+                        cast(Literal["walk", "sit_to_stand", "flexion_extension"], maneuver_key), proc.log
                     )
 
             self.knee_log.save_to_excel()
@@ -1580,7 +1589,7 @@ class ParticipantProcessor:
     def __init__(
         self,
         participant_dir: Path,
-        biomechanics_type: Optional[str] = None,
+        biomechanics_type: str | None = None,
         study_name: str = "AOA",
     ):
         from src.studies import get_study_config
@@ -1596,8 +1605,8 @@ class ParticipantProcessor:
     def process(
         self,
         entrypoint: Literal["bin", "sync", "cycles"] = "sync",
-        knee: Optional[str] = None,
-        maneuver: Optional[str] = None,
+        knee: str | None = None,
+        maneuver: str | None = None,
     ) -> bool:
         """Process participant."""
         try:
@@ -1609,7 +1618,7 @@ class ParticipantProcessor:
             knees_to_process = [knee] if knee else ["Left", "Right"]
 
             for knee_side in knees_to_process:
-                knee_dir_name = self.study_config.get_knee_directory_name(knee_side.lower())
+                knee_dir_name = self.study_config.get_knee_directory_name(knee_side.lower())  # type: ignore[arg-type]
                 knee_dir = self.participant_dir / knee_dir_name
                 if not knee_dir.exists():
                     logging.warning(f"{knee_dir_name} directory not found")
@@ -1637,8 +1646,8 @@ class ParticipantProcessor:
     def _validate_directory_structure(
         self,
         entrypoint: Literal["bin", "sync", "cycles"],
-        knee: Optional[str] = None,
-        maneuver: Optional[str] = None,
+        knee: str | None = None,
+        maneuver: str | None = None,
     ) -> None:
         """Validate directory structure based on entrypoint.
 
@@ -1646,18 +1655,14 @@ class ParticipantProcessor:
         """
         # Always require Motion Capture folder with biomechanics file
         if not self.biomechanics_file.exists():
-            raise FileNotFoundError(
-                f"Biomechanics Excel file not found: {self.biomechanics_file}"
-            )
+            raise FileNotFoundError(f"Biomechanics Excel file not found: {self.biomechanics_file}")
 
         # Validate knee directories
         knees_to_check = [knee] if knee else ["Left", "Right"]
         for knee_side in knees_to_check:
-            knee_dir = self.participant_dir / self.study_config.get_knee_directory_name(knee_side.lower())
+            knee_dir = self.participant_dir / self.study_config.get_knee_directory_name(knee_side.lower())  # type: ignore[arg-type]
             if not knee_dir.exists():
-                raise FileNotFoundError(
-                    f"Required knee directory not found: {knee_dir}"
-                )
+                raise FileNotFoundError(f"Required knee directory not found: {knee_dir}")
 
             # Validate maneuver directories based on entrypoint
             if entrypoint == "bin":
@@ -1689,7 +1694,7 @@ class ParticipantProcessor:
         knee_dir: Path,
         knee_side: str,
         entrypoint: str,
-        maneuver: Optional[str] = None,
+        maneuver: str | None = None,
     ) -> None:
         """Validate that required maneuver directories exist.
 
@@ -1709,7 +1714,4 @@ class ParticipantProcessor:
             maneuver_dir = processor._find_maneuver_dir(maneuver_key)
 
             if maneuver_dir is None:
-                raise FileNotFoundError(
-                    f"Required maneuver directory for '{maneuver_key}' "
-                    f"not found in {knee_dir}"
-                )
+                raise FileNotFoundError(f"Required maneuver directory for '{maneuver_key}' not found in {knee_dir}")

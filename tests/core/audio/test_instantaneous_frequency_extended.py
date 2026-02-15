@@ -1,4 +1,5 @@
 """Extended tests for instantaneous frequency: positive paths and edge cases."""
+
 import numpy as np
 import pandas as pd
 
@@ -33,12 +34,14 @@ def test_add_instantaneous_frequency_mixed_channels():
     N = 512
     t = np.arange(N) / fs
 
-    df = pd.DataFrame({
-        "ch1": np.sin(2 * np.pi * 50.0 * t),   # Present
-        "ch2": [np.nan] * N,                    # Present but all NaN
-        "ch3": np.cos(2 * np.pi * 75.0 * t),   # Present
-        # ch4 absent
-    })
+    df = pd.DataFrame(
+        {
+            "ch1": np.sin(2 * np.pi * 50.0 * t),  # Present
+            "ch2": [np.nan] * N,  # Present but all NaN
+            "ch3": np.cos(2 * np.pi * 75.0 * t),  # Present
+            # ch4 absent
+        }
+    )
 
     out = add_instantaneous_frequency(df.copy(), fs=fs, channels=None)  # Auto-detect
 

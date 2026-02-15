@@ -5,9 +5,6 @@ correctly from AudioProcessing metadata through repository operations.
 """
 
 from datetime import datetime
-from unittest.mock import Mock, patch
-
-import pytest
 
 from src.db.models import AudioProcessingRecord
 from src.metadata import AudioProcessing

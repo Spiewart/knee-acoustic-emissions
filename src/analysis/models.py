@@ -1,7 +1,7 @@
 """Machine learning model training and evaluation."""
 
 import logging
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -11,7 +11,6 @@ from sklearn.metrics import (
     classification_report,
     confusion_matrix,
     roc_auc_score,
-    roc_curve,
 )
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
@@ -24,7 +23,7 @@ def prepare_features_and_labels(
     outcome_df: pd.DataFrame,
     outcome_column: str = "Knee Pain",
     aggregation: str = "mean",
-) -> Tuple[pd.DataFrame, pd.Series]:
+) -> tuple[pd.DataFrame, pd.Series]:
     """Prepare feature matrix and labels for ML training.
 
     Args:
@@ -42,8 +41,7 @@ def prepare_features_and_labels(
     """
     # Aggregate features by participant
     feature_cols = [
-        col for col in features_df.columns
-        if col not in ["study_id", "knee", "maneuver", "speed", "cycle_index"]
+        col for col in features_df.columns if col not in ["study_id", "knee", "maneuver", "speed", "cycle_index"]
     ]
 
     if aggregation == "mean":
@@ -76,11 +74,11 @@ def prepare_features_and_labels(
 def prepare_knee_level_features_and_labels(
     features_df: pd.DataFrame,
     outcome_column: str,
-    outcome_df: Optional[pd.DataFrame] = None,
-    outcome_df_per_knee: Optional[Dict[str, pd.DataFrame]] = None,
+    outcome_df: pd.DataFrame | None = None,
+    outcome_df_per_knee: dict[str, pd.DataFrame] | None = None,
     side_column: str = "knee",
-    knee_label_map: Optional[Dict[str, str]] = None,
-) -> Tuple[pd.DataFrame, pd.Series]:
+    knee_label_map: dict[str, str] | None = None,
+) -> tuple[pd.DataFrame, pd.Series]:
     """Prepare feature matrix and labels at the knee level using per-cycle features.
 
     Supports two patterns for outcome data:
@@ -114,8 +112,7 @@ def prepare_knee_level_features_and_labels(
 
     # Extract feature columns (all columns except metadata)
     feature_cols = [
-        col for col in features_df.columns
-        if col not in ["study_id", "knee", "maneuver", "speed", "cycle_index"]
+        col for col in features_df.columns if col not in ["study_id", "knee", "maneuver", "speed", "cycle_index"]
     ]
 
     # Normalize knee labels in features
@@ -144,6 +141,7 @@ def prepare_knee_level_features_and_labels(
             outcome_frames.append(df_copy)
         combined_outcomes = pd.concat(outcome_frames, ignore_index=True)
     else:
+        assert outcome_df is not None, "outcome_df must not be None when outcome_df_per_knee is None"
         combined_outcomes = outcome_df.copy()
 
     combined_outcomes[side_column] = combined_outcomes[side_column].apply(_normalize_knee)
@@ -156,10 +154,7 @@ def prepare_knee_level_features_and_labels(
     # Validate uniqueness to avoid silent drops
     dup_outcomes = combined_outcomes.index[combined_outcomes.index.duplicated()].unique()
     if len(dup_outcomes) > 0:
-        raise ValueError(
-            "Duplicate outcome entries found for study/knee combinations: "
-            f"{dup_outcomes.tolist()}"
-        )
+        raise ValueError(f"Duplicate outcome entries found for study/knee combinations: {dup_outcomes.tolist()}")
 
     merged = agg_features.join(combined_outcomes[outcome_column], how="inner")
 
@@ -197,7 +192,7 @@ def train_logistic_regression(
     random_state: int = 42,
     scale_features: bool = True,
     **kwargs,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Train a logistic regression model.
 
     Args:
@@ -247,9 +242,11 @@ def train_logistic_regression(
         "classification_report": classification_report(y_test, y_pred_test),
     }
 
-    logger.info(f"Model trained: Train acc={metrics['train_accuracy']:.3f}, "
-                f"Test acc={metrics['test_accuracy']:.3f}, "
-                f"Test AUC={metrics['test_auc']:.3f}")
+    logger.info(
+        f"Model trained: Train acc={metrics['train_accuracy']:.3f}, "
+        f"Test acc={metrics['test_accuracy']:.3f}, "
+        f"Test AUC={metrics['test_auc']:.3f}"
+    )
 
     return {
         "model": model,
@@ -263,7 +260,7 @@ def train_logistic_regression(
 
 
 def evaluate_model(
-    result: Dict[str, Any],
+    result: dict[str, Any],
     top_n_features: int = 10,
 ) -> None:
     """Print detailed model evaluation.
@@ -274,34 +271,36 @@ def evaluate_model(
     """
     metrics = result["metrics"]
 
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("LOGISTIC REGRESSION MODEL EVALUATION")
-    print("="*60)
+    print("=" * 60)
 
     print(f"\nTrain Accuracy: {metrics['train_accuracy']:.4f}")
     print(f"Test Accuracy:  {metrics['test_accuracy']:.4f}")
     print(f"Test AUC:       {metrics['test_auc']:.4f}")
 
     print("\nConfusion Matrix (Test Set):")
-    print(metrics['confusion_matrix'])
+    print(metrics["confusion_matrix"])
 
     print("\nClassification Report (Test Set):")
-    print(metrics['classification_report'])
+    print(metrics["classification_report"])
 
     # Feature importance (coefficient magnitudes)
     model = result["model"]
     X_train = result["X_train"]
 
-    coef_df = pd.DataFrame({
-        "feature": X_train.columns,
-        "coefficient": model.coef_[0],
-        "abs_coefficient": np.abs(model.coef_[0]),
-    }).sort_values("abs_coefficient", ascending=False)
+    coef_df = pd.DataFrame(
+        {
+            "feature": X_train.columns,
+            "coefficient": model.coef_[0],
+            "abs_coefficient": np.abs(model.coef_[0]),
+        }
+    ).sort_values("abs_coefficient", ascending=False)
 
     print(f"\nTop {top_n_features} Most Important Features:")
     print(coef_df.head(top_n_features).to_string(index=False))
 
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
 
 
 def cross_validate_model(
@@ -311,7 +310,7 @@ def cross_validate_model(
     random_state: int = 42,
     scale_features: bool = True,
     **kwargs,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Perform k-fold cross-validation.
 
     Args:
@@ -325,7 +324,7 @@ def cross_validate_model(
     Returns:
         Dictionary with cross-validation results
     """
-    from sklearn.model_selection import StratifiedKFold, cross_val_score
+    from sklearn.model_selection import StratifiedKFold
 
     skf = StratifiedKFold(n_splits=n_folds, shuffle=True, random_state=random_state)
 
@@ -357,7 +356,7 @@ def cross_validate_model(
         accuracies.append(accuracy_score(y_test_fold, y_pred))
         aucs.append(roc_auc_score(y_test_fold, y_prob))
 
-        logger.info(f"Fold {fold+1}/{n_folds}: Acc={accuracies[-1]:.3f}, AUC={aucs[-1]:.3f}")
+        logger.info(f"Fold {fold + 1}/{n_folds}: Acc={accuracies[-1]:.3f}, AUC={aucs[-1]:.3f}")
 
     results = {
         "accuracies": accuracies,
